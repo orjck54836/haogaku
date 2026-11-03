@@ -8,7 +8,7 @@ import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
 import { scenarioById } from '../content/scenarios';
 import { aiChat, aiReport, ChatMsg, ChatReply } from '../lib/ai';
-import { speakJa, stopSpeech } from '../lib/speech';
+import { speakJa, stopSpeech, cacheAudio, getSpeechRate } from '../lib/speech';
 import { startListening, speechInputAvailable } from '../lib/stt';
 import { StackProps } from '../navigation';
 
@@ -36,11 +36,23 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   const [listening, setListening] = useState(false);
   const stopRef = useRef<(() => void) | null>(null);
   const sendRef = useRef<(t: string) => void>(() => {});
+  const [loadingVoice, setLoadingVoice] = useState<string | null>(null);
   const voice = scenario.voice ?? 'female';
+
+  /** 播放並在語音準備好之前，於喇叭圖示顯示轉圈 */
+  async function play(id: string, ja: string, audio?: string) {
+    setLoadingVoice(id);
+    try {
+      if (audio) await cacheAudio(ja, voice, audio);
+      await speakJa(ja, voice);
+    } finally {
+      setLoadingVoice(v => (v === id ? null : v));
+    }
+  }
   const userTurns = history.filter(m => m.role === 'user').length;
 
   useEffect(() => {
-    if (scenario.opening) speakJa(scenario.opening, voice);
+    if (scenario.opening) play('open', scenario.opening);
     else openWithAI();
     return () => { stopSpeech(); stopRef.current?.(); };
   }, []);
@@ -49,12 +61,12 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   async function openWithAI() {
     setBusy(true);
     try {
-      const r = await aiChat(scenario, level, []);
+      const r = await aiChat(scenario, level, [], { voice, rate: getSpeechRate() });
       d.setAiRemaining(r.remaining);
       setHistory([{ role: 'assistant', content: r.reply }]);
       setBubbles([{ id: 'open', from: 'ai', ja: r.reply, reading: r.reading || undefined, zh: r.replyZh }]);
       setHints(r.hints ?? []);
-      speakJa(r.reply, voice);
+      play('open', r.reply, r.audio);
     } catch (e: any) {
       Alert.alert('無法開始會話', e.message, [{ text: '返回', onPress: () => navigation.goBack() }]);
     } finally { setBusy(false); }
@@ -83,15 +95,16 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     setHistory(nextHistory);
     setInput(''); setHints([]); setBusy(true);
     try {
-      const r = await aiChat(scenario, level, nextHistory);
+      const r = await aiChat(scenario, level, nextHistory, { voice, rate: getSpeechRate() });
       d.setAiRemaining(r.remaining);
+      const aiId = `ai-${Date.now()}`;
       setHistory(h => [...h, { role: 'assistant', content: r.reply }]);
       setBubbles(b => [
         ...b.map(x => (x.id === myId && x.from === 'me' ? { ...x, correction: r.correction } : x)),
-        { id: `ai-${Date.now()}`, from: 'ai', ja: r.reply, reading: r.reading || undefined, zh: r.replyZh },
+        { id: aiId, from: 'ai', ja: r.reply, reading: r.reading || undefined, zh: r.replyZh },
       ]);
       setHints(r.hints ?? []);
-      speakJa(r.reply, voice);
+      play(aiId, r.reply, r.audio);
       if (r.missionComplete && !missionDone) setMissionDone(true);
     } catch (e: any) {
       // 失敗時把這句退回輸入框
@@ -152,8 +165,10 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
             {open ? <T variant="small" color={t.sub} style={{ marginTop: 6 }}>{item.zh}</T> : null}
           </View>
           <View style={{ flexDirection: 'row', gap: space.lg, marginTop: 6, paddingLeft: 4 }}>
-            <Pressable accessibilityRole="button" accessibilityLabel="播放" onPress={() => speakJa(item.ja, voice)} hitSlop={8}>
-              <Ionicons name="volume-high-outline" size={18} color={t.sub} />
+            <Pressable accessibilityRole="button" accessibilityLabel="播放" onPress={() => play(item.id, item.ja)} hitSlop={8}
+              style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
+              {loadingVoice === item.id ? <ActivityIndicator size="small" color={t.sub} />
+                : <Ionicons name="volume-high-outline" size={18} color={t.sub} />}
             </Pressable>
             <Pressable accessibilityRole="button" onPress={() => setShowZh(s => ({ ...s, [item.id]: !open }))} hitSlop={8}>
               <T variant="caption" color={t.sub}>{open ? '隱藏翻譯' : '看翻譯'}</T>
@@ -185,20 +200,27 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     );
   };
 
+  // 任務卡放在對話列表最上方，跟著捲動，不會蓋住訊息
+  const missionCard = (
+    <View style={{ padding: space.md, borderRadius: radius.md, marginBottom: space.lg, borderWidth: 1,
+      borderColor: missionDone ? t.success : t.line, backgroundColor: missionDone ? t.successSoft : t.primarySoft }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Ionicons name={missionDone ? 'checkmark-circle' : 'flag'} size={16} color={missionDone ? t.success : t.primary} />
+        <T variant="caption" color={missionDone ? t.success : t.primary}>{missionDone ? '任務完成！可以結束並看分析' : '你的任務'}</T>
+      </View>
+      <T variant="small" style={{ marginTop: 4, fontWeight: '600', lineHeight: 20 }}>{scenario.goal}</T>
+      <T variant="caption" color={t.sub} style={{ marginTop: 2, lineHeight: 18 }}>{scenario.setting}</T>
+    </View>
+  );
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={['bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 96 : 0}>
-        <View style={{ marginHorizontal: space.lg, marginTop: space.sm, padding: space.md, borderRadius: radius.md, backgroundColor: missionDone ? t.successSoft : t.primarySoft }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Ionicons name={missionDone ? 'checkmark-circle' : 'flag'} size={16} color={missionDone ? t.success : t.primary} />
-            <T variant="caption" color={missionDone ? t.success : t.primary}>{missionDone ? '任務完成！可以結束並看分析' : '你的任務'}</T>
-          </View>
-          <T variant="small" style={{ marginTop: 4, fontWeight: '600' }}>{scenario.goal}</T>
-          <T variant="caption" color={t.sub} style={{ marginTop: 2 }}>{scenario.setting}</T>
-        </View>
-
         <FlatList ref={list} data={bubbles} keyExtractor={b => b.id} renderItem={renderItem}
+          style={{ flex: 1 }}
           contentContainerStyle={{ padding: space.lg }}
+          ListHeaderComponent={missionCard}
+          keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })}
           ListFooterComponent={busy ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -207,13 +229,17 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
           ) : undefined} />
 
         {hints.length ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.sm, paddingBottom: space.sm }}>
-            <View style={{ justifyContent: 'center' }}><Pill icon="bulb-outline" label="可以這樣說" color={t.sub} bg={t.surface2} /></View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+            // 橫向 ScrollView 預設會被壓縮，固定不縮放才不會把兩行字擠在一起
+            style={{ flexGrow: 0, flexShrink: 0 }}
+            contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.sm, paddingBottom: space.sm, alignItems: 'center' }}>
+            {missionDone ? <Pill icon="checkmark-circle" label="任務完成" color={t.success} bg={t.successSoft} /> : null}
+            <Pill icon="bulb-outline" label="可以這樣說" color={t.sub} bg={t.surface2} />
             {hints.map(h => (
               <Pressable key={h.ja} accessibilityRole="button" onPress={() => setInput(h.ja)}
                 style={{ backgroundColor: t.surface, borderWidth: 1, borderColor: t.line, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: 8, maxWidth: 260 }}>
-                <T variant="small" style={{ fontWeight: '600' }} numberOfLines={1}>{h.ja}</T>
-                <T variant="caption" color={t.faint} numberOfLines={1}>{h.zh}</T>
+                <T variant="small" style={{ fontWeight: '600', lineHeight: 20 }} numberOfLines={1}>{h.ja}</T>
+                <T variant="caption" color={t.faint} style={{ lineHeight: 17, marginTop: 2 }} numberOfLines={1}>{h.zh}</T>
               </Pressable>
             ))}
           </ScrollView>

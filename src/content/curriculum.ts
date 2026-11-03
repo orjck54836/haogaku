@@ -18,6 +18,18 @@ export const basics: Unit[] = [
 ];
 export const BASICS_ID = 'basics';
 
+/**
+ * 敬語和五十音一樣是「語言系統」，不是生活場景——
+ * 所以把它從生活主題網格裡拉出來，和五十音基礎並列在主題頁最上面。
+ * 底下的 6 個主題本身沒變，照樣各有 3 堂課和 AI 會話。
+ */
+export const KEIGO_ID = 'keigo';
+export const keigoTopics = topics.filter(t => t.cat === 'keigo');
+
+/** 生活主題網格用的分類：敬語已獨立，不在這裡重複出現 */
+export const gridCategories = categories.filter(c => c.id !== 'keigo');
+export const gridTopics = topics.filter(t => t.cat !== 'keigo');
+
 /** 已經人工寫好的基本課 */
 const handwritten: Record<string, Lesson> = {
   subway: subwayLesson, konbini: konbiniLesson, restaurant: restaurantLesson, hotel: hotelLesson,
@@ -46,8 +58,25 @@ export const allLessons: LessonRef[] = [
 
 export const lessonRef = (id: string) => allLessons.find(r => r.lesson.id === id);
 
+/**
+ * 主題的單元編號。
+ * 生活主題依分類順序從 01 編到 77，敬語自己一套 01〜06。
+ * 編號是畫面上的身分（取代通用圖示），所以順序改了編號就會變——
+ * 不要拿它當資料的 key，key 一律用 topic.id。
+ */
+export function topicNumber(topicId: string): string {
+  const g = gridTopics.findIndex(t => t.id === topicId);
+  if (g >= 0) return String(g + 1).padStart(2, '0');
+  const k = keigoTopics.findIndex(t => t.id === topicId);
+  if (k >= 0) return String(k + 1).padStart(2, '0');
+  return '';
+}
+
+/** 單一主題，或 BASICS_ID／KEIGO_ID 這兩個集合的進度 */
 export function topicProgress(topicId: string, completed: string[]) {
-  const ls = topicId === BASICS_ID ? basics.flatMap(u => u.lessons) : topicLessons(topics.find(t => t.id === topicId)!);
+  const ls = topicId === BASICS_ID ? basics.flatMap(u => u.lessons)
+    : topicId === KEIGO_ID ? keigoTopics.flatMap(topicLessons)
+    : topicLessons(topics.find(t => t.id === topicId)!);
   return { done: ls.filter(l => completed.includes(l.id)).length, total: ls.length };
 }
 

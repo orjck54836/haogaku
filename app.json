@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
@@ -21,6 +21,11 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "haogaku"
+    "scheme": "haogaku",
+    "extra": {
+      "eas": {
+        "projectId": "56b7ab2b-3420-48c5-b40c-91ed860aafcc"
+      }
+    }
   }
 }

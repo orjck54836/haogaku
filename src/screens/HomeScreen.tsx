@@ -1,14 +1,21 @@
-import { View, ScrollView } from 'react-native';
+import { View, ScrollView, Pressable, Text } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, T, Card, Button, ProgressRing, Pill, SectionTitle, StationSign, Row, Divider, IconBox, IconName } from '../ui';
-import { useTheme, space } from '../theme';
+import {
+  Screen, Sheet, T, Card, IconTile, RoundButton, Avatar, Pill, ProgressDots, ProgressBar,
+  SectionTitle, StationSign, Rule,
+} from '../ui';
+import { TopBar, WineCard, BrandFooter } from '../ui/brand';
+import { TopicThumb } from '../ui/seal';
+import { photoFor, uiPhotos } from '../ui/images';
+import { useTheme, space, radius, fonts, type } from '../theme';
 import { useData } from '../state/data';
 import { nextLesson, lessonRef, recommendedTopics, topicProgress } from '../content/curriculum';
 import { categories } from '../content/topics';
 import { slang, todaySlangIndex } from '../content/slang';
 import { RootStack } from '../navigation';
+import { useAuth } from '../state/auth';
 
 function greeting() {
   const h = new Date().getHours();
@@ -20,6 +27,8 @@ export default function HomeScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
   const d = useData();
   const { progress, profile } = d;
+  const a = useAuth();
+  const name = profile.nickname || a.user?.displayName || '';
 
   const resumeRef = progress.resume ? lessonRef(progress.resume.lessonId) : undefined;
   const next = resumeRef ?? nextLesson(progress.completed, profile.goal, profile.startLevel);
@@ -31,82 +40,167 @@ export default function HomeScreen() {
   const w = slang[todaySlangIndex()];
   const cat = next.topic ? categories.find(c => c.id === next.topic!.cat)?.title : '基礎';
   const tp = topicProgress(next.topic?.id ?? 'basics', progress.completed);
+  const goTab = (screen: string) => (nav as any).navigate('Tabs', { screen });
 
   const open = () => next.lesson.kind === 'ai'
     ? nav.navigate('Chat', { scenarioId: next.lesson.scenarioId!, lessonId: next.lesson.id })
     : nav.navigate('Lesson', { lessonId: next.lesson.id });
 
   return (
-    <Screen>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View>
-          <T variant="small" color={t.sub}>{greeting()}！</T>
-          <T variant="title" style={{ marginTop: 2 }}>今天想學什麼？</T>
-        </View>
-        <View style={{ flexDirection: 'row', gap: space.sm }}>
-          <Pill icon="flame" label={`${d.streak()}`} color={t.primary} bg={t.primarySoft} />
-          <Pill icon="star" label={`${progress.xp}`} color={t.warning} bg={t.warningSoft} />
-        </View>
+    <Screen shell padded={false}>
+      {/* 深色殼：頂列＋酒紅大卡 */}
+      <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
+        <TopBar
+          left={<RoundButton icon="menu" accessibilityLabel="單字複習" onPress={() => nav.navigate('Review')}
+            bg="rgba(255,255,255,0.12)" fg="#FFFFFF" size={44} />}
+          right={<Avatar name={name || '學'} size={44} onPress={() => goTab('Me')} bg={t.gold} fg="#231A08" />} />
+
+        <WineCard style={{ marginTop: space.lg }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>
+            <View style={{ flex: 1 }}>
+              <T variant="small" color="rgba(255,255,255,0.72)">
+                {greeting()}{name ? `，${name}` : ''}
+              </T>
+              <T variant="title" color="#FFFFFF" style={{ marginTop: 2 }} numberOfLines={1}>
+                {resumeRef ? '接著上次的地方' : '下一站'}
+              </T>
+            </View>
+            <RoundButton icon="arrow-forward" accessibilityLabel={resumeRef ? '繼續學習' : '開始這一課'} onPress={open} />
+          </View>
+
+          <View style={{ marginTop: space.lg }}>
+            {/* 站名牌鋪這一課所屬主題的照片。五十音沒有 topic，用 basics 這個假 id 去查 */}
+            <StationSign compact kana={next.group} zh={cat ?? ''} bar={next.lesson.title} barColor={t.shell}
+              photo={photoFor(next.topic?.id ?? 'basics', next.topic?.cat) ?? undefined} />
+          </View>
+
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: space.lg, marginBottom: space.md }}>
+            <T variant="caption" color="rgba(255,255,255,0.72)">{next.lesson.subtitle}</T>
+            <T variant="caption" color="rgba(255,255,255,0.72)">約 {next.lesson.minutes} 分鐘</T>
+          </View>
+          {/* 點太多會擠成一團（五十音單元有 11 堂），超過 6 站就改用進度條 */}
+          {tp.total <= 6
+            ? <ProgressDots total={tp.total} done={tp.done} icon="walk" />
+            : <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                <View style={{ flex: 1 }}>
+                  <ProgressBar value={tp.done / tp.total} color="#FFFFFF" track="rgba(255,255,255,0.28)" />
+                </View>
+                <T variant="caption" color="rgba(255,255,255,0.8)">{tp.done}/{tp.total}</T>
+              </View>}
+        </WineCard>
       </View>
 
-      <Card style={{ marginTop: space.xl, flexDirection: 'row', alignItems: 'center', gap: space.lg, backgroundColor: t.primary, borderColor: t.primary }}>
-        <ProgressRing value={goalPct} color="#FFFFFF" track="rgba(255,255,255,0.28)">
-          <T style={{ fontWeight: '800' }} color="#FFFFFF">{Math.min(100, Math.round(goalPct * 100))}%</T>
-        </ProgressRing>
-        <View style={{ flex: 1 }}>
-          <T variant="heading" color="#FFFFFF">今日目標</T>
-          <T variant="small" color="rgba(255,255,255,0.88)" style={{ marginTop: 4 }}>
-            {goalPct >= 1 ? '達成了！繼續保持連續天數' : `${xpToday} / ${profile.dailyGoal} XP，還差 ${profile.dailyGoal - xpToday} XP`}
-          </T>
+      {/* 白色面板，大圓角往上疊住酒紅卡 */}
+      <Sheet>
+        <View style={{ flexDirection: 'row', gap: space.md }}>
+          {/* 習字紙是淺色的，遮罩要比另外兩張重，不然白字浮不出來 */}
+          <IconTile kanji="音" label="五十音" photo={photoFor('basics') ?? undefined} photoScrim={0.56}
+            onPress={() => nav.navigate('Topic', { topicId: 'basics' })} />
+          <IconTile kanji="話" label="AI 教練" photo={uiPhotos.coach} onPress={() => goTab('AI')} />
+          <IconTile kanji="覚" label={due ? `複習 ${due}` : '複習'} photo={uiPhotos.review}
+            onPress={() => nav.navigate('Review')} />
         </View>
-      </Card>
 
-      <SectionTitle title={resumeRef ? '繼續上次的進度' : '下一站'} action="所有主題" onAction={() => (nav as any).navigate('Tabs', { screen: 'Course' })} />
-      <Card>
-        <StationSign compact kana={next.group} zh={cat ?? ''} bar={next.lesson.title} />
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.lg }}>
-          <Ionicons name={next.lesson.kind === 'ai' ? 'sparkles' : 'time-outline'} size={15} color={t.sub} />
-          <T variant="small" color={t.sub} style={{ flex: 1 }} numberOfLines={1}>{next.lesson.subtitle} · 約 {next.lesson.minutes} 分鐘</T>
-          <T variant="caption" color={t.faint}>{tp.done}/{tp.total}</T>
-        </View>
-        <Button label={resumeRef ? '繼續學習' : '開始'} icon="play" style={{ marginTop: space.lg }} onPress={open} />
-      </Card>
+        {/* 今日進度 */}
+        <Card tone="soft" style={{ marginTop: space.lg }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View>
+              <T variant="caption" color={t.sub}>今日目標</T>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 2 }}>
+                <T variant="numeral">{xpToday}</T>
+                <T variant="small" color={t.faint}>/ {profile.dailyGoal} XP</T>
+              </View>
+            </View>
+            <View style={{ alignItems: 'flex-end', gap: 6 }}>
+              <Pill icon="flame" label={`連續 ${d.streak()} 天`} color={t.primary} bg={t.primarySoft} />
+              <T variant="caption" color={t.faint}>{goalPct >= 1 ? '今天達標了' : `還差 ${profile.dailyGoal - xpToday} XP`}</T>
+            </View>
+          </View>
+          <View style={{ marginTop: space.md }}>
+            <ProgressBar value={goalPct} />
+          </View>
+        </Card>
 
-      <SectionTitle title="為你推薦的主題" action="更多" onAction={() => (nav as any).navigate('Tabs', { screen: 'Course' })} />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl }}
-        contentContainerStyle={{ paddingHorizontal: space.xl, gap: space.md }}>
-        {recs.map(r => (
-          <Card key={r.id} onPress={() => nav.navigate('Topic', { topicId: r.id })} accessibilityLabel={r.title} style={{ width: 140, padding: space.md }}>
-            <IconBox name={r.icon as IconName} color={t.primary} bg={t.primarySoft} />
-            <T style={{ fontWeight: '800', marginTop: space.md }} numberOfLines={1}>{r.title}</T>
-            <T variant="caption" color={t.sub} style={{ marginTop: 3 }} numberOfLines={2}>{r.focus}</T>
-          </Card>
-        ))}
-      </ScrollView>
+        <SectionTitle title="為你推薦" ja="おすすめ" action="所有主題" onAction={() => goTab('Course')} />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl }}
+          contentContainerStyle={{ paddingHorizontal: space.xl, gap: space.md, paddingVertical: 4 }}>
+          {recs.map(r => {
+            const p = topicProgress(r.id, progress.completed);
+            return (
+              <Card key={r.id} onPress={() => nav.navigate('Topic', { topicId: r.id })} accessibilityLabel={r.title}
+                style={{ width: 176 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <TopicThumb topicId={r.id} title={r.title} cat={r.cat} size={44} />
+                  <Pill label={p.done ? `${p.done}/${p.total}` : '未開始'} color={p.done ? t.primary : t.sub} />
+                </View>
+                <T variant="heading" style={{ marginTop: space.md }} numberOfLines={1}>{r.title}</T>
+                <T variant="caption" color={t.sub} style={{ marginTop: 3 }} numberOfLines={2}>{r.focus}</T>
+              </Card>
+            );
+          })}
+        </ScrollView>
 
-      <SectionTitle title="今日計畫" />
-      <Card style={{ paddingVertical: space.xs }}>
-        <Row icon="book-outline" iconColor={t.primary} iconBg={t.primarySoft} title="完成一堂課" subtitle={`${next.group}・${next.lesson.title}`} onPress={open} />
-        <Divider />
-        <Row icon="repeat-outline" iconColor={t.success} iconBg={t.successSoft} title={due ? `複習 ${due} 個單字` : '單字都複習完了'}
-          subtitle={due ? '間隔複習，記得更久' : '收藏新單字會出現在這裡'} onPress={due ? () => nav.navigate('Review') : undefined}
-          right={due ? undefined : <Ionicons name="checkmark-circle" size={22} color={t.success} />} />
-        {chatTopic ? <>
-          <Divider />
-          <Row icon="sparkles-outline" iconColor={t.primary} iconBg={t.primarySoft} title="AI 實戰會話" subtitle={`推薦：${chatTopic.title}`}
-            onPress={() => nav.navigate('Chat', { scenarioId: `t-${chatTopic.id}` })} />
-        </> : null}
-      </Card>
+        <SectionTitle title="今日計畫" ja="きょうの予定" />
+        <Card tone="soft" style={{ paddingVertical: space.sm }}>
+          {/* 課名本身常常已經含單元名（平假名：あ行），再接一次會變「平假名・平假名：…」 */}
+          <PlanRow n="1" title="完成一堂課"
+            sub={next.lesson.title.startsWith(next.group) ? next.lesson.title : `${next.group}・${next.lesson.title}`}
+            onPress={open} />
+          <Rule />
+          <PlanRow n="2" title={due ? `複習 ${due} 個單字` : '單字都複習完了'}
+            sub={due ? '間隔複習，記得更久' : '收藏新單字會出現在這裡'}
+            onPress={due ? () => nav.navigate('Review') : undefined} done={!due} />
+          {chatTopic ? <>
+            <Rule />
+            <PlanRow n="3" title="AI 實戰會話" sub={`推薦：${chatTopic.title}`}
+              onPress={() => nav.navigate('Chat', { scenarioId: `t-${chatTopic.id}` })} />
+          </> : null}
+        </Card>
 
-      <SectionTitle title="今日流行語" action="更多" onAction={() => nav.navigate('Slang')} />
-      <Card onPress={() => nav.navigate('Slang')} accessibilityLabel={`今日流行語 ${w.word}`}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: space.sm }}>
-          <T style={{ fontSize: 26, fontWeight: '800' }}>{w.word}</T>
-          <T variant="small" color={t.sub}>{w.reading}</T>
-        </View>
-        <T style={{ marginTop: 6, fontWeight: '600' }}>{w.meaning}</T>
-        <T variant="small" color={t.sub} style={{ marginTop: 6 }}>{w.example}　{w.exampleZh}</T>
-      </Card>
+        {/* 流行語一共 52 個、每天換一個。標題講總量，「今日」掛在卡片上，
+            這樣點進去看到 52 個才不會覺得跟標題對不起來 */}
+        <SectionTitle title="流行語" ja="はやりことば" action={`全部 ${slang.length} 個`} onAction={() => nav.navigate('Slang')} />
+        <Card onPress={() => nav.navigate('Slang')} accessibilityLabel={`今日的流行語 ${w.word}`} raised>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flex: 1 }}>
+              {/* Pill 要包一層 row，不然在直向容器裡會被拉成整行寬 */}
+              <View style={{ flexDirection: 'row' }}>
+                <Pill icon="today" label="今日" color={t.primary} bg={t.primarySoft} />
+              </View>
+              <T style={{ fontSize: 30, fontFamily: fonts.serifRegular, color: t.heading, lineHeight: 40, marginTop: space.sm }}>{w.word}</T>
+              {w.kana ? <T style={{ fontSize: 15, fontFamily: fonts.serifRegular }} color={t.primary}>{w.kana}</T> : null}
+              <T variant="caption" color={t.faint}>{w.reading}</T>
+            </View>
+            <RoundButton icon="arrow-forward" size={40} bg={t.surface2} onPress={() => nav.navigate('Slang')} accessibilityLabel="看更多流行語" />
+          </View>
+          <T variant="body" color={t.ink} style={{ marginTop: space.md, fontWeight: '600' }}>{w.meaning}</T>
+          <View style={{ backgroundColor: t.surface2, borderRadius: radius.sm, padding: space.md, marginTop: space.md }}>
+            <T style={{ fontFamily: fonts.serifRegular, fontSize: 15, color: t.ink }}>{w.example}</T>
+            <T variant="caption" color={t.sub} style={{ marginTop: 3 }}>{w.exampleZh}</T>
+          </View>
+        </Card>
+
+        <BrandFooter />
+      </Sheet>
     </Screen>
+  );
+}
+
+/** 今日計畫的一列 */
+function PlanRow({ n, title, sub, onPress, done }: { n: string; title: string; sub: string; onPress?: () => void; done?: boolean }) {
+  const t = useTheme();
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={onPress} disabled={!onPress}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, opacity: pressed ? 0.65 : 1 })}>
+      <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: done ? t.successSoft : '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+        {done ? <Ionicons name="checkmark" size={16} color={t.success} />
+          : <Text style={{ fontSize: 13, fontWeight: '700', color: t.sub }}>{n}</Text>}
+      </View>
+      <View style={{ flex: 1 }}>
+        <T variant="heading" color={t.ink} numberOfLines={1}>{title}</T>
+        <T variant="caption" color={t.sub} numberOfLines={1} style={{ marginTop: 1 }}>{sub}</T>
+      </View>
+      {onPress ? <Ionicons name="chevron-forward" size={17} color={t.faint} /> : null}
+    </Pressable>
   );
 }

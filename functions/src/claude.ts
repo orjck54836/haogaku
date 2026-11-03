@@ -1,4 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
+/**
+ * 只用到 client.messages.create()，所以這裡不綁定某一份 SDK 的 Anthropic class。
+ * 根目錄和 functions/ 各裝了一份 @anthropic-ai/sdk，直接用 class 當型別的話，
+ * 兩邊的私有欄位（#private）對不起來，scripts/generate-lessons.ts 會編不過。
+ */
+export type AnthropicLike = { messages: { create(params: any): Promise<any> } };
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -21,7 +26,7 @@ function parseJSON(text: string): any {
  * 呼叫 Claude 並取得 JSON。
  * 關閉「回答前思考」並降低投入程度，回覆才會快；若模型不支援某個設定，自動退回較簡單的設定再試。
  */
-export async function askJSON(client: Anthropic, o: AskOptions): Promise<any> {
+export async function askJSON(client: AnthropicLike, o: AskOptions): Promise<any> {
   const base = { model: o.model, max_tokens: o.maxTokens, system: o.system, messages: o.messages };
   const attempts: Record<string, unknown>[] = [
     { ...base, thinking: { type: 'disabled' }, output_config: { effort: o.effort, ...(o.schema ? { format: { type: 'json_schema', schema: o.schema } } : {}) } },
@@ -33,7 +38,7 @@ export async function askJSON(client: Anthropic, o: AskOptions): Promise<any> {
   for (const params of attempts) {
     try {
       const res = await client.messages.create(params as any);
-      const text = res.content.map(b => (b.type === 'text' ? b.text : '')).join('');
+      const text = res.content.map((b: any) => (b.type === 'text' ? b.text : '')).join('');
       return parseJSON(text);
     } catch (e: any) {
       lastError = e;

@@ -1,25 +1,27 @@
 import { useEffect, useLayoutEffect } from 'react';
 import { View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, T, Card, IconBox, Pill, IconName } from '../ui';
+import { Screen, T, Card, Pill, ProgressBar, RoundButton, SectionTitle } from '../ui';
+import { Seal, BASICS_KANJI, TopicBanner, TopicThumb } from '../ui/seal';
 import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
 import { topicById, categories } from '../content/topics';
-import { topicLessons, basics, BASICS_ID, fitsLevel, levelLabels } from '../content/curriculum';
+import { topicLessons, basics, BASICS_ID, KEIGO_ID, keigoTopics, topicProgress, fitsLevel, levelLabels } from '../content/curriculum';
 import { Lesson } from '../content/types';
 import { StackProps } from '../navigation';
 import { prefetchLesson } from '../lib/ai';
 
-const kindIcon: Record<Lesson['kind'], IconName> = { kana: 'text-outline', vocab: 'albums-outline', scene: 'book-outline', gen: 'book-outline', ai: 'sparkles' };
-const genIcon: Record<string, IconName> = { basic: 'book-outline', native: 'chatbubbles-outline', practice: 'headset-outline' };
-
 export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) {
   const t = useTheme();
   const { progress, profile } = useData();
-  const isBasics = route.params.topicId === BASICS_ID;
-  const topic = isBasics ? undefined : topicById(route.params.topicId);
+  const id = route.params.topicId;
+  const isBasics = id === BASICS_ID;
+  const isKeigo = id === KEIGO_ID;
+  const topic = isBasics || isKeigo ? undefined : topicById(id);
 
-  useLayoutEffect(() => { navigation.setOptions({ title: isBasics ? '五十音基礎' : topic?.title ?? '' }); }, []);
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: isBasics ? '五十音基礎' : isKeigo ? '敬語' : topic?.title ?? '' });
+  }, []);
   useEffect(() => {
     if (!topic) return;
     for (const k of ['basic', 'native', 'practice'] as const) prefetchLesson(topic, k, profile.startLevel);
@@ -30,41 +32,85 @@ export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) 
     else navigation.navigate('Lesson', { lessonId: l.id });
   }
 
-  const row = (l: Lesson, label?: string) => {
+  /** 一堂課：圓角淺灰磚，右邊一顆圓形播放鍵 */
+  const lessonCard = (l: Lesson, num?: string) => {
     const done = progress.completed.includes(l.id);
-    const ai = l.kind === 'ai';
     return (
-      <Pressable key={l.id} accessibilityRole="button" onPress={() => open(l)}
-        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.md,
-          backgroundColor: t.surface, borderWidth: 1, borderColor: t.line, opacity: pressed ? 0.8 : 1 })}>
-        <View style={{ width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: ai ? t.primary : t.primarySoft }}>
-          <Ionicons name={l.genKind ? genIcon[l.genKind] : kindIcon[l.kind]} size={21} color={ai ? t.onPrimary : t.primary} />
+      <Card key={l.id} tone="soft" onPress={() => open(l)} accessibilityLabel={l.title}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md }}>
+        <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: done ? t.success : '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+          {done ? <Ionicons name="checkmark" size={19} color="#FFFFFF" />
+            : <T variant="caption" color={t.sub} style={{ fontWeight: '700' }}>{num}</T>}
         </View>
         <View style={{ flex: 1 }}>
-          {label ? <T variant="caption" color={t.primary}>{label}</T> : null}
-          <T style={{ fontWeight: '800' }} numberOfLines={1}>{l.title}</T>
-          <T variant="caption" color={t.sub} style={{ marginTop: 3 }} numberOfLines={2}>{l.subtitle} · {l.minutes} 分鐘</T>
+          <T variant="heading" numberOfLines={1}>{l.title}</T>
+          <T variant="caption" color={t.sub} style={{ marginTop: 2 }} numberOfLines={1}>{l.subtitle} · {l.minutes} 分鐘</T>
         </View>
-        <Ionicons name={done ? 'checkmark-circle' : 'play-circle'} size={28} color={done ? t.success : t.primary} />
-      </Pressable>
+        {l.kind === 'ai' ? null : (
+          <Pressable accessibilityRole="button" accessibilityLabel={`看「${l.title}」全部內容`} hitSlop={8}
+            onPress={() => navigation.navigate('LessonContent', { lessonId: l.id })}
+            style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: '#FFFFFF' }}>
+            <T variant="caption" color={t.sub} style={{ fontWeight: '600' }}>內容</T>
+          </Pressable>
+        )}
+        <RoundButton icon="play" size={38} bg={t.primary} fg="#FFFFFF" onPress={() => open(l)} accessibilityLabel={`開始 ${l.title}`} />
+      </Card>
     );
   };
 
+  /** 底下掛主題的集合頁（敬語用） */
+  const topicRow = (k: NonNullable<typeof topic>) => {
+    const p = topicProgress(k.id, progress.completed);
+    const advanced = !fitsLevel(k, profile.startLevel);
+    return (
+      <Card key={k.id} tone="soft" onPress={() => navigation.navigate('Topic', { topicId: k.id })} accessibilityLabel={k.title}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md }}>
+        <TopicThumb topicId={k.id} title={k.title} cat={k.cat} size={46} />
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <T variant="heading" numberOfLines={1} style={{ flexShrink: 1 }}>{k.title}</T>
+            {advanced && k.minLevel ? <Pill label="進階" color={t.sub} bg="#FFFFFF" /> : null}
+          </View>
+          <T variant="caption" color={t.sub} style={{ marginTop: 2, marginBottom: space.sm }} numberOfLines={2}>{k.focus}</T>
+          <ProgressBar value={p.done / p.total} height={5} track="#FFFFFF" />
+        </View>
+        <T variant="caption" color={t.faint}>{p.done}/{p.total}</T>
+      </Card>
+    );
+  };
+
+  // 五十音基礎
   if (isBasics) {
     return (
       <Screen edges={['bottom']}>
-        <Card onPress={() => navigation.navigate('KanaChart')} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-          <IconBox name="grid-outline" color={t.primary} bg={t.primarySoft} />
-          <T style={{ flex: 1, fontWeight: '700' }}>五十音表</T>
-          <Ionicons name="chevron-forward" size={18} color={t.faint} />
+        <TopicBanner title="五十音基礎" caption="ごじゅうおん" focus="日文的起點。從字源聯想記假名，再練到看懂招牌上的漢字。" />
+        <Card tone="soft" onPress={() => navigation.navigate('KanaChart')} accessibilityLabel="五十音表"
+          style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.xl, padding: space.md }}>
+          <Seal kanji={BASICS_KANJI} size={44} tone="ink" />
+          <T variant="heading" style={{ flex: 1 }}>五十音表</T>
+          <Ionicons name="chevron-forward" size={17} color={t.faint} />
         </Card>
         {basics.map(u => (
-          <View key={u.id} style={{ marginTop: space.xxl, gap: space.sm }}>
-            <T variant="heading">{u.title}</T>
-            <T variant="caption" color={t.sub} style={{ marginBottom: space.xs }}>{u.description}</T>
-            {u.lessons.map(l => row(l))}
+          <View key={u.id}>
+            <SectionTitle title={u.title} />
+            <T variant="small" color={t.sub} style={{ marginTop: -space.md, marginBottom: space.md }}>{u.description}</T>
+            <View style={{ gap: space.sm }}>
+              {u.lessons.map((l, i) => lessonCard(l, String(i + 1)))}
+            </View>
           </View>
         ))}
+      </Screen>
+    );
+  }
+
+  // 敬語：和五十音並列的語言系統
+  if (isKeigo) {
+    return (
+      <Screen edges={['bottom']}>
+        <TopicBanner title="敬語" caption="けいご" cat="keigo"
+          focus="敬語不是「更客氣的說法」，而是一套看關係決定語氣的系統。先弄懂三種敬語的分工，再分場合練。" />
+        <SectionTitle title={`${keigoTopics.length} 個主題`} ja="けいごのトピック" />
+        <View style={{ gap: space.sm }}>{keigoTopics.map(topicRow)}</View>
       </Screen>
     );
   }
@@ -72,32 +118,31 @@ export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) 
   if (!topic) return null;
   const cat = categories.find(c => c.id === topic.cat);
   const lessons = topicLessons(topic);
-  const labels = ['第 1 堂', '第 2 堂', '第 3 堂'];
 
   return (
     <Screen edges={['bottom']}>
-      <View style={{ alignItems: 'center', paddingVertical: space.lg }}>
-        <IconBox name={topic.icon as IconName} color={t.primary} bg={t.primarySoft} size={68} />
-        <T variant="caption" color={t.primary} style={{ marginTop: space.md }}>{cat?.title}</T>
-        <T variant="title" style={{ marginTop: 2 }}>{topic.title}</T>
-        <T color={t.sub} style={{ marginTop: space.sm, textAlign: 'center', lineHeight: 22 }}>{topic.focus}</T>
-        {!fitsLevel(topic, profile.startLevel) && topic.minLevel ? (
-          <View style={{ marginTop: space.md }}><Pill icon="information-circle-outline" label={`建議程度：${levelLabels[topic.minLevel]}`} color={t.warning} bg={t.warningSoft} /></View>
-        ) : null}
-      </View>
+      <TopicBanner topicId={topic.id} cat={topic.cat} title={topic.title} caption={cat?.title} focus={topic.focus} />
 
-      <View style={{ gap: space.sm, marginTop: space.md }}>
-        {lessons.map((l, i) => row(l, labels[i]))}
+      {!fitsLevel(topic, profile.startLevel) && topic.minLevel ? (
+        <View style={{ marginTop: space.lg, alignSelf: 'flex-start' }}>
+          <Pill icon="information-circle" label={`建議程度：${levelLabels[topic.minLevel]}`} color={t.warning} bg={t.warningSoft} />
+        </View>
+      ) : null}
+
+      <SectionTitle title="3 堂課" ja="レッスン" />
+      <View style={{ gap: space.sm }}>
+        {lessons.map((l, i) => lessonCard(l, String(i + 1)))}
       </View>
 
       <Card onPress={() => navigation.navigate('Chat', { scenarioId: `t-${topic.id}` })} accessibilityLabel="到 AI 教練練習這個情境"
-        style={{ marginTop: space.xl, flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: t.surface2, borderColor: t.surface2 }}>
-        <Ionicons name="sparkles-outline" size={20} color={t.primary} />
+        raised style={{ marginTop: space.xl, flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+        <Seal kanji="話" size={46} tone="ink" />
         <View style={{ flex: 1 }}>
-          <T variant="small" style={{ fontWeight: '700' }}>學完想開口練習？</T>
+          <T variant="heading">學完想開口練習？</T>
           <T variant="caption" color={t.sub} style={{ marginTop: 2 }}>到 AI 教練用這個情境實際對話</T>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={t.faint} />
+        <RoundButton icon="arrow-forward" size={40} bg={t.surface2}
+          onPress={() => navigation.navigate('Chat', { scenarioId: `t-${topic.id}` })} accessibilityLabel="開始 AI 會話" />
       </Card>
     </Screen>
   );

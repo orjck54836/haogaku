@@ -4,11 +4,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { T, Button, ProgressBar, Card, Pill } from '../ui';
 import SaveButton from '../ui/SaveButton';
-import { useTheme, space, radius } from '../theme';
+import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
 import { lessonRef, allLessons } from '../content/curriculum';
 import { ChoiceStep, LearnStep, Lesson } from '../content/types';
-import { aiLesson, bundledLesson } from '../lib/ai';
+import { useLesson } from '../lib/useLesson';
 import { ActivityIndicator } from 'react-native';
 import { speakJa, stopSpeech } from '../lib/speech';
 import { StackProps } from '../navigation';
@@ -18,23 +18,7 @@ const XP_FIRST = 10, XP_RETRY = 5, XP_FINISH = 20;
 /** 外層：AI 主題課先載入內容 */
 export default function LessonScreen(props: StackProps<'Lesson'>) {
   const t = useTheme();
-  const d = useData();
-  const ref = lessonRef(props.route.params.lessonId)!;
-  const [lesson, setLesson] = useState<Lesson | null>(() => {
-    if (ref.lesson.kind !== 'gen') return ref.lesson;
-    const steps = bundledLesson(ref.topic!.id, ref.lesson.genKind!, d.profile.startLevel);
-    return steps ? { ...ref.lesson, steps } : null;
-  });
-  const [error, setError] = useState('');
-
-  async function load() {
-    setError('');
-    try {
-      const steps = await aiLesson(ref.topic!, ref.lesson.genKind!, d.profile.startLevel);
-      setLesson({ ...ref.lesson, steps });
-    } catch (e: any) { setError(e?.message ?? '載入失敗'); }
-  }
-  useEffect(() => { if (!lesson) load(); }, []);
+  const { ref, lesson, error, reload: load } = useLesson(props.route.params.lessonId);
 
   if (lesson) return <LessonPlayer {...props} lesson={lesson} />;
   return (
@@ -61,7 +45,10 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   const t = useTheme();
   const d = useData();
   const ref = lessonRef(route.params.lessonId)!;
-  const startStep = d.progress.resume?.lessonId === lesson.id ? Math.min(d.progress.resume.step, lesson.steps.length - 1) : 0;
+  // 從「單元內容」點某一張進來時，直接跳到那一張
+  const jump = route.params.step;
+  const startStep = jump !== undefined ? Math.max(0, Math.min(jump, lesson.steps.length - 1))
+    : d.progress.resume?.lessonId === lesson.id ? Math.min(d.progress.resume.step, lesson.steps.length - 1) : 0;
 
   const [step, setStep] = useState(startStep);
   const [wrong, setWrong] = useState<number[]>([]);
@@ -72,6 +59,12 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   const s = lesson.steps[step];
 
   useEffect(() => { d.setResume(lesson.id, step); }, [step]);
+  // 已在上課時，從「單元內容」點別張回來：跳到那一張
+  useEffect(() => {
+    if (jump === undefined || route.params.at === undefined) return;
+    setStep(Math.max(0, Math.min(jump, lesson.steps.length - 1)));
+    setWrong([]); setSolved(false); setHint(''); setFinished(false);
+  }, [route.params.at]);
   useEffect(() => {
     if (finished) return;
     if (s.type === 'learn') speakJa(s.ja);
@@ -115,13 +108,13 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: t.bg, padding: space.xl }}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: t.successSoft, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="checkmark" size={52} color={t.success} />
+          <View style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: t.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="checkmark" size={52} color={t.primary} />
           </View>
-          <T variant="title" style={{ marginTop: space.xl }}>お疲れさまでした！</T>
+          <T variant="display" style={{ marginTop: space.xl, fontSize: 30, lineHeight: 38 }}>お疲れさまでした！</T>
           <T color={t.sub} style={{ marginTop: space.sm }}>完成「{lesson.title}」</T>
           <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xl }}>
-            <Pill icon="star" label={`+${earned.current} XP`} color={t.warning} bg={t.warningSoft} />
+            <Pill icon="star" label={`+${earned.current} XP`} color={t.gold} bg={t.goldSoft} />
             <Pill icon="flame" label={`連續 ${d.streak()} 天`} color={t.accent} bg={t.accentSoft} />
           </View>
         </View>
@@ -139,28 +132,32 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
         </Pressable>
         <View style={{ flex: 1 }}><ProgressBar value={(step + (canNext ? 1 : 0)) / lesson.steps.length} color={t.success} height={8} /></View>
         <T variant="caption" color={t.sub}>{step + 1}/{lesson.steps.length}</T>
+        <Pressable accessibilityRole="button" accessibilityLabel="看這一課的全部內容" hitSlop={10}
+          onPress={() => navigation.navigate('LessonContent', { lessonId: lesson.id })}>
+          <Ionicons name="list" size={24} color={t.primary} />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: space.xl, paddingTop: space.sm }}>
         <T variant="caption" color={t.primary}>{ref.group} · {lesson.title}</T>
         {s.type === 'learn' ? <LearnCard s={s} source={lesson.title} /> : (
           <View>
-            <View style={{ backgroundColor: t.ink, borderRadius: radius.lg, padding: space.lg, marginTop: space.md }}>
+            <View style={{ backgroundColor: t.shell, borderRadius: radius.lg, padding: space.lg, marginTop: space.md }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <T variant="caption" color={t.bg} style={{ opacity: 0.7 }}>{s.label}</T>
+                <T variant="caption" color="#FFFFFF" style={{ opacity: 0.75 }}>{s.label}</T>
                 {s.speak ? (
                   <View style={{ flexDirection: 'row', gap: space.lg }}>
-                    <SaveButton ja={s.speak} zh={s.lineZh ?? (lesson.kind === 'kana' ? undefined : s.options[s.answer].text)} source={lesson.title} color={t.bg} compact />
+                    <SaveButton ja={s.speak} zh={s.lineZh ?? (lesson.kind === 'kana' ? undefined : s.options[s.answer].text)} source={lesson.title} color="#FFFFFF" compact />
                     <Pressable accessibilityRole="button" accessibilityLabel="再聽一次" onPress={() => speakJa(s.speak!)} hitSlop={10}>
-                      <Ionicons name="volume-high" size={20} color={t.bg} />
+                      <Ionicons name="volume-high" size={20} color="#FFFFFF" />
                     </Pressable>
                   </View>
                 ) : null}
               </View>
-              <T style={{ fontSize: lesson.kind === 'kana' && s.line.length <= 3 ? 56 : 20, lineHeight: lesson.kind === 'kana' && s.line.length <= 3 ? 68 : 30, marginTop: space.sm, fontWeight: '700', textAlign: lesson.kind === 'kana' ? 'center' : 'left' }} color={t.bg}>
+              <T style={{ fontSize: lesson.kind === 'kana' && s.line.length <= 3 ? 56 : 20, lineHeight: lesson.kind === 'kana' && s.line.length <= 3 ? 72 : 32, marginTop: space.sm, fontFamily: fonts.serifMedium, textAlign: lesson.kind === 'kana' ? 'center' : 'left' }} color="#FFFFFF">
                 {s.line}
               </T>
-              {solved && s.lineZh ? <T variant="small" color={t.bg} style={{ opacity: 0.75, marginTop: space.sm }}>{s.lineZh}</T> : null}
+              {solved && s.lineZh ? <T variant="small" color="#FFFFFF" style={{ opacity: 0.8, marginTop: space.sm }}>{s.lineZh}</T> : null}
             </View>
 
             <T variant="heading" style={{ marginTop: space.xl, marginBottom: space.md }}>{s.question}</T>
@@ -169,11 +166,13 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
               const bad = wrong.includes(i);
               return (
                 <Pressable key={i} accessibilityRole="button" disabled={solved || bad} onPress={() => choose(i)}
-                  style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderRadius: radius.md, padding: space.lg, marginBottom: space.sm,
-                    borderColor: right ? t.success : bad ? t.danger : t.line, backgroundColor: right ? t.successSoft : bad ? t.dangerSoft : t.surface }}>
+                  style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', borderRadius: radius.lg, padding: space.lg, marginBottom: space.sm,
+                    backgroundColor: right ? t.successSoft : bad ? t.dangerSoft : t.surface2,
+                    opacity: pressed ? 0.7 : bad ? 0.55 : 1 })}>
                   <View style={{ flex: 1 }}>
-                    <T style={{ fontSize: 17, fontWeight: '600' }}>{o.text}</T>
-                    {o.sub ? <T variant="small" color={t.sub} style={{ marginTop: 2 }}>{o.sub}</T> : null}
+                    <T style={{ fontSize: 18, lineHeight: 26, fontFamily: fonts.serifMedium }} color={t.heading}>{o.text}</T>
+                    {/* 中文意思等作答後才顯示：答對後全部顯示，答錯的選項當下顯示 */}
+                    {o.sub && (solved || bad) ? <T variant="small" color={t.sub} style={{ marginTop: 2 }}>{o.sub}</T> : null}
                   </View>
                   {right ? <Ionicons name="checkmark-circle" size={24} color={t.success} /> : null}
                   {bad ? <Ionicons name="close-circle" size={24} color={t.danger} /> : null}
@@ -182,12 +181,12 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
               );
             })}
             {solved ? (
-              <View style={{ flexDirection: 'row', gap: space.sm, backgroundColor: t.successSoft, borderRadius: radius.md, padding: space.md, marginTop: space.sm }}>
+              <View style={{ flexDirection: 'row', gap: space.sm, backgroundColor: t.successSoft, borderRadius: radius.lg, padding: space.md, marginTop: space.sm }}>
                 <Ionicons name="bulb-outline" size={18} color={t.success} />
                 <T variant="small" color={t.success} style={{ flex: 1, lineHeight: 20 }}>{s.explain}</T>
               </View>
             ) : hint ? (
-              <View style={{ flexDirection: 'row', gap: space.sm, backgroundColor: t.dangerSoft, borderRadius: radius.md, padding: space.md, marginTop: space.sm }}>
+              <View style={{ flexDirection: 'row', gap: space.sm, backgroundColor: t.dangerSoft, borderRadius: radius.lg, padding: space.md, marginTop: space.sm }}>
                 <Ionicons name="information-circle-outline" size={18} color={t.danger} />
                 <T variant="small" color={t.danger} style={{ flex: 1 }}>{hint}</T>
               </View>
@@ -198,7 +197,7 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
 
       <View style={{ padding: space.xl, paddingTop: space.sm }}>
         <Button label={step + 1 < lesson.steps.length ? (s.type === 'learn' ? '記住了，下一個' : '下一題') : '完成這一課'}
-          variant="dark" disabled={!canNext} onPress={next} />
+          variant="primary" disabled={!canNext} onPress={next} />
       </View>
     </SafeAreaView>
   );
@@ -211,7 +210,7 @@ function LearnCard({ s, source }: { s: LearnStep; source: string }) {
     <Card style={{ marginTop: space.md, alignItems: 'center', paddingVertical: space.xxl }}>
       <Pill label="新內容" color={t.primary} bg={t.primarySoft} />
       <Pressable accessibilityRole="button" accessibilityLabel={`播放 ${s.ja}`} onPress={() => speakJa(s.ja)} style={{ marginTop: space.lg }}>
-        <T style={{ fontSize: big ? 88 : 30, lineHeight: big ? 104 : 40, fontWeight: '700', textAlign: 'center' }}>{s.ja}</T>
+        <T style={{ fontSize: big ? 88 : 30, lineHeight: big ? 112 : 44, fontFamily: fonts.serifMedium, textAlign: 'center' }} color={t.heading}>{s.ja}</T>
       </Pressable>
       {s.reading ? <T style={{ fontSize: big ? 22 : 15, marginTop: space.xs }} color={t.sub}>{s.reading}</T> : null}
       <T variant="heading" style={{ marginTop: space.lg }}>{s.zh}</T>

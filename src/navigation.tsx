@@ -3,7 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme, useNavTheme } from './theme';
+import { useTheme, useNavTheme, fonts } from './theme';
 import { useAuth } from './state/auth';
 import { useData } from './state/data';
 import { ChatReport } from './lib/ai';
@@ -23,11 +23,15 @@ import ReviewScreen from './screens/ReviewScreen';
 import KanaChartScreen from './screens/KanaChartScreen';
 import SlangScreen from './screens/SlangScreen';
 import TopicScreen from './screens/TopicScreen';
+import LessonContentScreen from './screens/LessonContentScreen';
+import EditProfileScreen from './screens/EditProfileScreen';
 
 export type RootStack = {
   Tabs: undefined;
   Topic: { topicId: string };
-  Lesson: { lessonId: string };
+  Lesson: { lessonId: string; step?: number; at?: number };
+  LessonContent: { lessonId: string };
+  EditProfile: undefined;
   Chat: { scenarioId: string; lessonId?: string };
   Report: { report: ChatReport; scenarioId: string; lessonId?: string };
   Check: undefined;
@@ -56,8 +60,9 @@ function MainTabs() {
       headerShown: false,
       tabBarActiveTintColor: t.primary,
       tabBarInactiveTintColor: t.faint,
-      tabBarStyle: { backgroundColor: t.surface, borderTopColor: t.line },
-      tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+      tabBarStyle: { backgroundColor: t.surface, borderTopWidth: 0, height: 86, paddingTop: 8,
+        shadowColor: t.shadow, shadowOpacity: 1, shadowRadius: 16, shadowOffset: { width: 0, height: -4 }, elevation: 12 },
+      tabBarLabelStyle: { fontSize: 11, fontWeight: '700', letterSpacing: -0.1 },
       tabBarIcon: ({ focused, color, size }) => (
         <Ionicons name={tabIcons[route.name][focused ? 0 : 1]} size={size} color={color} />
       ),
@@ -91,11 +96,14 @@ export default function AppNavigator() {
     <NavigationContainer theme={navTheme}>
       <Stack.Navigator screenOptions={{
         headerTintColor: t.ink, headerStyle: { backgroundColor: t.bg }, headerShadowVisible: false,
+        headerTitleStyle: { color: t.heading, fontSize: 17, fontWeight: '700' },
         headerBackTitle: '返回', contentStyle: { backgroundColor: t.bg },
       }}>
         <Stack.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
         <Stack.Screen name="Topic" component={TopicScreen} options={{ title: '' }} />
         <Stack.Screen name="Lesson" component={LessonScreen} options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="LessonContent" component={LessonContentScreen} options={{ title: '單元內容' }} />
+        <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: '編輯個人資料' }} />
         <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'AI 會話' }} />
         <Stack.Screen name="Report" component={ReportScreen} options={{ title: '會話分析', headerBackVisible: false, gestureEnabled: false }} />
         <Stack.Screen name="Check" component={CheckScreen} options={{ title: 'AI 句子健檢' }} />

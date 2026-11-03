@@ -1,4 +1,10 @@
-import { View, Text } from 'react-native';
+import { View, Text, ActivityIndicator } from 'react-native';
+import { useFonts } from 'expo-font';
+// 只引入用到的三種粗細，避免把整套字型（8 種）包進 app
+// Regular 做大標、Bold 做小標——字重反著用是設計系統的一部分，見 src/theme.ts
+import { NotoSerifTC_400Regular } from '@expo-google-fonts/noto-serif-tc/400Regular';
+import { NotoSerifTC_500Medium } from '@expo-google-fonts/noto-serif-tc/500Medium';
+import { NotoSerifTC_700Bold } from '@expo-google-fonts/noto-serif-tc/700Bold';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/state/auth';
@@ -8,9 +14,9 @@ import AppNavigator from './src/navigation';
 
 function SetupNeeded() {
   return (
-    <View style={{ flex: 1, justifyContent: 'center', padding: 28, backgroundColor: '#FFFFFF' }}>
-      <Text style={{ fontSize: 22, fontWeight: '800', color: '#C8102E' }}>還差一步：設定 Firebase</Text>
-      <Text style={{ fontSize: 15, color: '#6B5E60', marginTop: 12, lineHeight: 24 }}>
+    <View style={{ flex: 1, justifyContent: 'center', padding: 28, backgroundColor: '#FBF7F1' }}>
+      <Text style={{ fontSize: 22, fontWeight: '800', color: '#4F1620' }}>還差一步：設定 Firebase</Text>
+      <Text style={{ fontSize: 15, color: '#6B5F60', marginTop: 12, lineHeight: 24 }}>
         打開專案裡的 .env，填入 Firebase 的設定值，{'\n'}存檔後在終端機按 Ctrl+C，再執行 npm start。{'\n\n'}步驟請看 README.md 的「二、建立 Firebase 專案」。
       </Text>
     </View>
@@ -18,12 +24,16 @@ function SetupNeeded() {
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({ NotoSerifTC_400Regular, NotoSerifTC_500Medium, NotoSerifTC_700Bold });
+  if (!fontsLoaded) {
+    return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF7F1' }}><ActivityIndicator color="#8A2432" /></View>;
+  }
   if (!firebaseConfigured) return <SetupNeeded />;
   return (
     <SafeAreaProvider>
       <AuthProvider>
         <DataProvider>
-          <StatusBar style="auto" />
+          <StatusBar style="dark" />
           <AppNavigator />
         </DataProvider>
       </AuthProvider>

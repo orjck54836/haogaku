@@ -25,6 +25,7 @@ export async function startListening(h: ListenHandlers): Promise<() => void> {
       if (e.isFinal) h.onFinal(text); else h.onPartial(text);
     }),
     M.addListener('error', e => {
+      resetAudioMode();
       if (e.error === 'aborted') return;
       h.onError(e.error === 'no-speech' || e.error === 'speech-timeout' ? '沒有聽到聲音，再說一次看看' : '沒有聽清楚，再說一次看看');
     }),
@@ -34,6 +35,10 @@ export async function startListening(h: ListenHandlers): Promise<() => void> {
       h.onEnd();
     }),
   ];
-  M.start({ lang: 'ja-JP', interimResults: true, continuous: false, addsPunctuation: true });
+  M.start({
+    lang: 'ja-JP', interimResults: true, continuous: false, addsPunctuation: true,
+    // 收音時也讓聲音走喇叭；結束後會恢復成一般播放模式（見 speech.ts）
+    iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'measurement' },
+  });
   return () => M.stop();
 }

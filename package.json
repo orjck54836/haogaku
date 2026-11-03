@@ -11,6 +11,7 @@
     "generate-lessons": "tsx scripts/generate-lessons.ts"
   },
   "dependencies": {
+    "@expo-google-fonts/noto-serif-tc": "^0.4.5",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-google-signin/google-signin": "^17.0.0",
@@ -24,6 +25,7 @@
     "expo-crypto": "~58.0.7",
     "expo-dev-client": "~58.0.18",
     "expo-file-system": "~58.0.13",
+    "expo-font": "~58.0.11",
     "expo-speech": "~58.0.3",
     "expo-speech-recognition": "^58.0.1",
     "expo-status-bar": "~58.0.4",

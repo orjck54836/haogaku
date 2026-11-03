@@ -12,6 +12,8 @@ export type ChatReply = {
   hints: { ja: string; zh: string }[];
   missionComplete: boolean;
   remaining: number;
+  /** 回覆的語音（base64 MP3），後端產生失敗時沒有 */
+  audio?: string;
 };
 
 export type ChatReport = {
@@ -54,8 +56,9 @@ async function call<T>(name: string, data: unknown): Promise<T> {
   }
 }
 
-export const aiChat = (scenario: Scenario, level: LevelId, messages: ChatMsg[]) =>
-  call<ChatReply>('aiChat', { scenario: pick(scenario), level, messages });
+/** voice、rate 有給時，後端會把回覆的語音一起回傳，省掉一次往返 */
+export const aiChat = (scenario: Scenario, level: LevelId, messages: ChatMsg[], speech?: { voice: 'female' | 'male'; rate: number }) =>
+  call<ChatReply>('aiChat', { scenario: pick(scenario), level, messages, ...(speech ?? {}) });
 
 export const aiReport = (scenario: Scenario, level: LevelId, messages: ChatMsg[]) =>
   call<ChatReport>('aiReport', { scenario: pick(scenario), level, messages });

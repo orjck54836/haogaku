@@ -11,6 +11,9 @@ export type Goal = 'travel' | 'study' | 'work' | 'hobby';
 
 export type Profile = {
   onboarded: boolean;
+  nickname: string;       // 暱稱（顯示在 app 裡）
+  jaName: string;         // 日文稱呼，例如「ケン」，選填
+  intro: string;          // 一句話自我介紹，選填
   goal: Goal;
   startLevel: LevelId;
   dailyGoal: number;      // 每日 XP 目標
@@ -37,7 +40,7 @@ export type Word = {
 type Store = { profile: Profile; progress: Progress; words: Word[] };
 
 const emptyStore: Store = {
-  profile: { onboarded: false, goal: 'travel', startLevel: 'L1', dailyGoal: 50, speechRate: 1.0 },
+  profile: { onboarded: false, nickname: '', jaName: '', intro: '', goal: 'travel', startLevel: 'L1', dailyGoal: 50, speechRate: 1.0 },
   progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null },
   words: [],
 };

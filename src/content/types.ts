@@ -67,6 +67,9 @@ export type Scenario = {
 };
 
 export type Slang = {
-  word: string; reading: string; meaning: string;
+  word: string;
+  /** 平假名讀音。只有含漢字的詞才有——假名詞的詞形本身就是讀音 */
+  kana?: string;
+  reading: string; meaning: string;
   example: string; exampleZh: string; when: string;
 };

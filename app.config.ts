@@ -1,14 +1,16 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
 
 // 沿用 app.json 的設定，只覆蓋需要的欄位
-const googleScheme = process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME;
+const googleScheme = process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME
+  || 'com.googleusercontent.apps.816924704019-ku81u20vmkg1cb47jdphgoa8tbto7j8c';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: '皓學日語',
   slug: config.slug ?? 'haogaku-app',
   version: '2.0.0',
-  userInterfaceStyle: 'automatic',
+  // 固定淺色：品牌是米白＋酒紅，不跟系統深色模式
+  userInterfaceStyle: 'light',
   ios: {
     ...config.ios,
     bundleIdentifier: 'com.formaglobal.haogaku',

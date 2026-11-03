@@ -34,10 +34,18 @@ if (!apiKey && !dry) {
   console.error('請先設定 ANTHROPIC_API_KEY，例如：ANTHROPIC_API_KEY=sk-ant-xxx npx tsx scripts/generate-lessons.ts');
   process.exit(1);
 }
-const client = new Anthropic({ apiKey: apiKey ?? 'dry-run' });
+/**
+ * 端點。SDK 本來就會讀環境變數 ANTHROPIC_BASE_URL，這裡照舊尊重它
+ * （有人會刻意走自己的 gateway），但一定要把實際用的端點印出來——
+ * 送錯地方時回來的是 401 invalid x-api-key，看起來很像金鑰打錯。
+ */
+const baseURL = arg('base-url') ?? process.env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com';
+const client = new Anthropic({ apiKey: apiKey ?? 'dry-run', baseURL });
 
 const data: Record<string, unknown[]> = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, 'utf8')) : {};
-const save = () => fs.writeFileSync(OUT, JSON.stringify(data));
+// --dry 不能寫檔：假內容（テスト／測試）混進 lessons.json 之後，
+// 下次跑沒有 --force 就會被當成「已產生」跳過，等於把那幾堂課變成空殼。
+const save = () => { if (!dry) fs.writeFileSync(OUT, JSON.stringify(data)); };
 
 type Job = { key: string; title: string; focus: string; kind: GenKind; level: Level };
 const jobs: Job[] = [];
@@ -52,7 +60,8 @@ for (const t of topics) {
   }
 }
 
-console.log(`模型：${MODEL}｜共 ${jobs.length} 堂要產生（已存在 ${Object.keys(data).length} 堂），同時 ${CONCURRENCY} 個`);
+console.log(`模型：${MODEL}｜端點：${baseURL}`);
+console.log(`共 ${jobs.length} 堂要產生（已存在 ${Object.keys(data).length} 堂），同時 ${CONCURRENCY} 個`);
 let done = 0, failed: string[] = [];
 
 async function run(job: Job) {
@@ -67,6 +76,17 @@ async function run(job: Job) {
       console.log(`✓ [${done}/${jobs.length}] ${job.key}`);
       return;
     } catch (e: any) {
+      // 認證失敗重試幾次都一樣，而且 249 堂 × 3 次 = 幾百個注定失敗的請求。直接中止。
+      if (e?.status === 401 || e?.status === 403) {
+        console.error(`\n金鑰被拒絕（${e.status}）：${e?.message ?? e}`);
+        console.error(`目前送往：${baseURL}`);
+        console.error('檢查順序：');
+        console.error('  1. 金鑰是 console.anthropic.com → API keys 發的，開頭是 sk-ant-api03-');
+        console.error('     （Claude Code 的登入憑證不是 API 金鑰，不能拿來用）');
+        console.error('  2. 複製時沒有多出空白或換行');
+        console.error('  3. 上面那個端點是你要的（走 gateway 請加 --base-url=）');
+        process.exit(1);
+      }
       console.warn(`… ${job.key} 第 ${attempt} 次失敗：${e?.message ?? e}`);
       await new Promise(r => setTimeout(r, 3000 * attempt));
     }

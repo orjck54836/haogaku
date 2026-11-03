@@ -1,5 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { askJSON, lessonSchema } from './claude';
+import { askJSON, lessonSchema, AnthropicLike } from './claude';
 
 // 主題課的產生邏輯：後端（aiLesson）和預先產生腳本（scripts/generate-lessons.ts）共用
 
@@ -75,7 +74,7 @@ ${structure}
 {"steps":[{"type":"learn","ja":"","reading":"","zh":"","note":""},{"type":"choice","label":"店員","line":"","lineZh":"","question":"","options":[{"text":"","sub":"","hint":""}],"answer":0,"explain":""}]}`;
 }
 
-export async function generateLesson(client: Anthropic, model: string, title: string, focus: string, kind: GenKind, level: Level) {
+export async function generateLesson(client: AnthropicLike, model: string, title: string, focus: string, kind: GenKind, level: Level) {
   const r = await askJSON(client, {
     model, maxTokens: 6000, effort: 'medium', schema: lessonSchema,
     system: lessonPrompt(title, focus, kind, level),

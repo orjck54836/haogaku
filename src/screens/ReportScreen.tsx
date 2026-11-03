@@ -25,7 +25,7 @@ export default function ReportScreen({ route, navigation }: StackProps<'Report'>
         <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm }}>
           <Pill icon={report.missionComplete ? 'checkmark-circle' : 'ellipse-outline'} label={report.missionComplete ? '任務完成' : '任務未完成'}
             color={report.missionComplete ? t.success : t.sub} bg={report.missionComplete ? t.successSoft : t.surface2} />
-          <Pill icon="star" label="+30 XP" color={t.warning} bg={t.warningSoft} />
+          <Pill icon="star" label="+30 XP" color={t.gold} bg={t.goldSoft} />
         </View>
         <T color={t.sub} style={{ marginTop: space.lg, textAlign: 'center', lineHeight: 22 }}>{report.summary}</T>
       </Card>

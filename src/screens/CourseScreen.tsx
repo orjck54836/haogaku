@@ -1,72 +1,121 @@
 import { useState } from 'react';
-import { View } from 'react-native';
+import { View, ScrollView, Dimensions, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
-import { Screen, T, Card, IconBox, ProgressBar } from '../ui';
+import { Screen, T, Card, Button, ProgressBar, Eyebrow } from '../ui';
+import { Seal, BASICS_KANJI } from '../ui/seal';
+import { topicPhotos } from '../ui/images';
 import CategoryChips, { CatFilter } from '../ui/CategoryChips';
 import TopicCard from '../ui/TopicCard';
-import { useTheme, space } from '../theme';
+import { PageHeader } from '../ui/brand';
+import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
-import { topics, categories } from '../content/topics';
-import { topicProgress, BASICS_ID, fitsLevel } from '../content/curriculum';
+import { topicProgress, BASICS_ID, KEIGO_ID, fitsLevel, gridCategories, gridTopics, keigoTopics } from '../content/curriculum';
+import { Topic } from '../content/topics';
 import { RootStack } from '../navigation';
+
+/**
+ * 號碼版的長寬比循環（寬 ÷ 高）。
+ * 刻意不一致，雙欄才會錯落而不是像表格；都設成橫幅比例，
+ * 色版才不會壓過底下的文字（之後換成照片也是這個比例好看）。
+ */
+const ASPECTS = [1.35, 1.0, 1.15, 0.9];
 
 export default function CourseScreen() {
   const t = useTheme();
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
   const { progress, profile } = useData();
   const [cat, setCat] = useState<CatFilter>('all');
-  const kana = topicProgress(BASICS_ID, progress.completed);
-  const doneTopics = topics.filter(x => topicProgress(x.id, progress.completed).done === 3).length;
-  const sections = cat === 'all' ? categories : categories.filter(c => c.id === cat);
+  const doneTopics = gridTopics.filter(x => topicProgress(x.id, progress.completed).done === 3).length;
+  const sections = cat === 'all' ? gridCategories : gridCategories.filter(c => c.id === cat);
+
+  // banner 寬度留一點邊，第二張會露出來，暗示可以滑
+  const bannerW = Dimensions.get('window').width - space.xl * 2 - space.xxl;
+
+  // 底圖用品牌色罩著，照片只當質感，不會蓋過白字，兩張卡的酒紅／深色也還分得出來
+  const foundations = [
+    { id: BASICS_ID, kanji: BASICS_KANJI, title: '五十音基礎', desc: '平假名、片假名、看懂招牌',
+      bg: t.primary, fg: '#FFFFFF', photo: topicPhotos.basics },
+    { id: KEIGO_ID, kanji: '敬', title: '敬語', desc: `尊敬語、謙讓語、職場與服務業・${keigoTopics.length} 個主題`,
+      bg: t.shell, fg: '#FFFFFF', photo: topicPhotos['service-keigo'] },
+  ];
+
+  /** 把一個分類的主題分成左右兩欄，右欄往下推一點做出錯落感 */
+  const grid = (list: Topic[], offset: number) => {
+    const cols: Topic[][] = [[], []];
+    list.forEach((x, i) => cols[i % 2].push(x));
+    return (
+      <View style={{ flexDirection: 'row', gap: space.md }}>
+        {cols.map((col, ci) => (
+          <View key={ci} style={{ flex: 1, gap: space.md, paddingTop: ci === 1 ? space.xxl : 0 }}>
+            {col.map((x, i) => (
+              <TopicCard key={x.id} topic={x} completed={progress.completed}
+                advanced={!fitsLevel(x, profile.startLevel)}
+                aspect={ASPECTS[(offset + ci * 2 + i * 2) % ASPECTS.length]}
+                onPress={() => nav.navigate('Topic', { topicId: x.id })} />
+            ))}
+          </View>
+        ))}
+      </View>
+    );
+  };
 
   return (
     <Screen>
-      <T variant="title">生活主題</T>
-      <T variant="small" color={t.sub} style={{ marginTop: 4 }}>
-        {topics.length} 個主題，從吃飯到職場，學日本人真正會說的話
-      </T>
+      <PageHeader ja="せいかつ" title="生活主題" subtitle={`${gridTopics.length} 個主題，從吃飯到職場，學日本人真正會說的話`} />
 
-      <Card onPress={() => nav.navigate('Topic', { topicId: BASICS_ID })} accessibilityLabel="五十音基礎"
-        style={{ marginTop: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-        <IconBox name="text" color={t.primary} bg={t.primarySoft} size={46} />
-        <View style={{ flex: 1 }}>
-          <T style={{ fontWeight: '800' }}>五十音基礎</T>
-          <T variant="caption" color={t.sub} style={{ marginTop: 3, marginBottom: 8 }}>平假名、片假名、看懂招牌 · {kana.done}/{kana.total}</T>
-          <ProgressBar value={kana.done / kana.total} />
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={t.faint} />
-      </Card>
-
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.lg }}>
-        <Ionicons name="ribbon-outline" size={16} color={t.primary} />
-        <T variant="small" color={t.sub}>已完成 {doneTopics} / {topics.length} 個主題</T>
-      </View>
-
-      <View style={{ marginTop: space.lg }}>
-        <CategoryChips value={cat} onChange={setCat} />
-      </View>
-
-      {sections.map(c => {
-        const list = topics.filter(x => x.cat === c.id);
-        const rows: typeof list[] = [];
-        for (let i = 0; i < list.length; i += 2) rows.push(list.slice(i, i + 2));
-        return (
-          <View key={c.id} style={{ marginTop: space.xxl }}>
-            <T variant="heading">{c.title}</T>
-            <T variant="caption" color={t.sub} style={{ marginTop: 2, marginBottom: space.md }}>{c.desc}</T>
-            <View style={{ gap: space.md }}>
-              {rows.map((r, i) => (
-                <View key={i} style={{ flexDirection: 'row', gap: space.md }}>
-                  {r.map(tp => (
-                    <TopicCard key={tp.id} topic={tp} completed={progress.completed} advanced={!fitsLevel(tp, profile.startLevel)}
-                      onPress={() => nav.navigate('Topic', { topicId: tp.id })} />
-                  ))}
-                  {r.length === 1 ? <View style={{ flex: 1 }} /> : null}
+      {/* 語言基礎：橫向輪播，第二張露半邊 */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl, marginTop: space.xl }}
+        contentContainerStyle={{ paddingHorizontal: space.xl, gap: space.md, paddingVertical: 4 }}
+        snapToInterval={bannerW + space.md} decelerationRate="fast">
+        {foundations.map(f => {
+          const p = topicProgress(f.id, progress.completed);
+          const started = p.done > 0;
+          return (
+            <View key={f.id} style={{ width: bannerW, backgroundColor: f.bg, borderRadius: radius.xl, overflow: 'hidden' }}>
+              {f.photo ? <>
+                <Image source={f.photo} resizeMode="cover"
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+                <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: f.bg, opacity: 0.84 }} />
+              </> : null}
+              <View style={{ padding: space.xl }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                <Seal kanji={f.kanji} size={46} tone="soft" />
+                <View style={{ flex: 1 }}>
+                  <Eyebrow color="rgba(255,255,255,0.6)">Foundation</Eyebrow>
+                  <T variant="title" color={f.fg} style={{ fontSize: 22, marginTop: 1 }} numberOfLines={1}>{f.title}</T>
                 </View>
-              ))}
+              </View>
+              <T variant="small" color="rgba(255,255,255,0.75)" style={{ marginTop: space.md }} numberOfLines={2}>{f.desc}</T>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.lg }}>
+                <View style={{ flex: 1 }}>
+                  <ProgressBar value={p.total ? p.done / p.total : 0} height={6}
+                    color="#FFFFFF" track="rgba(255,255,255,0.25)" />
+                </View>
+                <T variant="caption" color="rgba(255,255,255,0.75)">{p.done}/{p.total}</T>
+              </View>
+              <Button size="md" label={started ? '繼續' : '開始'} variant="gold"
+                style={{ marginTop: space.lg, alignSelf: 'flex-start', paddingHorizontal: 26, backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }}
+                onPress={() => nav.navigate('Topic', { topicId: f.id })} />
+              </View>
             </View>
+          );
+        })}
+      </ScrollView>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.section, marginBottom: space.md }}>
+        <T variant="kana" color={t.faint}>トピック</T>
+        <T variant="caption" color={t.faint}>已完成 {doneTopics} / {gridTopics.length}</T>
+      </View>
+      <CategoryChips value={cat} onChange={setCat} />
+
+      {sections.map((c, si) => {
+        const list = gridTopics.filter(x => x.cat === c.id);
+        return (
+          <View key={c.id} style={{ marginTop: space.section }}>
+            <T variant="heading" style={{ fontSize: 20 }}>{c.title}</T>
+            <T variant="caption" color={t.sub} style={{ marginTop: 2, marginBottom: space.lg }}>{c.desc}</T>
+            {grid(list, si)}
           </View>
         );
       })}

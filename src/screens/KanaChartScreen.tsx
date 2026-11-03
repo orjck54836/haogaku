@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Pressable } from 'react-native';
 import { Screen, T, Segmented } from '../ui';
-import { useTheme, space, radius } from '../theme';
+import { useTheme, space, radius, fonts } from '../theme';
 import { kanaRows } from '../content/kana';
 import { speakJa } from '../lib/speech';
 
@@ -22,7 +22,7 @@ export default function KanaChartScreen() {
               <Pressable key={k[2]} accessibilityRole="button" accessibilityLabel={`${k[idx]} ${k[2]}`} onPress={() => speakJa(k[idx])}
                 style={({ pressed }) => ({ flex: 1, aspectRatio: 0.9, maxWidth: 64, backgroundColor: pressed ? t.primarySoft : t.surface,
                   borderWidth: 1, borderColor: t.line, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' })}>
-                <T style={{ fontSize: 24, fontWeight: '700' }}>{k[idx]}</T>
+                <T style={{ fontSize: 24, fontFamily: fonts.serifMedium }} color={t.heading}>{k[idx]}</T>
                 <T variant="caption" color={t.faint}>{k[2].split(' ')[0]}</T>
               </Pressable>
             ))}

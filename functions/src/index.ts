@@ -17,6 +17,8 @@ const LESSON_MODEL = 'claude-sonnet-5-5';  // 課程內容用：品質優先（�
 const LIMITS = { guest: 30, member: 60 };  // 每人每天 AI 對話次數（台灣時間換日）
 
 const opts = { region: 'asia-east1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 60, memory: '256MiB' as const, maxInstances: 20 };
+// 會話是最常用、最在意速度的功能：保留 1 個常駐實例，避免冷啟動多等 2～4 秒（每月約 NT$100～300 常駐費）
+const chatOpts = { ...opts, memory: '512MiB' as const, minInstances: 1 };
 
 type Level = 'L1' | 'L2' | 'L3' | 'L4';
 const LEVEL_GUIDE: Record<Level, string> = {
@@ -100,7 +102,7 @@ const score = (v: unknown) => Math.max(0, Math.min(100, Math.round(Number(v) || 
 
 // ---------- AI 情境會話 ----------
 
-export const aiChat = onCall(opts, async req => {
+export const aiChat = onCall(chatOpts, async req => {
   const { uid, guest } = requireUser(req);
   const scenario = parseScenario(req.data?.scenario);
   const level = parseLevel(req.data?.level);
@@ -130,20 +132,34 @@ correction 有內容時格式為 {"corrected":"更自然的日文","explanation"
 
   // Claude 的對話必須由 user 開始，前面補一句開場
   const messages: Msg[] = history.length
-    ? [{ role: 'user', content: '（對話開始）' }, ...history.slice(-16)]
+    ? [{ role: 'user', content: '（對話開始）' }, ...history.slice(-12)]
     : [{ role: 'user', content: '（對話開始。請以角色身分先自然地開口，correction 填 null。）' }];
   if (messages[1]?.role === 'user') messages.splice(1, 0, { role: 'assistant', content: '……' });
 
-  const r = await askClaude(system, messages, 1200, chatSchema);
+  const r = await askClaude(system, messages, 700, chatSchema);
   const c = r?.correction;
+  const reply = s(r?.reply) || 'すみません、もう一度お願いします。';
+
+  // 有指定聲音時，直接把回覆的語音一起產生，手機不必再呼叫一次 aiSpeak
+  let audio: string | undefined;
+  if (req.data?.voice === 'female' || req.data?.voice === 'male') {
+    try {
+      await useTtsQuota(uid, guest);
+      audio = (await synthesize(reply, req.data.voice, clampRate(req.data?.rate))) ?? undefined;
+    } catch (e) {
+      console.warn('aiChat TTS skipped', e);   // 語音失敗不影響文字回覆，手機會自己再要一次
+    }
+  }
+
   return {
-    reply: s(r?.reply) || 'すみません、もう一度お願いします。',
+    reply,
     reading: s(r?.reading),
     replyZh: s(r?.replyZh),
     correction: c && s(c.corrected) ? { corrected: s(c.corrected), explanation: s(c.explanation) } : null,
     hints: arr(r?.hints, 3, h => (s(h?.ja) ? { ja: s(h.ja), zh: s(h?.zh) } : null)),
     missionComplete: r?.missionComplete === true,
     remaining,
+    ...(audio ? { audio } : {}),
   };
 });
 
@@ -236,15 +252,11 @@ async function useTtsQuota(uid: string, guest: boolean) {
   });
 }
 
-export const aiSpeak = onCall({ region: 'asia-east1', timeoutSeconds: 30, memory: '256MiB', maxInstances: 20 }, async req => {
-  const { uid, guest } = requireUser(req);
-  const text = str(req.data?.text, 300, '文字');
-  const voice: 'female' | 'male' = req.data?.voice === 'male' ? 'male' : 'female';
-  const rate = Math.max(0.7, Math.min(1.3, Number(req.data?.rate) || 1));
+const clampRate = (v: unknown) => Math.max(0.7, Math.min(1.3, Number(v) || 1));
 
-  await useTtsQuota(uid, guest);
+/** 產生日文語音（base64 MP3），依序嘗試可用的聲音；全部失敗回傳 null */
+async function synthesize(text: string, voice: 'female' | 'male', rate: number): Promise<string | null> {
   ttsClient ??= new TextToSpeechClient();
-
   const known = workingVoice[voice];
   const candidates = known ? [known, ...VOICES[voice].filter(v => v !== known)] : VOICES[voice];
   for (const name of candidates) {
@@ -256,13 +268,23 @@ export const aiSpeak = onCall({ region: 'asia-east1', timeoutSeconds: 30, memory
       });
       if (!res.audioContent) continue;
       workingVoice[voice] = name;
-      const audio = typeof res.audioContent === 'string' ? res.audioContent : Buffer.from(res.audioContent).toString('base64');
-      return { audio };
+      return typeof res.audioContent === 'string' ? res.audioContent : Buffer.from(res.audioContent).toString('base64');
     } catch (e) {
       console.warn(`TTS voice ${name} failed`, e);
     }
   }
-  throw new HttpsError('unavailable', '語音暫時無法產生');
+  return null;
+}
+
+export const aiSpeak = onCall({ region: 'asia-east1', timeoutSeconds: 30, memory: '256MiB', maxInstances: 20 }, async req => {
+  const { uid, guest } = requireUser(req);
+  const text = str(req.data?.text, 300, '文字');
+  const voice: 'female' | 'male' = req.data?.voice === 'male' ? 'male' : 'female';
+
+  await useTtsQuota(uid, guest);
+  const audio = await synthesize(text, voice, clampRate(req.data?.rate));
+  if (!audio) throw new HttpsError('unavailable', '語音暫時無法產生');
+  return { audio };
 });
 
 // ---------- AI 主題課程（後備：只有沒預先產生的新主題才會用到） ----------
