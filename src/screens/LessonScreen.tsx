@@ -6,18 +6,61 @@ import { T, Button, ProgressBar, Card, Pill } from '../ui';
 import SaveButton from '../ui/SaveButton';
 import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
-import { lessonRef, allLessons, isUnlocked } from '../content/curriculum';
-import { ChoiceStep, LearnStep } from '../content/types';
+import { lessonRef, allLessons } from '../content/curriculum';
+import { ChoiceStep, LearnStep, Lesson } from '../content/types';
+import { aiLesson, bundledLesson } from '../lib/ai';
+import { ActivityIndicator } from 'react-native';
 import { speakJa, stopSpeech } from '../lib/speech';
 import { StackProps } from '../navigation';
 
 const XP_FIRST = 10, XP_RETRY = 5, XP_FINISH = 20;
 
-export default function LessonScreen({ route, navigation }: StackProps<'Lesson'>) {
+/** 外層：AI 主題課先載入內容 */
+export default function LessonScreen(props: StackProps<'Lesson'>) {
+  const t = useTheme();
+  const d = useData();
+  const ref = lessonRef(props.route.params.lessonId)!;
+  const [lesson, setLesson] = useState<Lesson | null>(() => {
+    if (ref.lesson.kind !== 'gen') return ref.lesson;
+    const steps = bundledLesson(ref.topic!.id, ref.lesson.genKind!, d.profile.startLevel);
+    return steps ? { ...ref.lesson, steps } : null;
+  });
+  const [error, setError] = useState('');
+
+  async function load() {
+    setError('');
+    try {
+      const steps = await aiLesson(ref.topic!, ref.lesson.genKind!, d.profile.startLevel);
+      setLesson({ ...ref.lesson, steps });
+    } catch (e: any) { setError(e?.message ?? '載入失敗'); }
+  }
+  useEffect(() => { if (!lesson) load(); }, []);
+
+  if (lesson) return <LessonPlayer {...props} lesson={lesson} />;
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: t.bg, padding: space.xl }}>
+      <Pressable accessibilityRole="button" accessibilityLabel="離開" onPress={() => props.navigation.goBack()} hitSlop={12}>
+        <Ionicons name="close" size={26} color={t.sub} />
+      </Pressable>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.lg }}>
+        {error ? <>
+          <Ionicons name="cloud-offline-outline" size={44} color={t.faint} />
+          <T color={t.sub} style={{ textAlign: 'center' }}>{error}</T>
+          <Button label="再試一次" onPress={load} />
+        </> : <>
+          <ActivityIndicator color={t.primary} size="large" />
+          <T variant="heading">正在準備「{ref.topic?.title}・{ref.lesson.title}」</T>
+          <T variant="small" color={t.sub} style={{ textAlign: 'center' }}>第一次開啟需要十幾秒，之後就能立即開始</T>
+        </>}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { lesson: Lesson }) {
   const t = useTheme();
   const d = useData();
   const ref = lessonRef(route.params.lessonId)!;
-  const { lesson } = ref;
   const startStep = d.progress.resume?.lessonId === lesson.id ? Math.min(d.progress.resume.step, lesson.steps.length - 1) : 0;
 
   const [step, setStep] = useState(startStep);
@@ -59,12 +102,13 @@ export default function LessonScreen({ route, navigation }: StackProps<'Lesson'>
     }
   }
 
-  const nextRef = allLessons[ref.index + 1];
+  const after = allLessons[ref.index + 1];
+  const nextRef = after && after.topic?.id === ref.topic?.id ? after : undefined;
   const canNext = s?.type === 'learn' || solved;
 
   if (finished) {
     const goNext = () => {
-      if (!nextRef || !isUnlocked(nextRef.lesson.id, [...d.progress.completed, lesson.id], d.profile.startLevel)) return navigation.goBack();
+      if (!nextRef) return navigation.goBack();
       if (nextRef.lesson.kind === 'ai') navigation.replace('Chat', { scenarioId: nextRef.lesson.scenarioId!, lessonId: nextRef.lesson.id });
       else navigation.replace('Lesson', { lessonId: nextRef.lesson.id });
     };
@@ -81,8 +125,8 @@ export default function LessonScreen({ route, navigation }: StackProps<'Lesson'>
             <Pill icon="flame" label={`連續 ${d.streak()} 天`} color={t.accent} bg={t.accentSoft} />
           </View>
         </View>
-        {nextRef ? <Button label={`下一課：${nextRef.lesson.title}`} icon="arrow-forward" variant="accent" onPress={goNext} /> : null}
-        <Button label="回到課程" variant="ghost" style={{ marginTop: space.sm }} onPress={() => navigation.goBack()} />
+        {nextRef ? <Button label={`下一堂：${nextRef.lesson.title}`} icon="arrow-forward" variant="accent" onPress={goNext} /> : null}
+        <Button label={nextRef ? "先到這裡" : "完成"} variant={nextRef ? "ghost" : "primary"} style={{ marginTop: space.sm }} onPress={() => navigation.goBack()} />
       </SafeAreaView>
     );
   }
@@ -98,7 +142,7 @@ export default function LessonScreen({ route, navigation }: StackProps<'Lesson'>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: space.xl, paddingTop: space.sm }}>
-        <T variant="caption" color={t.primary}>{ref.unit.title} · {lesson.title}</T>
+        <T variant="caption" color={t.primary}>{ref.group} · {lesson.title}</T>
         {s.type === 'learn' ? <LearnCard s={s} source={lesson.title} /> : (
           <View>
             <View style={{ backgroundColor: t.ink, borderRadius: radius.lg, padding: space.lg, marginTop: space.md }}>

@@ -6,6 +6,13 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
     // AI 使用次數只有後端能寫
+    // AI 產生的課程只有後端能讀寫（可在 Firebase 主控台檢查、修改）
+    match /lessons/{id} {
+      allow read, write: if false;
+    }
+    match /ttsUsage/{uid} {
+      allow read, write: if false;
+    }
     match /usage/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow write: if false;

@@ -3,13 +3,18 @@ import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import Anthropic from '@anthropic-ai/sdk';
+import { TextToSpeechClient } from '@google-cloud/text-to-speech';
+import { createHash } from 'crypto';
+import { generateLesson, GenKind } from './lessonGen';
+import { askJSON, chatSchema, reportSchema, checkSchema } from './claude';
 
 initializeApp();
 const db = getFirestore();
 
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
-const MODEL = 'claude-haiku-5-5';          // 便宜、快速的模型；可改成其他 Claude 模型
-const LIMITS = { guest: 10, member: 40 };  // 每人每天 AI 次數（台灣時間換日）
+const MODEL = 'claude-haiku-5-5';          // 會話用：便宜、快速
+const LESSON_MODEL = 'claude-sonnet-5-5';  // 課程內容用：品質優先（每個主題只產生一次）
+const LIMITS = { guest: 30, member: 60 };  // 每人每天 AI 對話次數（台灣時間換日）
 
 const opts = { region: 'asia-east1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 60, memory: '256MiB' as const, maxInstances: 20 };
 
@@ -51,8 +56,8 @@ function parseScenario(v: any): ScenarioIn {
   };
 }
 
-function parseMessages(v: unknown): Msg[] {
-  if (!Array.isArray(v) || v.length === 0 || v.length > 40) throw new HttpsError('invalid-argument', '對話內容有誤');
+function parseMessages(v: unknown, allowEmpty = false): Msg[] {
+  if (!Array.isArray(v) || (!allowEmpty && v.length === 0) || v.length > 40) throw new HttpsError('invalid-argument', '對話內容有誤');
   return v.map((m: any) => {
     if (m?.role !== 'user' && m?.role !== 'assistant') throw new HttpsError('invalid-argument', '對話內容有誤');
     return { role: m.role, content: str(m.content, 300, '訊息') };
@@ -78,17 +83,13 @@ async function useQuota(uid: string, guest: boolean) {
   });
 }
 
-async function askClaude(system: string, messages: Msg[], maxTokens = 700): Promise<any> {
+async function askClaude(system: string, messages: Msg[], maxTokens: number, schema: Record<string, unknown>): Promise<any> {
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
-  const res = await client.messages.create({ model: MODEL, max_tokens: maxTokens, system, messages });
-  const text = res.content.map(b => (b.type === 'text' ? b.text : '')).join('');
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end < start) throw new HttpsError('internal', 'AI 回覆格式錯誤');
   try {
-    return JSON.parse(text.slice(start, end + 1));
-  } catch {
-    throw new HttpsError('internal', 'AI 回覆格式錯誤');
+    return await askJSON(client, { model: MODEL, system, messages, maxTokens, effort: 'low', schema });
+  } catch (e) {
+    console.error('Claude request failed', e);
+    throw new HttpsError('internal', 'AI 暫時無法回應，請再試一次');
   }
 }
 
@@ -103,8 +104,8 @@ export const aiChat = onCall(opts, async req => {
   const { uid, guest } = requireUser(req);
   const scenario = parseScenario(req.data?.scenario);
   const level = parseLevel(req.data?.level);
-  const history = parseMessages(req.data?.messages);
-  if (history[history.length - 1].role !== 'user') throw new HttpsError('invalid-argument', '對話內容有誤');
+  const history = parseMessages(req.data?.messages, true);
+  if (history.length && history[history.length - 1].role !== 'user') throw new HttpsError('invalid-argument', '對話內容有誤');
 
   const remaining = await useQuota(uid, guest);
 
@@ -128,10 +129,12 @@ export const aiChat = onCall(opts, async req => {
 correction 有內容時格式為 {"corrected":"更自然的日文","explanation":"繁體中文說明"}`;
 
   // Claude 的對話必須由 user 開始，前面補一句開場
-  const messages: Msg[] = [{ role: 'user', content: '（對話開始）' }, ...history.slice(-16)];
+  const messages: Msg[] = history.length
+    ? [{ role: 'user', content: '（對話開始）' }, ...history.slice(-16)]
+    : [{ role: 'user', content: '（對話開始。請以角色身分先自然地開口，correction 填 null。）' }];
   if (messages[1]?.role === 'user') messages.splice(1, 0, { role: 'assistant', content: '……' });
 
-  const r = await askClaude(system, messages);
+  const r = await askClaude(system, messages, 1200, chatSchema);
   const c = r?.correction;
   return {
     reply: s(r?.reply) || 'すみません、もう一度お願いします。',
@@ -166,7 +169,7 @@ export const aiReport = onCall(opts, async req => {
 {"overall":0-100,"scores":{"grammar":0-100,"vocabulary":0-100,"politeness":0-100,"fluency":0-100},"missionComplete":true或false,"summary":"1〜2 句總評","strengths":["做得好的地方，最多 3 點"],"improvements":[{"issue":"學習者原本說的句子或問題","better":"更好的日文說法","explanation":"為什麼"}],"keyPhrases":[{"ja":"這個情境值得記住的日文句子","zh":"中文意思"}]}
 improvements 最多 3 項，keyPhrases 3〜5 句。`;
 
-  const r = await askClaude(system, [{ role: 'user', content: `以下是會話紀錄：\n${transcript}` }], 1000);
+  const r = await askClaude(system, [{ role: 'user', content: `以下是會話紀錄：\n${transcript}` }], 2000, reportSchema);
   return {
     overall: score(r?.overall),
     scores: {
@@ -198,7 +201,7 @@ export const aiCheck = onCall(opts, async req => {
 {"natural":true或false,"corrected":"最自然的日文（原句已經自然就照抄）","explanation":"具體說明哪裡要改、為什麼；自然的話說明好在哪裡","politeness":"常體／丁寧語／敬語 其中之一，並用幾個字說明適用場合","alternatives":[{"ja":"其他說法","zh":"中文意思","nuance":"語氣或使用場合的差異"}]}
 alternatives 1〜3 項。`;
 
-  const r = await askClaude(system, [{ role: 'user', content: text }]);
+  const r = await askClaude(system, [{ role: 'user', content: text }], 1200, checkSchema);
   return {
     natural: r?.natural === true,
     corrected: s(r?.corrected) || text,
@@ -207,4 +210,86 @@ alternatives 1〜3 項。`;
     alternatives: arr(r?.alternatives, 3, x => (s(x?.ja) ? { ja: s(x.ja), zh: s(x?.zh), nuance: s(x?.nuance) } : null)),
     remaining,
   };
+});
+
+// ---------- 自然語音（Google Cloud Text-to-Speech） ----------
+
+const TTS_LIMITS = { guest: 150, member: 600 }; // 每人每天產生語音的次數（手機有快取，重複播放不計）
+// 依序嘗試：最自然的 Chirp 3 HD → Neural2 → WaveNet
+const VOICES = {
+  female: ['ja-JP-Chirp3-HD-Aoede', 'ja-JP-Neural2-B', 'ja-JP-Wavenet-A'],
+  male: ['ja-JP-Chirp3-HD-Charon', 'ja-JP-Neural2-C', 'ja-JP-Wavenet-C'],
+};
+const workingVoice: Partial<Record<'female' | 'male', string>> = {};
+let ttsClient: TextToSpeechClient | null = null;
+
+async function useTtsQuota(uid: string, guest: boolean) {
+  const limit = guest ? TTS_LIMITS.guest : TTS_LIMITS.member;
+  const ref = db.doc(`ttsUsage/${uid}`);
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    const today = taipeiDate();
+    const data = snap.data();
+    const count = data && data.date === today ? (data.count as number) : 0;
+    if (count >= limit) throw new HttpsError('resource-exhausted', '今天的語音次數已用完');
+    tx.set(ref, { date: today, count: count + 1 });
+  });
+}
+
+export const aiSpeak = onCall({ region: 'asia-east1', timeoutSeconds: 30, memory: '256MiB', maxInstances: 20 }, async req => {
+  const { uid, guest } = requireUser(req);
+  const text = str(req.data?.text, 300, '文字');
+  const voice: 'female' | 'male' = req.data?.voice === 'male' ? 'male' : 'female';
+  const rate = Math.max(0.7, Math.min(1.3, Number(req.data?.rate) || 1));
+
+  await useTtsQuota(uid, guest);
+  ttsClient ??= new TextToSpeechClient();
+
+  const known = workingVoice[voice];
+  const candidates = known ? [known, ...VOICES[voice].filter(v => v !== known)] : VOICES[voice];
+  for (const name of candidates) {
+    try {
+      const [res] = await ttsClient.synthesizeSpeech({
+        input: { text },
+        voice: { languageCode: 'ja-JP', name },
+        audioConfig: { audioEncoding: 'MP3', speakingRate: rate },
+      });
+      if (!res.audioContent) continue;
+      workingVoice[voice] = name;
+      const audio = typeof res.audioContent === 'string' ? res.audioContent : Buffer.from(res.audioContent).toString('base64');
+      return { audio };
+    } catch (e) {
+      console.warn(`TTS voice ${name} failed`, e);
+    }
+  }
+  throw new HttpsError('unavailable', '語音暫時無法產生');
+});
+
+// ---------- AI 主題課程（後備：只有沒預先產生的新主題才會用到） ----------
+
+export const aiLesson = onCall({ ...opts, timeoutSeconds: 120 }, async req => {
+  requireUser(req);
+  const topicId = str(req.data?.topicId, 40, '主題');
+  if (!/^[a-z0-9-]+$/.test(topicId)) throw new HttpsError('invalid-argument', '主題有誤');
+  const title = str(req.data?.title, 40, '主題名稱');
+  const focus = str(req.data?.focus, 200, '主題內容');
+  const kind: GenKind = req.data?.kind === 'native' || req.data?.kind === 'practice' ? req.data.kind : 'basic';
+  const level = parseLevel(req.data?.level);
+
+  // 快取依主題內容雜湊：內容一樣就共用，別人送不同內容也不會覆蓋到正式課程
+  const hash = createHash('sha1').update(`${title}|${focus}`).digest('hex').slice(0, 8);
+  const ref = db.doc(`lessons/${topicId}_${kind}_${level}_${hash}`);
+  const cached = await ref.get();
+  if (cached.exists) return { steps: cached.data()!.steps };
+
+  let steps: any[];
+  try {
+    const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
+    steps = await generateLesson(client, LESSON_MODEL, title, focus, kind, level);
+  } catch (e) {
+    console.error('aiLesson failed', e);
+    throw new HttpsError('internal', '課程產生失敗，請再試一次');
+  }
+  await ref.set({ steps, topicId, title, kind, level, createdAt: Date.now(), reviewed: false });
+  return { steps };
 });

@@ -101,8 +101,8 @@ export function ProgressBar({ value, color, height = 6, track }: { value: number
   );
 }
 
-export function ProgressRing({ value, size = 76, stroke = 8, color, children }: {
-  value: number; size?: number; stroke?: number; color?: string; children?: ReactNode;
+export function ProgressRing({ value, size = 76, stroke = 8, color, track, children }: {
+  value: number; size?: number; stroke?: number; color?: string; track?: string; children?: ReactNode;
 }) {
   const t = useTheme();
   const r = (size - stroke) / 2;
@@ -111,7 +111,7 @@ export function ProgressRing({ value, size = 76, stroke = 8, color, children }: 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size} style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}>
-        <Circle cx={size / 2} cy={size / 2} r={r} stroke={t.surface2} strokeWidth={stroke} fill="none" />
+        <Circle cx={size / 2} cy={size / 2} r={r} stroke={track ?? t.surface2} strokeWidth={stroke} fill="none" />
         <Circle cx={size / 2} cy={size / 2} r={r} stroke={color ?? t.primary} strokeWidth={stroke} fill="none"
           strokeDasharray={`${c} ${c}`} strokeDashoffset={c * (1 - pct)} strokeLinecap="round" />
       </Svg>

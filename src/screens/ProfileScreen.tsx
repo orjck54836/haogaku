@@ -5,12 +5,14 @@ import { Screen, T, Card, Button, Row, Divider, SectionTitle } from '../ui';
 import { useTheme, space } from '../theme';
 import { useAuth } from '../state/auth';
 import { useData, Goal } from '../state/data';
-import { levels } from '../content/curriculum';
+import { levelLabels } from '../content/curriculum';
 import { LevelId } from '../content/types';
+import { speakJa, setSpeechRate } from '../lib/speech';
 
 const goalLabel: Record<Goal, string> = { travel: '去日本旅行', study: '留學或打工度假', work: '日商工作', hobby: '興趣' };
 const paces = [30, 50, 80];
 const levelIds: LevelId[] = ['L1', 'L2', 'L3', 'L4'];
+const rates = [{ v: 1.0, l: '標準' }, { v: 0.85, l: '慢' }, { v: 1.15, l: '快' }];
 
 export default function ProfileScreen() {
   const t = useTheme();
@@ -18,7 +20,7 @@ export default function ProfileScreen() {
   const d = useData();
   const [busy, setBusy] = useState<string | null>(null);
   const name = a.user?.displayName || (a.isGuest ? '訪客' : a.user?.email?.split('@')[0]) || '學習者';
-  const levelTitle = levels.find(l => l.id === d.profile.startLevel)?.title;
+  const levelTitle = levelLabels[d.profile.startLevel];
 
   async function run(key: string, fn: () => Promise<void>, failTitle = '操作失敗') {
     setBusy(key);
@@ -91,7 +93,17 @@ export default function ProfileScreen() {
         <Row icon="speedometer-outline" iconColor={t.success} iconBg={t.successSoft} title="每日目標" subtitle={`${d.profile.dailyGoal} XP · 點一下切換`}
           onPress={() => d.setProfile({ dailyGoal: paces[(paces.indexOf(d.profile.dailyGoal) + 1) % paces.length] })} />
         <Divider />
-        <Row icon="layers-outline" iconColor={t.accent} iconBg={t.accentSoft} title="起始程度" subtitle={`${levelTitle} · 點一下切換`} onPress={cycleLevel} />
+        <Row icon="volume-high-outline" iconColor={t.warning} iconBg={t.warningSoft} title="語音速度"
+          subtitle={`${rates.find(r => r.v === d.profile.speechRate)?.l ?? '標準'} · 點一下切換`}
+          onPress={() => {
+            const i = rates.findIndex(r => r.v === d.profile.speechRate);
+            const next = rates[(i + 1) % rates.length];
+            d.setProfile({ speechRate: next.v });
+            setSpeechRate(next.v);
+            speakJa(next.l === '慢' ? 'ゆっくり話します。' : next.l === '快' ? '少し速く話します。' : '普通の速さで話します。');
+          }} />
+        <Divider />
+        <Row icon="layers-outline" iconColor={t.accent} iconBg={t.accentSoft} title="日語程度" subtitle={`${levelTitle} · 點一下切換`} onPress={cycleLevel} />
       </Card>
 
       <SectionTitle title="帳號" />

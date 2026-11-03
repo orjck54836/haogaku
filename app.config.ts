@@ -23,6 +23,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     ...(config.plugins ?? []),
     'expo-apple-authentication',
+    ['expo-speech-recognition', {
+      microphonePermission: '皓學日語需要使用麥克風，讓你用說的和 AI 練習日語會話。',
+      speechRecognitionPermission: '皓學日語需要使用語音辨識，把你說的日語轉成文字。',
+    }],
     // 填好 Google 設定後才啟用，未設定時不影響啟動
     ...(googleScheme ? [['@react-native-google-signin/google-signin', { iosUrlScheme: googleScheme }] as [string, any]] : []),
   ],

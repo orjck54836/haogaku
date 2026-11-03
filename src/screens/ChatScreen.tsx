@@ -7,9 +7,9 @@ import SaveButton from '../ui/SaveButton';
 import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
 import { scenarioById } from '../content/scenarios';
-import { lessonRef } from '../content/curriculum';
 import { aiChat, aiReport, ChatMsg, ChatReply } from '../lib/ai';
 import { speakJa, stopSpeech } from '../lib/speech';
+import { startListening, speechInputAvailable } from '../lib/stt';
 import { StackProps } from '../navigation';
 
 type Bubble =
@@ -22,10 +22,10 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   const t = useTheme();
   const d = useData();
   const scenario = scenarioById(route.params.scenarioId)!;
-  const level = route.params.lessonId ? lessonRef(route.params.lessonId)?.level.id ?? scenario.level : scenario.level;
+  const level = d.profile.startLevel;
 
-  const [bubbles, setBubbles] = useState<Bubble[]>([{ id: 'open', from: 'ai', ja: scenario.opening, zh: scenario.openingZh }]);
-  const [history, setHistory] = useState<ChatMsg[]>([{ role: 'assistant', content: scenario.opening }]);
+  const [bubbles, setBubbles] = useState<Bubble[]>(scenario.opening ? [{ id: 'open', from: 'ai', ja: scenario.opening, zh: scenario.openingZh ?? '' }] : []);
+  const [history, setHistory] = useState<ChatMsg[]>(scenario.opening ? [{ role: 'assistant', content: scenario.opening }] : []);
   const [hints, setHints] = useState<{ ja: string; zh: string }[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -33,9 +33,32 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   const [missionDone, setMissionDone] = useState(false);
   const [showZh, setShowZh] = useState<Record<string, boolean>>({});
   const list = useRef<FlatList<Bubble>>(null);
+  const [listening, setListening] = useState(false);
+  const stopRef = useRef<(() => void) | null>(null);
+  const sendRef = useRef<(t: string) => void>(() => {});
+  const voice = scenario.voice ?? 'female';
   const userTurns = history.filter(m => m.role === 'user').length;
 
-  useEffect(() => { speakJa(scenario.opening); return () => stopSpeech(); }, []);
+  useEffect(() => {
+    if (scenario.opening) speakJa(scenario.opening, voice);
+    else openWithAI();
+    return () => { stopSpeech(); stopRef.current?.(); };
+  }, []);
+
+  /** 沒有預設開場白的情境，由 AI 依角色先開口 */
+  async function openWithAI() {
+    setBusy(true);
+    try {
+      const r = await aiChat(scenario, level, []);
+      d.setAiRemaining(r.remaining);
+      setHistory([{ role: 'assistant', content: r.reply }]);
+      setBubbles([{ id: 'open', from: 'ai', ja: r.reply, reading: r.reading || undefined, zh: r.replyZh }]);
+      setHints(r.hints ?? []);
+      speakJa(r.reply, voice);
+    } catch (e: any) {
+      Alert.alert('無法開始會話', e.message, [{ text: '返回', onPress: () => navigation.goBack() }]);
+    } finally { setBusy(false); }
+  }
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -51,7 +74,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
 
   async function send(text: string) {
     const msg = text.trim();
-    if (!msg || busy) return;
+    if (!msg || busy || history.length === 0) return;
     if (msg.length > 200) return Alert.alert('句子太長了', '一次請輸入 200 字以內');
     if (userTurns >= MAX_TURNS) return Alert.alert('這場會話已經很充實了', '按右上角「結束並分析」看看你的表現吧');
     const myId = `me-${Date.now()}`;
@@ -68,7 +91,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
         { id: `ai-${Date.now()}`, from: 'ai', ja: r.reply, reading: r.reading || undefined, zh: r.replyZh },
       ]);
       setHints(r.hints ?? []);
-      speakJa(r.reply);
+      speakJa(r.reply, voice);
       if (r.missionComplete && !missionDone) setMissionDone(true);
     } catch (e: any) {
       // 失敗時把這句退回輸入框
@@ -98,6 +121,26 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     }
   }
 
+  sendRef.current = send;
+
+  async function toggleMic() {
+    if (listening) { stopRef.current?.(); return; }
+    if (busy) return;
+    try {
+      setInput('');
+      setListening(true);
+      stopRef.current = await startListening({
+        onPartial: text => setInput(text),
+        onFinal: text => { setInput(text); if (text.trim()) sendRef.current(text); },
+        onEnd: () => { setListening(false); stopRef.current = null; },
+        onError: message => { setListening(false); Alert.alert('語音輸入', message); },
+      });
+    } catch (e: any) {
+      setListening(false);
+      Alert.alert('語音輸入', e?.message ?? '無法使用麥克風');
+    }
+  }
+
   const renderItem = ({ item }: { item: Bubble }) => {
     if (item.from === 'ai') {
       const open = showZh[item.id];
@@ -109,7 +152,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
             {open ? <T variant="small" color={t.sub} style={{ marginTop: 6 }}>{item.zh}</T> : null}
           </View>
           <View style={{ flexDirection: 'row', gap: space.lg, marginTop: 6, paddingLeft: 4 }}>
-            <Pressable accessibilityRole="button" accessibilityLabel="播放" onPress={() => speakJa(item.ja)} hitSlop={8}>
+            <Pressable accessibilityRole="button" accessibilityLabel="播放" onPress={() => speakJa(item.ja, voice)} hitSlop={8}>
               <Ionicons name="volume-high-outline" size={18} color={t.sub} />
             </Pressable>
             <Pressable accessibilityRole="button" onPress={() => setShowZh(s => ({ ...s, [item.id]: !open }))} hitSlop={8}>
@@ -176,13 +219,27 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
           </ScrollView>
         ) : null}
 
+        {listening ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginHorizontal: space.lg, marginBottom: space.sm,
+            backgroundColor: t.primarySoft, borderRadius: radius.md, padding: space.md }}>
+            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: t.primary }} />
+            <T variant="small" color={t.primary} style={{ flex: 1, fontWeight: '700' }}>正在聽…用日文說說看，說完會自動送出</T>
+          </View>
+        ) : null}
+
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, padding: space.md, borderTopWidth: 1, borderTopColor: t.line, backgroundColor: t.surface }}>
-          <TextInput value={input} onChangeText={setInput} placeholder="用日文回覆，不會的話用中文也可以" placeholderTextColor={t.faint}
+          <Pressable accessibilityRole="button" accessibilityLabel={listening ? '停止收音' : '用說的'} onPress={toggleMic} disabled={busy}
+            style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: listening ? t.primary : t.primarySoft, opacity: busy ? 0.4 : 1 }}>
+            <Ionicons name={listening ? 'stop' : 'mic'} size={22} color={listening ? t.onPrimary : t.primary} />
+          </Pressable>
+          <TextInput value={input} onChangeText={setInput} editable={!listening}
+            placeholder={speechInputAvailable ? '按麥克風用說的，或輸入日文' : '輸入日文，不會的話用中文也可以'} placeholderTextColor={t.faint}
             multiline maxLength={200} accessibilityLabel="輸入回覆"
             style={{ flex: 1, minHeight: 44, maxHeight: 110, backgroundColor: t.surface2, borderRadius: radius.md, paddingHorizontal: space.md, paddingTop: 12, paddingBottom: 12, fontSize: 16, color: t.ink }} />
-          <Pressable accessibilityRole="button" accessibilityLabel="送出" onPress={() => send(input)} disabled={busy || !input.trim()}
-            style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: input.trim() && !busy ? t.primary : t.surface2, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="arrow-up" size={22} color={input.trim() && !busy ? t.onPrimary : t.faint} />
+          <Pressable accessibilityRole="button" accessibilityLabel="送出" onPress={() => send(input)} disabled={busy || listening || !input.trim()}
+            style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: input.trim() && !busy && !listening ? t.primary : t.surface2, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="arrow-up" size={22} color={input.trim() && !busy && !listening ? t.onPrimary : t.faint} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>

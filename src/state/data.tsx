@@ -5,6 +5,7 @@ import { db } from '../lib/firebase';
 import { useAuth } from './auth';
 import { LevelId } from '../content/types';
 import { today, yesterday, addDays } from '../lib/date';
+import { setSpeechRate } from '../lib/speech';
 
 export type Goal = 'travel' | 'study' | 'work' | 'hobby';
 
@@ -13,6 +14,7 @@ export type Profile = {
   goal: Goal;
   startLevel: LevelId;
   dailyGoal: number;      // 每日 XP 目標
+  speechRate: number;     // 語音速度
 };
 
 export type Progress = {
@@ -35,7 +37,7 @@ export type Word = {
 type Store = { profile: Profile; progress: Progress; words: Word[] };
 
 const emptyStore: Store = {
-  profile: { onboarded: false, goal: 'travel', startLevel: 'L1', dailyGoal: 50 },
+  profile: { onboarded: false, goal: 'travel', startLevel: 'L1', dailyGoal: 50, speechRate: 1.0 },
   progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null },
   words: [],
 };
@@ -116,6 +118,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setDoc(doc(db, 'users', uid), { ...ref.current, updatedAt: Date.now() }).catch(() => {});
     }, 1500);
   }
+
+  useEffect(() => { setSpeechRate(store.profile.speechRate); }, [store.profile.speechRate]);
 
   const withProgress = (fn: (p: Progress) => Progress) => commit(s => ({ ...s, progress: fn(s.progress) }));
 

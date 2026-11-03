@@ -22,9 +22,11 @@ import CheckScreen from './screens/CheckScreen';
 import ReviewScreen from './screens/ReviewScreen';
 import KanaChartScreen from './screens/KanaChartScreen';
 import SlangScreen from './screens/SlangScreen';
+import TopicScreen from './screens/TopicScreen';
 
 export type RootStack = {
   Tabs: undefined;
+  Topic: { topicId: string };
   Lesson: { lessonId: string };
   Chat: { scenarioId: string; lessonId?: string };
   Report: { report: ChatReport; scenarioId: string; lessonId?: string };
@@ -41,7 +43,7 @@ const Tab = createBottomTabNavigator<Tabs>();
 
 const tabIcons: Record<keyof Tabs, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap]> = {
   Home: ['home', 'home-outline'],
-  Course: ['map', 'map-outline'],
+  Course: ['grid', 'grid-outline'],
   AI: ['sparkles', 'sparkles-outline'],
   Words: ['bookmark', 'bookmark-outline'],
   Me: ['person-circle', 'person-circle-outline'],
@@ -61,7 +63,7 @@ function MainTabs() {
       ),
     })}>
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: '首頁' }} />
-      <Tab.Screen name="Course" component={CourseScreen} options={{ title: '課程' }} />
+      <Tab.Screen name="Course" component={CourseScreen} options={{ title: '主題' }} />
       <Tab.Screen name="AI" component={AIHubScreen} options={{ title: 'AI 教練' }} />
       <Tab.Screen name="Words" component={WordbookScreen} options={{ title: '單字本' }} />
       <Tab.Screen name="Me" component={ProfileScreen} options={{ title: '我的' }} />
@@ -92,6 +94,7 @@ export default function AppNavigator() {
         headerBackTitle: '返回', contentStyle: { backgroundColor: t.bg },
       }}>
         <Stack.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
+        <Stack.Screen name="Topic" component={TopicScreen} options={{ title: '' }} />
         <Stack.Screen name="Lesson" component={LessonScreen} options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'AI 會話' }} />
         <Stack.Screen name="Report" component={ReportScreen} options={{ title: '會話分析', headerBackVisible: false, gestureEnabled: false }} />

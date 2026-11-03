@@ -1,0 +1,88 @@
+import Anthropic from '@anthropic-ai/sdk';
+
+type Msg = { role: 'user' | 'assistant'; content: string };
+
+export type AskOptions = {
+  model: string;
+  system: string;
+  messages: Msg[];
+  maxTokens: number;
+  effort: 'low' | 'medium' | 'high';
+  schema?: Record<string, unknown>;   // 結構化輸出：保證回傳合法 JSON
+};
+
+function parseJSON(text: string): any {
+  const start = text.indexOf('{'), end = text.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('AI 回覆格式錯誤');
+  return JSON.parse(text.slice(start, end + 1));
+}
+
+/**
+ * 呼叫 Claude 並取得 JSON。
+ * 關閉「回答前思考」並降低投入程度，回覆才會快；若模型不支援某個設定，自動退回較簡單的設定再試。
+ */
+export async function askJSON(client: Anthropic, o: AskOptions): Promise<any> {
+  const base = { model: o.model, max_tokens: o.maxTokens, system: o.system, messages: o.messages };
+  const attempts: Record<string, unknown>[] = [
+    { ...base, thinking: { type: 'disabled' }, output_config: { effort: o.effort, ...(o.schema ? { format: { type: 'json_schema', schema: o.schema } } : {}) } },
+    { ...base, thinking: { type: 'disabled' }, output_config: { effort: o.effort } },
+    { ...base, output_config: { effort: 'low' } },
+    base,
+  ];
+  let lastError: unknown;
+  for (const params of attempts) {
+    try {
+      const res = await client.messages.create(params as any);
+      const text = res.content.map(b => (b.type === 'text' ? b.text : '')).join('');
+      return parseJSON(text);
+    } catch (e: any) {
+      lastError = e;
+      // 參數不支援（400）或格式錯誤 → 換下一種設定；其他錯誤（金鑰、額度、網路）直接回報
+      if (e?.status && e.status !== 400) throw e;
+      console.warn('askJSON attempt failed, trying simpler settings:', e?.message ?? e);
+    }
+  }
+  throw lastError;
+}
+
+// ---------- 各功能的 JSON 結構 ----------
+
+const str = { type: 'string' };
+const obj = (properties: Record<string, unknown>) => ({
+  type: 'object', properties, required: Object.keys(properties), additionalProperties: false,
+});
+const arr = (items: unknown) => ({ type: 'array', items });
+
+export const chatSchema = obj({
+  reply: str, reading: str, replyZh: str,
+  correction: { anyOf: [{ type: 'null' }, obj({ corrected: str, explanation: str })] },
+  hints: arr(obj({ ja: str, zh: str })),
+  missionComplete: { type: 'boolean' },
+});
+
+export const reportSchema = obj({
+  overall: { type: 'integer' },
+  scores: obj({ grammar: { type: 'integer' }, vocabulary: { type: 'integer' }, politeness: { type: 'integer' }, fluency: { type: 'integer' } }),
+  missionComplete: { type: 'boolean' },
+  summary: str,
+  strengths: arr(str),
+  improvements: arr(obj({ issue: str, better: str, explanation: str })),
+  keyPhrases: arr(obj({ ja: str, zh: str })),
+});
+
+export const checkSchema = obj({
+  natural: { type: 'boolean' }, corrected: str, explanation: str, politeness: str,
+  alternatives: arr(obj({ ja: str, zh: str, nuance: str })),
+});
+
+export const lessonSchema = obj({
+  steps: arr({
+    anyOf: [
+      obj({ type: { type: 'string', enum: ['learn'] }, ja: str, reading: str, zh: str, note: str }),
+      obj({
+        type: { type: 'string', enum: ['choice'] }, label: str, line: str, lineZh: str, question: str,
+        options: arr(obj({ text: str, sub: str, hint: str })), answer: { type: 'integer' }, explain: str,
+      }),
+    ],
+  }),
+});

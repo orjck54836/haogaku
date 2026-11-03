@@ -1,28 +1,28 @@
 import { useColorScheme } from 'react-native';
 import { DefaultTheme, DarkTheme, Theme as NavTheme } from '@react-navigation/native';
 
+// 品牌色：紅白
 const light = {
-  bg: '#F5F7FB', surface: '#FFFFFF', surface2: '#EEF1F7',
-  ink: '#0F1B2D', sub: '#5B677A', faint: '#8A94A6', line: '#E4E8F0',
-  primary: '#2F5BEA', primarySoft: '#E8EEFF', onPrimary: '#FFFFFF',
-  accent: '#E8577A', accentSoft: '#FDECF0',
-  success: '#14A06A', successSoft: '#E3F6EE',
-  warning: '#C97A0A', warningSoft: '#FDF3E1',
-  danger: '#D23B3B', dangerSoft: '#FCEBEB',
-  sign: '#14A06A',
-  shadow: 'rgba(15, 27, 45, 0.08)',
+  bg: '#FFFFFF', surface: '#FFFFFF', surface2: '#F7F2F2',
+  ink: '#1A1213', sub: '#6B5E60', faint: '#9C9092', line: '#EFE6E7',
+  primary: '#C8102E', primarySoft: '#FDEBEE', onPrimary: '#FFFFFF',
+  accent: '#E0283E', accentSoft: '#FDECEE',
+  success: '#1E9E62', successSoft: '#E5F5ED',
+  warning: '#C27A0E', warningSoft: '#FDF3E2',
+  danger: '#C8102E', dangerSoft: '#FDEBEE',
+  sign: '#C8102E',
+  shadow: 'rgba(120, 16, 32, 0.07)',
 };
 
 const dark: typeof light = {
-  bg: '#0B111A', surface: '#141C28', surface2: '#1B2433',
-  ink: '#EEF2F7', sub: '#A0ACBD', faint: '#6F7B8D', line: '#243042',
-  primary: '#7B97FF', primarySoft: '#1C2747', onPrimary: '#0B111A',
-  accent: '#F07C98', accentSoft: '#3A1F2A',
-  success: '#3CCB8E', successSoft: '#12372A',
+  bg: '#121011', surface: '#1C1819', surface2: '#272122', ink: '#F5EFEF', sub: '#B8ABAD', faint: '#7E7173', line: '#332B2C',
+  primary: '#FF4D64', primarySoft: '#3A1A20', onPrimary: '#FFFFFF',
+  accent: '#FF6275', accentSoft: '#3A1C22',
+  success: '#45C98A', successSoft: '#143526',
   warning: '#F2B44A', warningSoft: '#3A2C12',
-  danger: '#F07272', dangerSoft: '#3A1818',
-  sign: '#2DB87A',
-  shadow: 'rgba(0, 0, 0, 0.4)',
+  danger: '#FF6B7D', dangerSoft: '#3A1A20',
+  sign: '#E0283E',
+  shadow: 'rgba(0, 0, 0, 0.45)',
 };
 
 export type Theme = typeof light;

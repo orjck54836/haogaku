@@ -7,6 +7,7 @@ import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
 import { aiCheck, CheckResult } from '../lib/ai';
 import { speakJa } from '../lib/speech';
+import { startListening } from '../lib/stt';
 
 const examples = ['昨日、友達と一緒にラーメンを食べに行きました。', '私は台湾から来ます。', 'この服を試着してもいいですか？'];
 
@@ -17,6 +18,25 @@ export default function CheckScreen() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CheckResult | null>(null);
+  const [listening, setListening] = useState(false);
+  const [stop, setStop] = useState<(() => void) | null>(null);
+
+  async function toggleMic() {
+    if (listening) { stop?.(); return; }
+    try {
+      setListening(true); setError('');
+      const s = await startListening({
+        onPartial: v => setText(v),
+        onFinal: v => setText(v),
+        onEnd: () => { setListening(false); setStop(null); },
+        onError: m => { setListening(false); Alert.alert('語音輸入', m); },
+      });
+      setStop(() => s);
+    } catch (e: any) {
+      setListening(false);
+      Alert.alert('語音輸入', e?.message ?? '無法使用麥克風');
+    }
+  }
 
   async function check() {
     const v = text.trim();
@@ -49,7 +69,10 @@ export default function CheckScreen() {
           </Pressable>
         ))}
       </View>
-      <Button label="AI 檢查" icon="sparkles" loading={busy} style={{ marginTop: space.md }} onPress={check} />
+      <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.md }}>
+        <Button label={listening ? '停止' : '用說的'} icon={listening ? 'stop' : 'mic'} variant="secondary" style={{ flex: 1 }} onPress={toggleMic} />
+        <Button label="AI 檢查" icon="sparkles" loading={busy} disabled={listening} style={{ flex: 2 }} onPress={check} />
+      </View>
 
       {result ? (
         <Card style={{ marginTop: space.xl }}>
