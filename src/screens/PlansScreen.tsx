@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Alert, Pressable } from 'react-native';
+import { View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Sheet, T, Card, Button, Pill, Segmented, SectionTitle, Rule } from '../ui';
 import { Seal } from '../ui/seal';
@@ -28,20 +28,10 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
   const [cycle, setCycle] = useState<Cycle>('yearly');
   const current = planById(d.profile.plan);
 
-  function subscribe(p: Plan) {
-    // TODO：接 App Store / Google Play 訂閱，並在 Cloud Functions 驗證收據後才放寬額度。
-    // 不能在這裡直接改 profile.plan——那是存在手機上的值，改個 client 就免費升級了。
-    // 價格要跟著目前選的週期講。卡片上印年繳攤提的「NT$223/月」、
-    // 彈窗卻說「每月 NT$320」，使用者會以為自己看錯或被偷換價錢。
-    const priceText = cycle === 'yearly' && p.yearly
-      ? `年繳 NT$${p.yearly}（約每月 NT$${yearlyPerMonth(p)}）`
-      : `每月 NT$${p.monthly}`;
-    Alert.alert(
-      '付費方案即將開放',
-      `「${p.name}」${priceText}。\n\n訂閱功能還在跟 App Store 審核流程一起準備，開放後會在這裡通知你。在那之前所有課程與讀物都是免費的，AI 也有每日免費額度。`,
-      [{ text: '知道了' }],
-    );
-  }
+  // 這一頁只回答「我該買哪個」。付款條件（扣多少、什麼時候扣、怎麼取消）
+  // 交給購買頁去講——擠在比較表裡會把它們壓掉，而那正是審查在看的東西。
+  // 目前選的週期一起帶過去，使用者不用到了購買頁再選一次。
+  const subscribe = (p: Plan) => navigation.navigate('Purchase', { planId: p.id, cycle });
 
   return (
     <Screen shell padded={false}>

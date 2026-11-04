@@ -166,3 +166,28 @@ firebase deploy --only firestore:rules
 多行的 JSX 文字，原始碼換行會被當成一個半形空格。接在全形句號後面
 就會留下一個看得見的缺口（「各算一次。 一場完整的」）。
 一句話一個 `<T>`，或整句包成 `{'…'}` 字串，不要靠原始碼換行排版。
+
+## App icon
+
+`assets/icon.png` 是從 `assets/logo.png` 產出來的，不是手工檔案。要換 logo 就重跑產生程序。
+
+兩條硬規則：
+- **iOS 的 icon 必須 1024×1024 且不含 alpha 通道**。有透明度 App Store Connect 會直接退件，
+  所以產出時一定要把 logo 疊到不透明底色（目前用 theme 的 cream `#F8F3EA`）再存成 RGB。
+- 系統自己會把方形裁成圓角，logo 要留安全邊距（目前佔 82%）。Android 的 adaptive icon
+  foreground 相反：要保留透明，而且中心安全區只有約 66%，所以只放到 62%。
+
+Expo Go 裡**看不到自訂 icon**（顯示的是 Expo Go 自己的），要驗證得做 dev build 或 prebuild。
+
+## 購買流程
+
+方案比較（`PlansScreen`）和購買（`PurchaseScreen`）**刻意分成兩頁**：
+前者回答「我該買哪個」，後者回答「扣多少、什麼時候扣、怎麼取消」。
+擠在一起的話，比較的資訊會把付款條件壓掉——而付款條件正是審查在看的。
+
+購買頁的版面是照 App Store Guideline 3.1.2 排的，**這五項必須在購買當下同一畫面看得到**：
+訂閱名稱、期間長度、每期價格、服務條款連結、隱私權政策連結。少一項就是退件，
+不要為了版面好看拿掉。另外「還原購買」也是訂閱型 app 的必備項目。
+
+`legalLinks`（`src/content/links.ts`）目前指向官網首頁，**上架前一定要換成真正的條款頁**，
+指向首頁一樣會被退件。

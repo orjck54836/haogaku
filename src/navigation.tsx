@@ -7,6 +7,7 @@ import { useTheme, useNavTheme, fonts } from './theme';
 import { useAuth } from './state/auth';
 import { useData } from './state/data';
 import { ChatReport } from './lib/ai';
+import { PlanId } from './content/plans';
 
 import LoginScreen from './screens/LoginScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
@@ -26,6 +27,7 @@ import ReadingsScreen from './screens/ReadingsScreen';
 import ReadingScreen from './screens/ReadingScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import PlansScreen from './screens/PlansScreen';
+import PurchaseScreen from './screens/PurchaseScreen';
 import TopicScreen from './screens/TopicScreen';
 import LessonContentScreen from './screens/LessonContentScreen';
 import EditProfileScreen from './screens/EditProfileScreen';
@@ -45,6 +47,7 @@ export type RootStack = {
   Reading: { readingId: string };
   Leaderboard: undefined;
   Plans: undefined;
+  Purchase: { planId: PlanId; cycle?: 'monthly' | 'yearly' };
 };
 export type Tabs = { Home: undefined; Course: undefined; Readings: undefined; AI: undefined; Words: undefined; Me: undefined };
 export type StackProps<K extends keyof RootStack> = NativeStackScreenProps<RootStack, K>;
@@ -127,6 +130,10 @@ export default function AppNavigator() {
         <Stack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: '排行榜' }} />
         {/* 方案頁自己有深色殼和返回鈕，不用系統 header */}
         <Stack.Screen name="Plans" component={PlansScreen} options={{ headerShown: false }} />
+        {/* 購買頁也自己畫頂欄，而且用 modal 呈現——付款是一段有始有終的流程，
+            用往上推的卡片比橫向 push 更清楚它可以隨時關掉 */}
+        <Stack.Screen name="Purchase" component={PurchaseScreen}
+          options={{ headerShown: false, presentation: 'modal' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

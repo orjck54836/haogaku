@@ -40,6 +40,20 @@ export const officialLinks: OfficialLink[] = [
   },
 ];
 
+/**
+ * 法務連結。
+ *
+ * **上架前一定要換成真正的條款頁。** App Store 審查（Guideline 3.1.2）要求
+ * 訂閱頁面必須有「可以點、而且真的打得開」的服務條款與隱私權政策連結，
+ * 指向首頁會被退件。目前先指到官網，等頁面做好再換網址。
+ *
+ * 隱私權政策另外也是 App Store Connect 送審表單的必填欄位。
+ */
+export const legalLinks = {
+  terms: 'https://www.forma-global.com/study',
+  privacy: 'https://www.forma-global.com/study',
+};
+
 export const linkById = (id: string) => officialLinks.find(l => l.id === id);
 
 /** 有填網址的才拿去渲染 */

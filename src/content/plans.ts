@@ -56,6 +56,14 @@ export type Plan = {
   icon: IconName;
   /** 印在方案卡上的漢字章 */
   kanji: string;
+  /** 免費試用天數。0 或未填代表沒有試用 */
+  trialDays?: number;
+  /**
+   * App Store Connect 裡的產品 ID。
+   * 兩個方案 × 兩種週期共四個，要先在 App Store Connect 和 Google Play
+   * 建好同名的訂閱項目，IAP 才找得到。
+   */
+  productId?: { monthly: string; yearly: string };
 };
 
 export const plans: Plan[] = [
@@ -79,6 +87,8 @@ export const plans: Plan[] = [
     tagline: '每天練一場會話，夠用',
     monthly: 150, yearly: 1280,
     aiPerDay: 60, ttsPerDay: 600,
+    trialDays: 7,
+    productId: { monthly: 'haogaku.plus.monthly', yearly: 'haogaku.plus.yearly' },
     icon: 'flash-outline',
     perks: [
       '每天 60 次 AI（約 4〜6 場完整會話）',
@@ -92,6 +102,8 @@ export const plans: Plan[] = [
     tagline: '整天泡在日文裡的人',
     monthly: 320, yearly: 2680,
     aiPerDay: 300, ttsPerDay: 2000,
+    trialDays: 7,
+    productId: { monthly: 'haogaku.pro.monthly', yearly: 'haogaku.pro.yearly' },
     icon: 'infinite-outline',
     perks: [
       '每天 300 次 AI',
