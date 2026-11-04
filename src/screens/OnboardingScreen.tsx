@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Button, ProgressBar, IconName } from '../ui';
 import { useTheme, space, radius } from '../theme';
 import { useData, Goal } from '../state/data';
+import { track } from '../lib/analytics';
 import { LevelId } from '../content/types';
 
 type Opt<V> = { value: V; title: string; sub: string; icon: IconName };
@@ -83,8 +84,12 @@ export default function OnboardingScreen() {
       {step === 3 && <Choice opts={paces} value={pace} onChange={setPace} />}
       <View style={{ marginTop: space.xxl, gap: space.sm }}>
         <Button label={step < last ? '下一步' : '開始學習'} disabled={!canNext} onPress={() => {
-          if (step < last) setStep(step + 1);
-          else setProfile({ onboarded: true, nickname: nickname.trim(), goal, startLevel: level, dailyGoal: pace });
+          if (step < last) { track('onboarding_step', { step: step + 1 }); setStep(step + 1); }
+          else {
+            // 這是整個漏斗的第一個關口：裝了 app 卻沒走完設定的人，後面全部看不到
+            track('onboarding_complete', { goal, level, daily_goal: pace });
+            setProfile({ onboarded: true, nickname: nickname.trim(), goal, startLevel: level, dailyGoal: pace });
+          }
         }} />
         {step > 0 ? <Button label="上一步" variant="ghost" onPress={() => setStep(step - 1)} /> : null}
       </View>

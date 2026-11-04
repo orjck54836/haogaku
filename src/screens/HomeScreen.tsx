@@ -8,6 +8,7 @@ import {
 } from '../ui';
 import { TopBar, WineCard, BrandFooter } from '../ui/brand';
 import { TopicThumb } from '../ui/seal';
+import { PlanButton } from '../ui/PlanButton';
 import { photoFor, uiPhotos } from '../ui/images';
 import { useTheme, space, radius, fonts, type } from '../theme';
 import { useData } from '../state/data';
@@ -58,7 +59,7 @@ export default function HomeScreen() {
       {/* 深色殼：頂列＋酒紅大卡 */}
       <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
         {/* 左邊不放漢堡：它去的「單字複習」下面的白面板已經有一格，重複的入口只是噪音 */}
-        <TopBar right={<AccountButton onPress={() => goTab('Me')} />} />
+        <TopBar right={<PlanButton />} />
 
         <WineCard style={{ marginTop: space.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>
@@ -263,24 +264,3 @@ function PlanRow({ n, title, sub, onPress, done }: { n: string; title: string; s
   );
 }
 
-/**
- * 右上角的「我的」入口。
- *
- * 原本是放暱稱首字的金色頭像，但一個字的圓圈看起來像裝飾或等級徽章，
- * 實測看不出來可以點、更看不出來點了會去「我的」。改成人像圖示＋外圈，
- * 人像是各家 app 都用的帳號符號，不必靠文字就認得。
- * TopBar 的右欄固定 44pt，塞不下寫字的 Pill，只能靠圖示本身講清楚。
- */
-function AccountButton({ onPress }: { onPress: () => void }) {
-  const t = useTheme();
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel="我的" onPress={onPress} hitSlop={10}
-      style={({ pressed }) => ({
-        width: 44, height: 44, borderRadius: 22, backgroundColor: t.gold,
-        borderWidth: 2, borderColor: 'rgba(255,255,255,0.45)',
-        alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.75 : 1,
-      })}>
-      <Ionicons name="person" size={21} color="#231A08" />
-    </Pressable>
-  );
-}

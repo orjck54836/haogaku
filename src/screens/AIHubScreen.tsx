@@ -4,12 +4,12 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { TopBar, WineCard } from '../ui/brand';
-import { Screen, Sheet, T, Card, Pill, RoundButton, Avatar, SectionTitle, StationSign, IconBox } from '../ui';
+import { PlanButton } from '../ui/PlanButton';
+import { Screen, Sheet, T, Card, Pill, RoundButton, SectionTitle, StationSign, IconBox } from '../ui';
 import { TopicThumb } from '../ui/seal';
 import CategoryChips, { CatFilter } from '../ui/CategoryChips';
 import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
-import { useAuth } from '../state/auth';
 import { topics, categories } from '../content/topics';
 import { photoFor, uiPhotos } from '../ui/images';
 import { RootStack } from '../navigation';
@@ -20,21 +20,18 @@ export default function AIHubScreen() {
   const t = useTheme();
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
   const { progress, profile, reports } = useData();
-  const a = useAuth();
   const [cat, setCat] = useState<CatFilter>('all');
   const list = cat === 'all' ? topics : topics.filter(x => x.cat === cat);
-  const name = profile.nickname || a.user?.displayName || '';
   const plan = planById(profile.plan);
-  const goTab = (screen: string) => (nav as any).navigate('Tabs', { screen });
 
   return (
     <Screen shell padded={false}>
       {/* 深色殼：和首頁同一套骨架——殼 → 酒紅大卡 → 白面板往上疊 */}
       <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
         {/* TopBar 的左右欄固定 44pt，塞寬的 Pill 進去字會被擠成直排。
-            這裡和首頁放一樣的 44pt 頭像，整條的高度和留白才對得上。
+            和首頁放同一顆 44pt 方案鈕，整條的高度和留白才對得上。
             AI 額度移到卡片裡——那裡才有寬度把單位講清楚。 */}
-        <TopBar right={<Avatar name={name || '學'} size={44} onPress={() => goTab('Me')} bg={t.gold} fg="#231A08" />} />
+        <TopBar right={<PlanButton />} />
 
         <WineCard style={{ marginTop: space.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>

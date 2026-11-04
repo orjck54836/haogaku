@@ -31,11 +31,14 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == uid;
       allow create, update: if request.auth != null
         && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['name', 'jaName', 'xp', 'lv', 'streak', 'lessons', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['name', 'jaName', 'photo', 'xp', 'lv', 'streak', 'lessons', 'updatedAt'])
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 12
         && request.resource.data.jaName is string
         && request.resource.data.jaName.size() <= 12
+        // 只收網址字串，長度擋住有人拿這個欄位塞 base64 圖片進來
+        && request.resource.data.photo is string
+        && request.resource.data.photo.size() <= 500
         && request.resource.data.xp is int && request.resource.data.xp >= 0
         && request.resource.data.lv is int
         && request.resource.data.streak is int
@@ -72,6 +75,25 @@ service cloud.firestore {
     match /admins/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow write: if false;
+    }
+
+    // 內容檢舉。
+    //
+    // AI 是即時生成的，不可能事前審完每一句，所以 App Store 會看「使用者遇到
+    // 不當內容時能不能回報」。這裡只開 create：檢舉送得進來，但誰都讀不到、
+    // 也改不掉自己送出的那一筆（包含檢舉人自己）——檢舉內容裡有對話片段，
+    // 讀取權限開給任何人都是把別人的會話攤開。處理從 Firebase 主控台看。
+    //
+    // hasOnly 鎖欄位的理由和排行榜一樣：擋住有人改 client 往這裡塞東西。
+    match /contentReports/{id} {
+      allow read, update, delete: if false;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['uid', 'scenario', 'reason', 'text', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 40
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 1000;
     }
 
     // 付費資格。

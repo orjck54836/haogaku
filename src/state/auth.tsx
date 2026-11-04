@@ -10,6 +10,7 @@ import {
 } from 'firebase/auth';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { track } from '../lib/analytics';
 
 /** 已綁定的登入方式，例如 apple.com、google.com */
 export type ProviderId = 'apple.com' | 'google.com' | 'password';
@@ -131,16 +132,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signInGuest() {
     await signInAnonymously(auth);
+    track('login', { method: 'guest' });
   }
 
   async function signInGoogle() {
     const cred = await googleCredential();
-    if (cred) await applyCredential(cred);
+    if (!cred) return;
+    await applyCredential(cred);
+    track('login', { method: 'google' });
   }
 
   async function signInApple() {
     const r = await appleCredential();
-    if (r) await applyCredential(r.cred);
+    if (!r) return;
+    await applyCredential(r.cred);
+    track('login', { method: 'apple' });
   }
 
   async function unlinkProvider(id: ProviderId) {

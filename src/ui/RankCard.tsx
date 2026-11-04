@@ -1,5 +1,9 @@
-import { View } from 'react-native';
+import { View, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { T, ProgressBar, Card } from './index';
+import type { RootStack } from '../navigation';
 import { Seal } from './seal';
 import { useTheme, space, fonts } from '../theme';
 import { rankState, ranks } from '../lib/rank';
@@ -14,14 +18,22 @@ import { rankState, ranks } from '../lib/rank';
  * 段位名用明體（它是日文），Lv. 數字用系統字重字重，和全 app 的規則一致。
  */
 
-/** 一行式：首頁白面板裡那條。深色背景上用 onDark */
+/**
+ * 一行式：首頁白面板裡那條。深色背景上用 onDark。
+ *
+ * 整條可以點，進去看全部十段——「Lv.1 旅人」會讓人想知道後面還有什麼，
+ * 但這條只講得出下一段差幾 XP。右邊補一個 chevron，不然看不出來能點。
+ */
 export function RankRow({ xp, onDark }: { xp: number; onDark?: boolean }) {
   const t = useTheme();
+  const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
   const r = rankState(xp);
   const fg = onDark ? '#FFFFFF' : t.ink;
   const sub = onDark ? 'rgba(255,255,255,0.7)' : t.sub;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`段位 Lv.${r.rank.n} ${r.rank.name}，查看所有段位`}
+      onPress={() => nav.navigate('Ranks')}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.md, opacity: pressed ? 0.7 : 1 })}>
       <Seal kanji={r.rank.kanji} size={44} tone={onDark ? 'gold' : 'wine'} />
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
@@ -39,7 +51,8 @@ export function RankRow({ xp, onDark }: { xp: number; onDark?: boolean }) {
           {r.next ? `還差 ${r.toNext} XP` : '已滿級'}
         </T>
       </View>
-    </View>
+      <Ionicons name="chevron-forward" size={16} color={sub} />
+    </Pressable>
   );
 }
 

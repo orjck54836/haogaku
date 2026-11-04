@@ -8,6 +8,7 @@ import { DefaultTheme, Theme as NavTheme } from '@react-navigation/native';
 //    不要用髮絲線切版面，用色塊和圓角。
 // 3. 標題用重字重（800）＋負字距。中日文混排時負字距給 -0.3 就好，不要像拉丁文那麼緊。
 // 4. 一個畫面只有一塊飽和色鋪滿。其餘是白、淺灰、黑。
+// 5. 卡片靠陰影浮起來，不靠邊框。陰影一律從 `shadows`／`tintedShadow` 拿，不要在畫面裡自己調。
 //
 // App 固定淺色（app.config.ts 也設 userInterfaceStyle: 'light'）。
 const light = {
@@ -35,7 +36,8 @@ const light = {
   danger: '#B8261B', dangerSoft: '#FBE9E7',
 
   sign: '#8A2432',
-  shadow: 'rgba(20, 16, 18, 0.10)',
+  // 偏暖的墨色，不用純黑——純黑壓在米白底上會變成灰，跟 cream／酒紅不同家
+  shadow: 'rgba(43, 16, 23, 0.13)',
 
   // 舊 token，等同 primary（保留以免其他畫面編譯失敗，新程式請用 primary）
   accent: '#8A2432', accentSoft: '#F7EBEC',
@@ -88,3 +90,32 @@ export const type = {
   /** 大數字：重字重、負字距 */
   numeral: { fontSize: 32, fontWeight: '800' as const, letterSpacing: -1.2 },
 };
+
+/**
+ * 陰影：卡片的立體感全部從這裡拿，不要在畫面裡自己寫 shadowRadius。
+ *
+ * 四級的差別是「離底多遠」，不是「多黑」——顏色固定用品牌的深酒紅墨
+ * （純黑在米白底上會灰掉，偏暖的墨才跟 cream／酒紅同一家）。
+ * sm 給磚和列，md 是卡片預設，lg 給浮在深色殼上的大卡，xl 給 Modal／置頂面板。
+ *
+ * 兩個實際踩過的點：
+ * - `overflow: 'hidden'` 會把 iOS 的陰影一起關掉（masksToBounds）。
+ *   要裁圖又要陰影時，陰影下在**外層 wrapper**，裁切留給內層。
+ * - Android 只認 elevation，而且 elevation 同時決定陰影和疊放層級，
+ *   所以數字刻意壓小，避免卡片蓋掉本來該在上面的東西。
+ */
+export const shadows = {
+  sm: { shadowColor: light.shadow, shadowOpacity: 1, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+  md: { shadowColor: light.shadow, shadowOpacity: 1, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
+  lg: { shadowColor: light.shadow, shadowOpacity: 1, shadowRadius: 26, shadowOffset: { width: 0, height: 12 }, elevation: 6 },
+  xl: { shadowColor: light.shadow, shadowOpacity: 1, shadowRadius: 34, shadowOffset: { width: 0, height: 18 }, elevation: 10 },
+};
+
+/**
+ * 彩色卡片用自己的顏色當陰影，濃度再加重。
+ * 中性灰陰影壓在飽和色塊下面會看起來髒（像蒙了一層灰），同色系才乾淨。
+ */
+export function tintedShadow(color: string, level: 'md' | 'lg' | 'xl' = 'lg') {
+  // 0.22 是實機調出來的上限，再高就從「影子」變成一圈粉紅光暈
+  return { ...shadows[level], shadowColor: color, shadowOpacity: 0.22, shadowRadius: shadows[level].shadowRadius * 0.7 };
+}

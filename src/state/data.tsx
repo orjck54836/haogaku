@@ -26,6 +26,11 @@ export type Profile = {
   nickname: string;       // 暱稱（顯示在 app 裡）
   jaName: string;         // 日文稱呼，例如「ケン」，選填
   intro: string;          // 一句話自我介紹，選填
+  /**
+   * 大頭照的網址（Firebase Storage）。空字串代表沒設，畫面退回名字首字的色塊。
+   * 這裡只存網址不存圖：users/{uid} 是整份重寫的，圖塞進來等於每次加 XP 都重傳一次。
+   */
+  photo: string;
   goal: Goal;
   startLevel: LevelId;
   dailyGoal: number;      // 每日 XP 目標
@@ -67,7 +72,7 @@ export type Word = {
 type Store = { profile: Profile; progress: Progress; words: Word[]; reports: SavedReport[] };
 
 const emptyStore: Store = {
-  profile: { onboarded: false, nickname: '', jaName: '', intro: '', goal: 'travel', startLevel: 'L2', dailyGoal: 50, speechRate: 1.0, leaderboard: true, plan: 'free' },
+  profile: { onboarded: false, nickname: '', jaName: '', intro: '', photo: '', goal: 'travel', startLevel: 'L2', dailyGoal: 50, speechRate: 1.0, leaderboard: true, plan: 'free' },
   progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null, review: emptyReview },
   words: [],
   reports: [],
@@ -89,6 +94,13 @@ export type LeaderRow = {
   uid: string;
   name: string;
   jaName: string;
+  /**
+   * 大頭照網址。空字串代表沒設，榜上退回段位印章。
+   *
+   * 這是榜上唯一一個「使用者自己上傳的內容」，所以它是參加排行榜的**代價之一**：
+   * 參加 = 暱稱、XP、照片都會被其他登入者看到。設定頁那一列有寫清楚。
+   */
+  photo: string;
   xp: number;
   lv: number;
   streak: number;
@@ -109,6 +121,7 @@ function leaderRow(uid: string, s: Store): Omit<LeaderRow, 'uid'> {
   return {
     name: (s.profile.nickname || '').trim().slice(0, 12) || '學習者',
     jaName: (s.profile.jaName || '').trim().slice(0, 12),
+    photo: s.profile.photo || '',
     xp: s.progress.xp,
     lv: rankOf(s.progress.xp).n,
     streak: s.progress.streak,
@@ -268,7 +281,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       withProgress(p => ({
         ...p, resume: null, completed: p.completed.includes(id) ? p.completed : [...p.completed, id],
       }));
-      if (first) track(isReadingLesson(id) ? 'reading_complete' : 'lesson_complete', { level: ref.current.profile.startLevel });
+      if (first) {
+        const done = ref.current.progress.completed.filter(x => !isReadingLesson(x)).length;
+        track(isReadingLesson(id) ? 'reading_complete' : 'lesson_complete', { level: ref.current.profile.startLevel });
+        // 「有沒有完成第一堂課」是留存最強的單一指標，所以另外送一筆。
+        // GA4 的轉換要能單獨選一個事件名，混在 lesson_complete 的參數裡挑不出來。
+        if (!isReadingLesson(id) && done === 0) track('first_lesson_complete', { level: ref.current.profile.startLevel });
+      }
     },
     setResume: (lessonId, step) => withProgress(p => ({ ...p, resume: { lessonId, step } })),
     clearResume: () => withProgress(p => ({ ...p, resume: null })),

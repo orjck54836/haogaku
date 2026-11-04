@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { View, Image, Text } from 'react-native';
 import Svg, { Path, Defs, Pattern, Rect } from 'react-native-svg';
-import { useTheme, space, radius, fonts, type } from '../theme';
+import { useTheme, space, radius, fonts, type, tintedShadow } from '../theme';
 
 /** 皓學 Logo：assets/logo.png（建議 512×512 以上、透明背景 PNG） */
 const LOGO = require('../../assets/logo.png');
@@ -21,32 +21,56 @@ export function GoldRule({ width = 40, style }: { width?: number | `${number}%`;
 /**
  * 字標：深色殼上的品牌名。
  *
- * 原本是描邊 pill，拿掉外框了——頂列的左右已經各有一顆圓形元件，
- * 中間再框一個會變成三個互相競爭的形狀；字標本來就該是最輕的那個。
- * 外框一拿掉就沒有東西幫它撐出存在感，所以 logo 和字一起放大。
+ * 靠左，而且是**兩行的 lockup**：中文名下面壓一行小假名。
+ * 單獨一行「皓學日語」靠左之後右邊會空一大塊，整條頂列看起來像沒排完；
+ * 補上假名之後字標本身有了高度，和右邊 44pt 的方案鈕在視覺上對得起來，
+ * 而且假名小標是全 app 都在用的語彙（每個分頁標題上面都有一行）。
+ *
+ * logo 加了一圈極淡的白邊和陰影：酒紅深殼上，圓形白底 logo 的邊緣會糊進背景，
+ * 一圈 1pt 的半透明白就能把它切出來。
  */
 export function Wordmark({ onDark = true }: { onDark?: boolean }) {
   const t = useTheme();
   const fg = onDark ? '#FFFFFF' : t.ink;
+  const sub = onDark ? 'rgba(255,255,255,0.5)' : t.faint;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-      {/* logo 仍然比字高一點點，看得出是圖標而不是另一個字 */}
-      <Logo size={30} />
-      <Text style={{ fontFamily: fonts.serif, fontSize: 19, color: fg, letterSpacing: 1 }}>皓學日語</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <View style={{
+        width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center',
+        borderWidth: 1, borderColor: onDark ? 'rgba(255,255,255,0.22)' : 'transparent',
+        ...(onDark ? { shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } } : null),
+      }}>
+        <Logo size={30} rounded />
+      </View>
+      <View>
+        <Text style={{ fontFamily: fonts.serif, fontSize: 19, color: fg, letterSpacing: 1.5, includeFontPadding: false }}>
+          皓學日語
+        </Text>
+        {/* 假名用更寬的字距：日文小標排得開才像標示，擠在一起像註解 */}
+        <Text style={{ fontFamily: fonts.serifRegular, fontSize: 9.5, color: sub, letterSpacing: 2.5, marginTop: 3, includeFontPadding: false }}>
+          こうがく にほんご
+        </Text>
+      </View>
     </View>
   );
 }
 
 /**
- * 深色殼上的頂列：左邊圓鈕、中間字標、右邊頭像。
- * children 放右邊的東西（通常是頭像）。
+ * 深色殼上的頂列：左邊是字標，右邊是方案鈕。
+ *
+ * 字標靠左（原本置中）。置中的字標會和右邊的方案鈕形成兩個對稱的重量，
+ * 看起來像兩個並列的東西；品牌名本來就該是這一條的起點，靠左才有主從。
+ * 有返回鈕的頁面（方案頁）就把返回鈕排在字標前面，字標跟著往右移。
  */
 export function TopBar({ left, right }: { left?: ReactNode; right?: ReactNode }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: space.sm }}>
-      <View style={{ width: 44, alignItems: 'flex-start' }}>{left}</View>
+    <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+      {left}
       <Wordmark />
-      <View style={{ width: 44, alignItems: 'flex-end' }}>{right}</View>
+      {/* 把右邊的東西推到底：中間留白而不是用 space-between，
+          左邊有返回鈕時字標才會緊跟著它，不會被拉開 */}
+      <View style={{ flex: 1 }} />
+      {right}
     </View>
   );
 }
@@ -118,11 +142,20 @@ export function BrandFooter({ text = '皓學日語 · FORMA Global' }: { text?: 
 }
 
 /** 酒紅大卡：版面上唯一鋪滿的飽和色塊 */
-export function WineCard({ children, style }: { children: ReactNode; style?: object }) {
+export function WineCard({ children, style, clip }: {
+  children: ReactNode; style?: object;
+  /** 卡內有鋪底照片時打開。不要自己在 style 下 overflow:'hidden'——那會連帶把陰影關掉 */
+  clip?: boolean;
+}) {
   const t = useTheme();
+  // 陰影用酒紅自己的顏色：中性灰壓在飽和色下面會看起來髒。
+  // 要裁圖就多包一層，因為 overflow:'hidden' 和陰影不能在同一個 View 上。
   return (
-    <View style={[{ backgroundColor: t.primary, borderRadius: radius.xl, padding: space.xl }, style]}>
-      {children}
+    <View style={{ ...tintedShadow(t.primary), borderRadius: radius.xl }}>
+      <View style={[{ backgroundColor: t.primary, borderRadius: radius.xl, padding: space.xl },
+        clip ? { overflow: 'hidden' as const } : null, style]}>
+        {children}
+      </View>
     </View>
   );
 }

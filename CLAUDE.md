@@ -59,11 +59,31 @@ Metro 要背景跑並導到 log 檔再輪詢——直接接 `| tail` 會卡住�
 
 ## 新裝的原生模組不要頂層 import
 
-`expo-*` 這類有原生模組的套件，**用到才 require，並且包 try/catch**：
+`expo-*` 這類有原生模組的套件，**用到才 require，而且 require 之前先探原生模組在不在**：
 
 ```ts
-function loadX() { try { return require('expo-x'); } catch { return null; } }
+import { requireOptionalNativeModule } from 'expo-modules-core';
+
+// 探測結果 cache 起來：這種函式常常被放在 render 的判斷式裡
+let cached: any | null | undefined;
+function loadX() {
+  if (cached !== undefined) return cached;
+  try {
+    // 找不到回 null、不丟錯。確定在才 require，throw 就不會發生
+    if (!requireOptionalNativeModule('ExpoX')) return (cached = null);
+    cached = require('expo-x');
+  } catch { cached = null; }
+  return cached;
+}
 ```
+
+**只包 try/catch 不夠。** `expo-notifications` 就這樣漏過去：它的 index 在載入時會一口氣
+抓一整排原生模組（`ExpoPushTokenManager`、channel、scheduler…），實際炸掉的是推播 token
+那個，而那個 throw 沒有留在我們的 try 裡，變成 uncaught 直接白畫面。
+探測要探「這個套件載入時會用到的」模組名，不是只探你自己要呼叫的那個。
+
+**載入判斷不要寫在 render 的判斷式裡**，在 `useEffect` 裡問一次存進 state：
+在 render 裡丟錯是整頁白掉，在 effect 裡最多是那一列不顯示。
 
 原因：這種套件在 import 當下就會 `requireNativeModule`。原生模組是編進 binary 的，
 `npx expo install` 不會讓它出現在**已經裝在手機上的 dev client** 裡，

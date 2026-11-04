@@ -6,7 +6,7 @@ import { track } from '../lib/analytics';
 import { TopBar, WineCard } from '../ui/brand';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
-import { plans, planById, freeForever, YEARLY_AVAILABLE, Plan, PlanId } from '../content/plans';
+import { plans, planById, freeForever, YEARLY_AVAILABLE, IAP_AVAILABLE, Plan, PlanId } from '../content/plans';
 import { topicPhotos } from '../ui/images';
 import { StackProps } from '../navigation';
 
@@ -53,7 +53,7 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
             <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
           </Pressable>} />
 
-        <WineCard style={{ marginTop: space.lg, overflow: 'hidden' }}>
+        <WineCard clip style={{ marginTop: space.lg }}>
           {/* 底圖只當質感，上面壓單層平光遮罩（不疊多層假漸層，實機上會看到灰帶） */}
           <Image source={topicPhotos.sightseeing!} resizeMode="cover"
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
@@ -95,7 +95,18 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
         <SectionTitle title="AI 用量方案" ja="プラン"
           right={<T variant="caption" color={t.faint}>可隨時取消</T>} />
 
-        {!YEARLY_AVAILABLE ? (
+        {/* 還沒接金流時先把話講在前面：先讓人看完方案再按到不能點的鈕，是最差的順序 */}
+        {!IAP_AVAILABLE ? (
+          <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center',
+            backgroundColor: t.surface2, borderRadius: radius.lg, padding: space.md }}>
+            <Ionicons name="time-outline" size={17} color={t.sub} />
+            <T variant="small" color={t.sub} style={{ flex: 1, lineHeight: 20 }}>
+              {'付費方案還在準備中，目前所有人都是免費方案。下面是開放後的內容。'}
+            </T>
+          </View>
+        ) : null}
+
+        {!YEARLY_AVAILABLE && IAP_AVAILABLE ? (
           <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center',
             backgroundColor: t.surface2, borderRadius: radius.lg, padding: space.md }}>
             <Ionicons name="calendar-outline" size={17} color={t.sub} />
@@ -106,7 +117,7 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
         <View style={{ gap: space.lg, marginTop: space.xl }}>
           {plans.map(p => (
             <PlanCard key={p.id} plan={p} current={p.id === d.profile.plan}
-              onPress={p.monthly ? () => subscribe(p) : undefined} />
+              onPress={p.monthly && IAP_AVAILABLE ? () => subscribe(p) : undefined} />
           ))}
         </View>
 
@@ -203,6 +214,9 @@ function PlanCard({ plan, current, onPress }: {
       {onPress ? (
         <Button label={`選擇${plan.name}`} variant={featured ? 'gold' : 'primary'} size="md"
           style={{ marginTop: space.lg }} onPress={onPress} />
+      ) : plan.monthly ? (
+        <Button label="日後推出" variant="secondary" size="md" disabled
+          style={{ marginTop: space.lg }} onPress={() => {}} />
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: space.lg }}>
           <Ionicons name="checkmark-circle" size={15} color={t.success} />

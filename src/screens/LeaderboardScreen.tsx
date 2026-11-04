@@ -3,7 +3,7 @@ import { View, ScrollView, RefreshControl, ActivityIndicator, Pressable, Text } 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
-import { T, Card, Pill, Button, Rule } from '../ui';
+import { T, Card, Pill, Button, Rule, Avatar } from '../ui';
 import { Seal } from '../ui/seal';
 import { PageHeader } from '../ui/brand';
 import { useTheme, space, radius, fonts } from '../theme';
@@ -93,7 +93,7 @@ export default function LeaderboardScreen() {
           {!d.profile.leaderboard ? (
             <View style={{ marginTop: space.md }}>
               <T variant="caption" color={t.sub}>
-                你目前沒有出現在排行榜上。要參加的話，到「我的 → 學習設定 → 排行榜」打開。
+                你目前沒有出現在排行榜上。要參加的話，到「我的 → 學習設定 → 排行榜」打開（暱稱、大頭照與 XP 會讓其他學員看到）。
               </T>
             </View>
           ) : null}
@@ -148,7 +148,11 @@ function LeaderItem({ row, place, isMe }: { row: LeaderRow; place: number; isMe:
           {place}
         </Text>
       </View>
-      <Seal kanji={rank.kanji} size={38} tone={place <= 3 ? 'gold' : 'soft'} />
+      {/* 有大頭照就放照片，沒有才退回段位印章——
+          照片和印章同樣是 38pt 的方形／圓形色塊，換過來排版不會跳 */}
+      {row.photo
+        ? <Avatar name={row.name} photo={row.photo} size={38} bg={place <= 3 ? t.gold : t.surface2} fg={t.sub} />
+        : <Seal kanji={rank.kanji} size={38} tone={place <= 3 ? 'gold' : 'soft'} />}
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <T variant="heading" numberOfLines={1} style={{ flexShrink: 1 }}>{row.name}</T>

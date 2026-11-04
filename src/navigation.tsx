@@ -1,5 +1,6 @@
+import { useRef } from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +9,7 @@ import { useAuth } from './state/auth';
 import { useData } from './state/data';
 import type { ReportBody } from './lib/reports';
 import { PlanId } from './content/plans';
+import { trackScreen } from './lib/analytics';
 
 import LoginScreen from './screens/LoginScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
@@ -26,6 +28,7 @@ import SlangScreen from './screens/SlangScreen';
 import ReadingsScreen from './screens/ReadingsScreen';
 import ReadingScreen from './screens/ReadingScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
+import RanksScreen from './screens/RanksScreen';
 import PlansScreen from './screens/PlansScreen';
 import PurchaseScreen from './screens/PurchaseScreen';
 import TopicScreen from './screens/TopicScreen';
@@ -47,6 +50,7 @@ export type RootStack = {
   Slang: undefined;
   Reading: { readingId: string };
   Leaderboard: undefined;
+  Ranks: undefined;
   Plans: undefined;
   Purchase: { planId: PlanId; cycle?: 'monthly' | 'yearly' };
 };
@@ -103,13 +107,33 @@ export default function AppNavigator() {
   const { user, ready } = useAuth();
   const { loaded, profile } = useData();
 
+  /**
+   * screen_view 集中在這裡送，不要散到每個畫面的 useEffect——
+   * 22 個畫面各寫一次，遲早會有人新增畫面時忘記，而漏掉的那一頁在報表上
+   * 不是「數字偏低」而是「完全不存在」，很難發現。
+   * 用 getCurrentRoute 而不是從 state 推：它回報的是使用者真正在看的那一頁，
+   * 分頁內的子頁也算得進去。
+   *
+   * **這兩個 useRef 一定要在下面那幾個提早 return 的上面。**
+   * 放在後面的話，登入前後呼叫到的 Hook 數量不一樣，React 會噴
+   * 「change in the order of Hooks」——而且是在載入完成的那一刻才炸。
+   */
+  const navRef = useRef<NavigationContainerRef<RootStack>>(null);
+  const lastScreen = useRef<string | null>(null);
+  const report = () => {
+    const name = navRef.current?.getCurrentRoute()?.name;
+    if (!name || name === lastScreen.current) return;
+    lastScreen.current = name;
+    trackScreen(name);
+  };
+
   if (!ready) return <Loading />;
   if (!user) return <LoginScreen />;
   if (!loaded) return <Loading />;
   if (!profile.onboarded) return <OnboardingScreen />;
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} ref={navRef} onReady={report} onStateChange={report}>
       <Stack.Navigator screenOptions={{
         headerTintColor: t.ink, headerStyle: { backgroundColor: t.bg }, headerShadowVisible: false,
         headerTitleStyle: { color: t.heading, fontSize: 17, fontWeight: '700' },
@@ -131,6 +155,7 @@ export default function AppNavigator() {
         {/* 讀物的標題橫幅要頂到畫面最上緣，所以不用系統 header，返回靠手勢和底部按鈕 */}
         <Stack.Screen name="Reading" component={ReadingScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: '排行榜' }} />
+        <Stack.Screen name="Ranks" component={RanksScreen} options={{ title: '段位' }} />
         {/* 方案頁自己有深色殼和返回鈕，不用系統 header */}
         <Stack.Screen name="Plans" component={PlansScreen} options={{ headerShown: false }} />
         {/* 購買頁也自己畫頂欄，而且用 modal 呈現——付款是一段有始有終的流程，

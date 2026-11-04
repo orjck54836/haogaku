@@ -4,6 +4,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Sheet, T, Card, Button, Rule, RoundButton, SectionTitle } from '../ui';
 import { TopBar, WineCard } from '../ui/brand';
+import { PlanButton } from '../ui/PlanButton';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
 import { speakJa } from '../lib/speech';
@@ -26,7 +27,7 @@ export default function WordbookScreen() {
   return (
     <Screen shell padded={false}>
       <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
-        <TopBar />
+        <TopBar right={<PlanButton />} />
 
         <WineCard style={{ marginTop: space.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>

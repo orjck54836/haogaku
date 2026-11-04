@@ -14,6 +14,8 @@ import { startListening, speechInputAvailable } from '../lib/stt';
 import { StackProps } from '../navigation';
 import { CHAT_XP } from '../lib/rank';
 import { chatMemory } from '../lib/reports';
+import { addDoc, collection } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 
 type Bubble =
   | { id: string; from: 'ai'; ja: string; reading?: string; zh: string }
@@ -217,6 +219,28 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     }
   }
 
+  /**
+   * 檢舉一則 AI 回覆。
+   *
+   * 只寫得進去、誰都讀不回來（見 firestore.rules 的 contentReports）——
+   * 檢舉內容裡有對話片段，開讀取權限等於把別人的會話攤開。
+   * 送不出去也不要擋住使用者：他要的是「我說了」，不是一個錯誤對話框。
+   */
+  function reportMessage(text: string) {
+    const send = (reason: string) => {
+      addDoc(collection(db, 'contentReports'), {
+        uid: auth.currentUser?.uid ?? '', scenario: scenario.id, reason, text: text.slice(0, 1000), createdAt: Date.now(),
+      }).catch(() => {});
+      track('content_report', { scenario: scenario.id, reason });
+      Alert.alert('已送出', '謝謝你的回報，我們會檢查這段內容。你可以直接關掉這場會話重新開始。');
+    };
+    Alert.alert('檢舉這則回覆', '這則 AI 回覆有什麼問題？', [
+      { text: '取消', style: 'cancel' },
+      { text: '不當或冒犯', onPress: () => send('offensive') },
+      { text: '日文有錯', onPress: () => send('incorrect') },
+    ]);
+  }
+
   const renderItem = ({ item }: { item: Bubble }) => {
     if (item.from === 'ai') {
       const open = showZh[item.id];
@@ -237,6 +261,13 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
               <T variant="caption" color={t.sub}>{open ? '隱藏翻譯' : '看翻譯'}</T>
             </Pressable>
             <SaveButton ja={item.ja} zh={item.zh} source={`AI：${scenario.title}`} compact />
+            {/* 檢舉。AI 的句子是即時生成的，不可能事前審完，
+                審查要看的是「遇到不當內容時使用者有沒有辦法回報」。
+                放在每一則 AI 回覆下面，而不是藏在設定裡——出事的當下才找得到的入口才有用。 */}
+            <Pressable accessibilityRole="button" accessibilityLabel="檢舉這則回覆"
+              onPress={() => reportMessage(item.ja)} hitSlop={8}>
+              <T variant="caption" color={t.faint}>檢舉</T>
+            </Pressable>
           </View>
         </View>
       );

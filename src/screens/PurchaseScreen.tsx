@@ -7,7 +7,7 @@ import { T, Card, Button, Pill, Rule, RoundButton } from '../ui';
 import { Seal } from '../ui/seal';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
-import { planById, yearlySaving, yearlyPerMonth, YEARLY_AVAILABLE, PlanId } from '../content/plans';
+import { planById, yearlySaving, yearlyPerMonth, YEARLY_AVAILABLE, IAP_AVAILABLE, PlanId } from '../content/plans';
 import { topicPhotos } from '../ui/images';
 import { legalLinks } from '../content/links';
 import { track } from '../lib/analytics';
@@ -182,14 +182,27 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
           </View>
         ) : null}
 
-        <Button label={busy ? '處理中' : trial ? `開始 ${trial} 天免費試用` : `訂閱 NT$${total}/${periodLabel}`}
-          variant={plan.id === 'pro' ? 'gold' : 'primary'} loading={busy} disabled={busy}
-          style={{ marginTop: space.xl }} onPress={purchase} />
+        {/* 金流還沒接時不留任何可以按的付款動作（見 plans.ts 的 IAP_AVAILABLE）：
+            有完整的訂閱介面、按下去卻只跳一個「尚未開放」，審查會當成未完成功能退件。
+            「還原購買」也一起收起來——沒有東西可買，就沒有東西可還原。 */}
+        {IAP_AVAILABLE ? <>
+          <Button label={busy ? '處理中' : trial ? `開始 ${trial} 天免費試用` : `訂閱 NT$${total}/${periodLabel}`}
+            variant={plan.id === 'pro' ? 'gold' : 'primary'} loading={busy} disabled={busy}
+            style={{ marginTop: space.xl }} onPress={purchase} />
 
-        <Pressable accessibilityRole="button" onPress={restore} hitSlop={10}
-          style={({ pressed }) => ({ alignSelf: 'center', paddingVertical: space.md, opacity: pressed ? 0.6 : 1 })}>
-          <T variant="small" color={t.primary} style={{ fontWeight: '600' }}>還原購買</T>
-        </Pressable>
+          <Pressable accessibilityRole="button" onPress={restore} hitSlop={10}
+            style={({ pressed }) => ({ alignSelf: 'center', paddingVertical: space.md, opacity: pressed ? 0.6 : 1 })}>
+            <T variant="small" color={t.primary} style={{ fontWeight: '600' }}>還原購買</T>
+          </Pressable>
+        </> : (
+          <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center',
+            backgroundColor: t.surface2, borderRadius: radius.lg, padding: space.lg, marginTop: space.xl }}>
+            <Ionicons name="time-outline" size={18} color={t.sub} />
+            <T variant="small" color={t.sub} style={{ flex: 1, lineHeight: 20 }}>
+              {'付費方案還在準備中。開放後這裡會出現訂閱按鈕，在那之前課程、讀物與每日免費 AI 額度都照常使用。'}
+            </T>
+          </View>
+        )}
 
         {/* 4. 服務條款 ＋ 5. 隱私權政策。審查要求「可以點而且真的打得開」 */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.sm, marginTop: space.sm }}>

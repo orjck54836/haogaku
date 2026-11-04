@@ -157,6 +157,20 @@ export const plans: Plan[] = [
  */
 export const YEARLY_AVAILABLE = false;
 
+/**
+ * 訂閱是否真的買得到。
+ *
+ * **送審前必須是 false，除非 IAP 已經接完並且在 App Store Connect 建好商品。**
+ * 審查會實際點下去：有完整的訂閱介面、按下去卻只跳一個「尚未開放」的提示，
+ * 會被當成未完成的功能退件（Guideline 2.1）。所以這個值是 false 的時候，
+ * 方案頁只做「說明」不做「販售」——選擇鈕變成不能點的「日後推出」，
+ * 購買頁也不會有可以按的付款鈕。
+ *
+ * 接完 IAP（收據送 Cloud Functions 驗證、後端寫 entitlements）之後改成 true，
+ * 畫面不必再動。
+ */
+export const IAP_AVAILABLE = false;
+
 export const planById = (id: PlanId) => plans.find(p => p.id === id) ?? plans[0];
 
 /** 付費方案（免費以外的），給方案比較畫面用 */

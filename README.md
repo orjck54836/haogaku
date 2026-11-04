@@ -110,6 +110,18 @@ eas build --profile development --platform ios
 - [ ] 隱私問卷：勾選「聯絡資訊（email）」「使用者內容」，用途為 App 功能
 - [ ] 確認刪除帳號功能可用（App Store 規定）
 - [x] Apple 登入帳號刪除時撤銷 token（`src/state/auth.tsx` 的 `deleteAccount`：先請使用者重新用 Apple 登入拿 `authorizationCode`，再呼叫 `revokeAccessToken`）
+- [ ] **`src/content/links.ts` 的 `legalLinks` 換成真正的服務條款／隱私權政策頁**
+      （目前指向官網首頁，Guideline 3.1.2 會退件）
+- [ ] 部署 Storage 規則：`firebase deploy --only storage`
+      （新增了大頭照的 `storage.rules`，不部署的話上傳會被拒絕）
+- [ ] 部署 Firestore 規則：`firebase deploy --only firestore:rules`
+      （新增了 `contentReports`，不部署的話檢舉會寫不進去）
+- [ ] 重 build dev client 或正式包，讓 `expo-notifications` 和 `expo-image-picker`
+      的原生模組進去（兩個功能在沒有模組的 build 上都會自動隱藏）
+      （Expo Go 看不出差別，實機沒有原生模組時提醒會自動降級成不顯示）
+- [ ] 接 IAP 之後把 `src/content/plans.ts` 的 `IAP_AVAILABLE` 改成 true
+- [ ] GA4：在 Cloud Functions 設定 `GA4_MEASUREMENT_ID` 與 `GA4_API_SECRET`，
+      沒設定的話所有事件會被安靜丟掉
 - [ ] 正式打包：`eas build -p ios --profile production`，再 `eas submit -p ios`
 
 ---

@@ -12,7 +12,8 @@ import { AuthProvider } from './src/state/auth';
 import { DataProvider } from './src/state/data';
 import { firebaseConfigured } from './src/lib/firebase';
 import AppNavigator from './src/navigation';
-import { track, flushAnalytics } from './src/lib/analytics';
+import { track, flushAnalytics, loadAnalyticsChoice } from './src/lib/analytics';
+import { syncReminders } from './src/lib/reminders';
 
 function SetupNeeded() {
   return (
@@ -30,7 +31,10 @@ export default function App() {
 
   // 切到背景時把還沒送出的事件送掉，不然最後那幾筆會跟著 app 一起消失
   useEffect(() => {
-    track('app_open');
+    // 先讀回「不要分析我」的選擇再送第一個事件，不然關掉的人每次冷啟動還是會漏一筆
+    loadAnalyticsChoice().then(() => track('app_open'));
+    // 重裝或換手機會把排程清掉，但開關還留著——每次冷啟動重排一次最省事，成本是零
+    syncReminders();
     const sub = AppState.addEventListener('change', st => { if (st !== 'active') flushAnalytics(); });
     return () => sub.remove();
   }, []);

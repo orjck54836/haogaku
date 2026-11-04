@@ -9,7 +9,7 @@ import CategoryChips, { CatFilter } from '../ui/CategoryChips';
 import LevelTabs from '../ui/LevelTabs';
 import TopicCard from '../ui/TopicCard';
 import { PageHeader } from '../ui/brand';
-import { useTheme, space, radius } from '../theme';
+import { useTheme, space, radius, shadows } from '../theme';
 import { useData } from '../state/data';
 import { topicProgress, BASICS_ID, KEIGO_ID, fitsLevel, gridCategories, gridTopics, keigoTopics } from '../content/curriculum';
 import { Topic } from '../content/topics';
@@ -102,13 +102,15 @@ export default function CourseScreen() {
 
       {/* 語言基礎：橫向輪播，第二張露半邊 */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl, marginTop: space.xl }}
-        contentContainerStyle={{ paddingHorizontal: space.xl, gap: space.md, paddingVertical: 4 }}
+        contentContainerStyle={{ paddingHorizontal: space.xl, gap: space.md, paddingVertical: 12 }}
         snapToInterval={bannerW + space.md} decelerationRate="fast">
         {foundations.map(f => {
           const p = topicProgress(f.id, progress.completed);
           const started = p.done > 0;
           return (
-            <View key={f.id} style={{ width: bannerW, backgroundColor: f.bg, borderRadius: radius.xl, overflow: 'hidden' }}>
+            // 陰影在外、裁圖在內：overflow:'hidden' 和 iOS 陰影不能在同一層
+            <View key={f.id} style={{ width: bannerW, borderRadius: radius.xl, ...shadows.md }}>
+            <View style={{ backgroundColor: f.bg, borderRadius: radius.xl, overflow: 'hidden' }}>
               {f.photo ? <>
                 <Image source={f.photo} resizeMode="cover"
                   style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
@@ -131,6 +133,7 @@ export default function CourseScreen() {
                 style={{ marginTop: space.lg, alignSelf: 'flex-start', paddingHorizontal: 26, backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' }}
                 onPress={() => nav.navigate('Topic', { topicId: f.id })} />
               </View>
+            </View>
             </View>
           );
         })}

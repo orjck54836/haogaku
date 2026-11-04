@@ -3,7 +3,7 @@ import { View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet, Image
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme, space, radius, type, fonts } from '../theme';
+import { useTheme, space, radius, type, fonts, shadows } from '../theme';
 
 export type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -96,10 +96,8 @@ export function Card({ children, style, onPress, accessibilityLabel, raised, ton
   const soft = tone === 'soft';
   const base: ViewStyle = {
     backgroundColor: soft ? t.surface2 : t.surface, borderRadius: radius.lg, padding: space.lg,
-    ...(soft ? null : {
-      shadowColor: t.shadow, shadowOpacity: 1, shadowRadius: raised ? 24 : 14,
-      shadowOffset: { width: 0, height: raised ? 10 : 5 }, elevation: raised ? 4 : 2,
-    }),
+    // 淺灰磚也給一層最淡的陰影：它常常疊在白面板上，完全沒影子會黏在底上看不出是一塊
+    ...(soft ? shadows.sm : raised ? shadows.lg : shadows.md),
   };
   if (!onPress) return <View style={[base, style]}>{children}</View>;
   return (
@@ -215,14 +213,17 @@ export function IconTile({ icon, kanji, photo, photoScrim, label, onPress, acces
       <Text style={[type.small, { color: t.ink, fontWeight: '600' }]} numberOfLines={1}>{label}</Text>
     </View>
   );
+  // 陰影下在外層、裁切留在內層：同一個 View 上 overflow:'hidden' 會把 iOS 陰影一起關掉
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? label} onPress={onPress} disabled={!onPress}
-      style={({ pressed }) => ({
-        flex: 1, backgroundColor: photo ? t.shell : t.surface2, borderRadius: radius.lg, overflow: 'hidden',
-        opacity: pressed ? 0.75 : 1, transform: [{ scale: pressed ? 0.97 : 1 }],
-      })}>
-      {body}
-    </Pressable>
+    <View style={{ flex: 1, borderRadius: radius.lg, ...shadows.md }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? label} onPress={onPress} disabled={!onPress}
+        style={({ pressed }) => ({
+          backgroundColor: photo ? t.shell : t.surface2, borderRadius: radius.lg, overflow: 'hidden',
+          opacity: pressed ? 0.75 : 1, transform: [{ scale: pressed ? 0.97 : 1 }],
+        })}>
+        {body}
+      </Pressable>
+    </View>
   );
 }
 
@@ -247,12 +248,22 @@ export function Pill({ label, color, bg, icon }: { label: string; color: string;
   );
 }
 
-/** 圓形頭像：沒有圖就用名字第一個字 */
-export function Avatar({ name, size = 40, onPress, bg, fg }: { name: string; size?: number; onPress?: () => void; bg?: string; fg?: string }) {
+/** 圓形頭像：有照片就放照片，沒有就用名字第一個字 */
+export function Avatar({ name, size = 40, onPress, bg, fg, photo }: {
+  name: string; size?: number; onPress?: () => void; bg?: string; fg?: string;
+  /** 大頭照網址（profile.photo）。空字串或沒給就退回首字色塊 */
+  photo?: string;
+}) {
   const t = useTheme();
   const inner = (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg ?? t.primary, alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ color: fg ?? '#FFFFFF', fontSize: size * 0.4, fontWeight: '700' }}>{(name || '?').slice(0, 1).toUpperCase()}</Text>
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg ?? t.primary, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {photo
+        // 照片疊在首字上面而不是取代它：網路慢或網址失效時，底下還有東西可看
+        ? <Image source={{ uri: photo }} style={{ ...fillImage, borderRadius: size / 2 }} resizeMode="cover" />
+        : null}
+      {!photo ? (
+        <Text style={{ color: fg ?? '#FFFFFF', fontSize: size * 0.4, fontWeight: '700' }}>{(name || '?').slice(0, 1).toUpperCase()}</Text>
+      ) : null}
     </View>
   );
   if (!onPress) return inner;
@@ -382,10 +393,13 @@ export function StationSign({ kana, zh, bar, compact, barColor, photo }: {
     </View>
   );
   return (
-    <View style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: t.surface }}>
-      {head}
-      <View style={{ backgroundColor: barColor ?? t.sign, paddingVertical: 9, alignItems: 'center' }}>
-        <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>{bar}</Text>
+    // 同上：陰影和 overflow:'hidden' 不能放在同一層
+    <View style={{ borderRadius: radius.lg, ...shadows.lg }}>
+      <View style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: t.surface }}>
+        {head}
+        <View style={{ backgroundColor: barColor ?? t.sign, paddingVertical: 9, alignItems: 'center' }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }} numberOfLines={1}>{bar}</Text>
+        </View>
       </View>
     </View>
   );

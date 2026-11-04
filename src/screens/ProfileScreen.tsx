@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Alert, Platform, Pressable, Text, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Row, Divider, SectionTitle, Rule, Avatar, RoundButton, Segmented } from '../ui';
-import { useTheme, space, fonts, radius } from '../theme';
+import { useTheme, space, fonts, radius, shadows, tintedShadow } from '../theme';
 import { useAuth, providerLabels } from '../state/auth';
 import { useData, Goal, goalLabel } from '../state/data';
 import { levelShort, levelJlpt } from '../content/curriculum';
@@ -18,6 +18,10 @@ import { Seal } from '../ui/seal';
 import { rankState } from '../lib/rank';
 import OfficialLinks from '../ui/OfficialLinks';
 import { planById } from '../content/plans';
+import { loadAnalyticsChoice, setAnalyticsEnabled } from '../lib/analytics';
+import {
+  remindersSupported, remindersEnabled, reminderHour, enableReminders, disableReminders, DEFAULT_HOUR,
+} from '../lib/reminders';
 
 /** 四個目標各配一張看得懂的照片：機場、區役所（留學手續）、會議室、KTV */
 const goalPhoto: Record<Goal, number> = {
@@ -41,6 +45,30 @@ export default function ProfileScreen() {
   const d = useData();
   const [busy, setBusy] = useState<string | null>(null);
   const plan = planById(d.profile.plan);
+
+  // 提醒和分析的開關狀態存在手機（AsyncStorage），不是 profile：
+  // 訪客也要能設定，而且這兩件事和學習紀錄無關，不該為了它們多寫一次雲端
+  const [reminderOn, setReminderOn] = useState(false);
+  const [hour, setHour] = useState(DEFAULT_HOUR);
+  const [analyticsOn, setAnalyticsOn] = useState(true);
+  // 「這個 build 有沒有通知模組」在 effect 裡問，不要在 render 的判斷式裡問：
+  // 探測如果丟出錯誤，在 render 裡就是整頁白掉，在 effect 裡最多是這一列不出現
+  const [canRemind, setCanRemind] = useState(false);
+  useEffect(() => {
+    remindersEnabled().then(setReminderOn);
+    reminderHour().then(setHour);
+    loadAnalyticsChoice().then(setAnalyticsOn);
+    try { setCanRemind(remindersSupported()); } catch { setCanRemind(false); }
+  }, []);
+
+  async function toggleReminder() {
+    if (reminderOn) { await disableReminders(); setReminderOn(false); return; }
+    const ok = await enableReminders(hour);
+    setReminderOn(ok);
+    // 排不成功時開關要彈回去，並且說清楚是權限的問題——
+    // 顯示「已開啟」卻永遠不跳，使用者只會覺得這個 App 壞了
+    if (!ok) Alert.alert('打不開提醒', '請到「設定 → 通知 → 皓學日語」允許通知，再回來開啟一次。');
+  }
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
   const name = d.profile.nickname || a.user?.displayName || (a.isGuest ? '訪客' : a.user?.email?.split('@')[0]) || '學習者';
 
@@ -127,6 +155,8 @@ export default function ProfileScreen() {
           但它們講的都是同一件事：這個人現在練到哪。分三塊只是讓這一頁變長，
           而且兩塊深色中間夾一塊酒紅，層次反而亂掉。
           底圖鋪照片＋單層平光遮罩（不疊多層假漸層，實機會看到灰帶）。 */}
+      {/* 陰影下在外層：同一個 View 上 overflow:'hidden' 會把 iOS 陰影一起關掉 */}
+      <View style={{ borderRadius: radius.xl, ...shadows.lg }}>
       <View style={{ borderRadius: radius.xl, backgroundColor: t.shell, overflow: 'hidden' }}>
         <Image source={statsPhoto} resizeMode="cover"
           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
@@ -134,7 +164,7 @@ export default function ProfileScreen() {
 
         <View style={{ padding: space.xl }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-            <Avatar name={name} size={64} bg={t.gold} fg="#231A08" />
+            <Avatar name={name} photo={d.profile.photo} size={64} bg={t.gold} fg="#231A08" />
             <View style={{ flex: 1 }}>
               <T variant="title" color="#FFFFFF" numberOfLines={1}>{name}</T>
               {d.profile.jaName ? <Text style={{ fontFamily: fonts.serifMedium, fontSize: 13, color: t.gold, marginTop: 2 }}>{d.profile.jaName}</Text> : null}
@@ -181,6 +211,7 @@ export default function ProfileScreen() {
           ))}
         </View>
       </View>
+      </View>
 
       {/* 排行榜入口。原本只是段位標題右邊的一行小字，使用者反映會整個滑過去，
           所以改成整張酒紅卡——這一頁上唯一的飽和色塊，掃過去不可能錯過 */}
@@ -190,6 +221,8 @@ export default function ProfileScreen() {
           marginTop: space.md, backgroundColor: t.primary, borderRadius: radius.xl,
           padding: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.md,
           opacity: pressed ? 0.88 : 1, transform: [{ scale: pressed ? 0.99 : 1 }],
+          // 入口卡要浮起來才看得出可以點；陰影用酒紅自己的顏色，灰影壓在飽和色下面會髒
+          ...tintedShadow(t.primary),
         })}>
         <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.18)',
           alignItems: 'center', justifyContent: 'center' }}>
@@ -224,6 +257,7 @@ export default function ProfileScreen() {
 
       <SectionTitle title="方案" ja="プラン"
         right={<T variant="caption" color={t.faint}>課程永遠免費</T>} />
+      <View style={{ borderRadius: radius.xl, ...shadows.lg }}>
       <Pressable accessibilityRole="button" accessibilityLabel={`方案，目前是${plan.name}方案`}
         onPress={() => nav.navigate('Plans')}
         style={({ pressed }) => ({
@@ -252,6 +286,7 @@ export default function ProfileScreen() {
           <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
         </View>
       </Pressable>
+      </View>
 
       <SectionTitle title="學習設定" />
       <Card tone="soft" style={{ paddingVertical: space.xs }}>
@@ -261,7 +296,7 @@ export default function ProfileScreen() {
           onPress={() => d.setProfile({ dailyGoal: paces[(paces.indexOf(d.profile.dailyGoal) + 1) % paces.length] })} />
         <Divider />
         <Row leading={<RowPhoto source={topicPhotos.friends!} />} title="排行榜"
-          subtitle={d.profile.leaderboard ? '參加中，暱稱與 XP 會公開 · 點一下退出' : '未參加 · 點一下加入'}
+          subtitle={d.profile.leaderboard ? '參加中，暱稱、大頭照與 XP 會公開 · 點一下退出' : '未參加 · 點一下加入'}
           right={<Ionicons name={d.profile.leaderboard ? 'toggle' : 'toggle-outline'} size={30}
             color={d.profile.leaderboard ? t.primary : t.faint} />}
           onPress={() => {
@@ -280,6 +315,24 @@ export default function ProfileScreen() {
             setSpeechRate(next.v);
             speakJa(next.l === '慢' ? 'ゆっくり話します。' : next.l === '快' ? '少し速く話します。' : '普通の速さで話します。');
           }} />
+        {/* 沒有通知原生模組的 build（例如還沒重 build 的 dev client）就整列不顯示：
+            顯示一個打開也不會有作用的開關，比沒有這個功能更糟 */}
+        {canRemind ? <>
+          <Divider />
+          {/* 用 cafe 而不是 coach：coach 已經給了上一列的「語音速度」，
+              兩列並排同一張縮圖會讓人以為是同一個設定的兩個開關 */}
+          <Row leading={<RowPhoto source={topicPhotos.cafe!} />} title="每日提醒"
+            subtitle={reminderOn ? `每天 ${hour}:00 提醒一次 · 點一下關閉` : '關閉中 · 點一下開啟'}
+            right={<Ionicons name={reminderOn ? 'toggle' : 'toggle-outline'} size={30}
+              color={reminderOn ? t.primary : t.faint} />}
+            onPress={toggleReminder} />
+        </> : null}
+        <Divider />
+        <Row leading={<RowPhoto source={topicPhotos.gifts!} />} title="使用狀況分析"
+          subtitle={analyticsOn ? '協助改善 App · 不含會話內容與個人資料' : '已關閉 · 點一下開啟'}
+          right={<Ionicons name={analyticsOn ? 'toggle' : 'toggle-outline'} size={30}
+            color={analyticsOn ? t.primary : t.faint} />}
+          onPress={() => { const on = !analyticsOn; setAnalyticsOn(on); setAnalyticsEnabled(on); }} />
       </Card>
 
       <SectionTitle title="帳號" />
