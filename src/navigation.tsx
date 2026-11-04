@@ -22,6 +22,8 @@ import CheckScreen from './screens/CheckScreen';
 import ReviewScreen from './screens/ReviewScreen';
 import KanaChartScreen from './screens/KanaChartScreen';
 import SlangScreen from './screens/SlangScreen';
+import ReadingsScreen from './screens/ReadingsScreen';
+import ReadingScreen from './screens/ReadingScreen';
 import TopicScreen from './screens/TopicScreen';
 import LessonContentScreen from './screens/LessonContentScreen';
 import EditProfileScreen from './screens/EditProfileScreen';
@@ -38,6 +40,8 @@ export type RootStack = {
   Review: undefined;
   KanaChart: undefined;
   Slang: undefined;
+  Readings: undefined;
+  Reading: { readingId: string };
 };
 export type Tabs = { Home: undefined; Course: undefined; AI: undefined; Words: undefined; Me: undefined };
 export type StackProps<K extends keyof RootStack> = NativeStackScreenProps<RootStack, K>;
@@ -110,6 +114,9 @@ export default function AppNavigator() {
         <Stack.Screen name="Review" component={ReviewScreen} options={{ title: '單字複習' }} />
         <Stack.Screen name="KanaChart" component={KanaChartScreen} options={{ title: '五十音表' }} />
         <Stack.Screen name="Slang" component={SlangScreen} options={{ title: '日本流行語' }} />
+        <Stack.Screen name="Readings" component={ReadingsScreen} options={{ title: '日文讀物' }} />
+        {/* 讀物的標題橫幅要頂到畫面最上緣，所以不用系統 header，返回靠手勢和底部按鈕 */}
+        <Stack.Screen name="Reading" component={ReadingScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

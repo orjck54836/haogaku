@@ -11,6 +11,7 @@ import { aiChat, aiReport, ChatMsg, ChatReply } from '../lib/ai';
 import { speakJa, stopSpeech, cacheAudio, getSpeechRate } from '../lib/speech';
 import { startListening, speechInputAvailable } from '../lib/stt';
 import { StackProps } from '../navigation';
+import { CHAT_XP } from '../lib/rank';
 
 type Bubble =
   | { id: string; from: 'ai'; ja: string; reading?: string; zh: string }
@@ -124,7 +125,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
       const report = await aiReport(scenario, level, history);
       d.setAiRemaining(report.remaining);
       d.recordChat();
-      d.addXp(30);
+      d.addXp(CHAT_XP);
       if (route.params.lessonId) d.completeLesson(route.params.lessonId);
       navigation.replace('Report', { report, scenarioId: scenario.id, lessonId: route.params.lessonId });
     } catch (e: any) {

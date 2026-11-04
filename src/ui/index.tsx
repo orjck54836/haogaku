@@ -419,7 +419,7 @@ export function Divider() {
   return <Rule />;
 }
 
-export function Segmented<V extends string>({ value, options, onChange }: { value: V; options: { value: V; label: string }[]; onChange: (v: V) => void }) {
+export function Segmented<V extends string | number>({ value, options, onChange }: { value: V; options: { value: V; label: string }[]; onChange: (v: V) => void }) {
   const t = useTheme();
   return (
     <View style={{ flexDirection: 'row', backgroundColor: t.surface2, borderRadius: radius.pill, padding: 4 }}>

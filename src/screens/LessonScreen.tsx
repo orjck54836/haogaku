@@ -12,8 +12,8 @@ import { useLesson } from '../lib/useLesson';
 import { ActivityIndicator } from 'react-native';
 import { speakJa, stopSpeech } from '../lib/speech';
 import { StackProps } from '../navigation';
-
-const XP_FIRST = 10, XP_RETRY = 5, XP_FINISH = 20;
+import { lessonXp, rankOf, weightLabel } from '../lib/rank';
+import { Seal } from '../ui/seal';
 
 /** 外層：AI 主題課先載入內容 */
 export default function LessonScreen(props: StackProps<'Lesson'>) {
@@ -56,6 +56,10 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   const [hint, setHint] = useState('');
   const [finished, setFinished] = useState(false);
   const earned = useRef(0);
+  /** 進這一課時的總 XP。完成後拿它跟現在的比，才知道這一課有沒有升段 */
+  const xpAtStart = useRef(d.progress.xp);
+  // 難度加權：道地說法、情境練習和進階主題的 XP 比基本說法高
+  const xp = lessonXp(lesson, ref.topic);
   const s = lesson.steps[step];
 
   useEffect(() => { d.setResume(lesson.id, step); }, [step]);
@@ -76,8 +80,8 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
     const c = s as ChoiceStep;
     if (solved) return;
     if (i === c.answer) {
-      const xp = wrong.length ? XP_RETRY : XP_FIRST;
-      earned.current += xp; d.addXp(xp);
+      const got = wrong.length ? xp.retry : xp.first;
+      earned.current += got; d.addXp(got);
       setSolved(true); setHint('');
     } else {
       setWrong(w => [...w, i]);
@@ -89,7 +93,7 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
     if (step + 1 < lesson.steps.length) {
       setStep(step + 1); setWrong([]); setSolved(false); setHint('');
     } else {
-      earned.current += XP_FINISH; d.addXp(XP_FINISH);
+      earned.current += xp.finish; d.addXp(xp.finish);
       d.completeLesson(lesson.id);
       setFinished(true);
     }
@@ -100,6 +104,10 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   const canNext = s?.type === 'learn' || solved;
 
   if (finished) {
+    // 升段：拿進來時的 XP 和現在的比。同一堂課裡可能跨段，所以不能只看最後一次加分
+    const before = rankOf(xpAtStart.current);
+    const after = rankOf(d.progress.xp);
+    const leveledUp = after.n > before.n;
     const goNext = () => {
       if (!nextRef) return navigation.goBack();
       if (nextRef.lesson.kind === 'ai') navigation.replace('Chat', { scenarioId: nextRef.lesson.scenarioId!, lessonId: nextRef.lesson.id });
@@ -113,10 +121,22 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
           </View>
           <T variant="display" style={{ marginTop: space.xl, fontSize: 30, lineHeight: 38 }}>お疲れさまでした！</T>
           <T color={t.sub} style={{ marginTop: space.sm }}>完成「{lesson.title}」</T>
-          <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xl }}>
+          <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xl, flexWrap: 'wrap', justifyContent: 'center' }}>
             <Pill icon="star" label={`+${earned.current} XP`} color={t.gold} bg={t.goldSoft} />
             <Pill icon="flame" label={`連續 ${d.streak()} 天`} color={t.accent} bg={t.accentSoft} />
+            {/* 難度加成只在真的有加成時出現，不然每堂課都掛一個就沒有訊息量 */}
+            {weightLabel(xp.weight) ? <Pill icon="trending-up" label={weightLabel(xp.weight)!} color={t.success} bg={t.successSoft} /> : null}
           </View>
+
+          {leveledUp ? (
+            <View style={{ alignItems: 'center', marginTop: space.section, backgroundColor: t.shell,
+              borderRadius: radius.xl, paddingVertical: space.xl, paddingHorizontal: space.section, gap: space.sm }}>
+              <Seal kanji={after.kanji} size={54} tone="gold" />
+              <T variant="caption" color={t.gold} style={{ fontWeight: '700', letterSpacing: 1, marginTop: 4 }}>LEVEL UP</T>
+              <T style={{ fontSize: 22, fontFamily: fonts.serif }} color="#FFFFFF">Lv.{after.n} {after.name}</T>
+              <T variant="caption" color="rgba(255,255,255,0.72)">{after.desc}</T>
+            </View>
+          ) : null}
         </View>
         {nextRef ? <Button label={`下一堂：${nextRef.lesson.title}`} icon="arrow-forward" variant="accent" onPress={goNext} /> : null}
         <Button label={nextRef ? "先到這裡" : "完成"} variant={nextRef ? "ghost" : "primary"} style={{ marginTop: space.sm }} onPress={() => navigation.goBack()} />

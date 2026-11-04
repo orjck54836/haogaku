@@ -1,4 +1,4 @@
-import { View, ScrollView, Pressable, Text } from 'react-native';
+import { View, ScrollView, Pressable, Text, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +14,8 @@ import { useData } from '../state/data';
 import { nextLesson, lessonRef, recommendedTopics, topicProgress } from '../content/curriculum';
 import { categories } from '../content/topics';
 import { slang, todaySlangIndex } from '../content/slang';
+import { readings, todayReadingIndex, readingLessonId, genreLabels } from '../content/readings';
+import { RankRow } from '../ui/RankCard';
 import { RootStack } from '../navigation';
 import { useAuth } from '../state/auth';
 
@@ -38,6 +40,11 @@ export default function HomeScreen() {
   const recs = recommendedTopics(profile.goal, profile.startLevel, progress.completed, 8);
   const chatTopic = recs[0];
   const w = slang[todaySlangIndex()];
+  const todayRead = readings[todayReadingIndex()];
+  // 讀物的排序：今日那篇排第一，其餘按原順序接在後面，已讀過的往後丟
+  const readList = [todayRead, ...readings.filter(r => r.id !== todayRead.id)]
+    .sort((a, b) => Number(progress.completed.includes(readingLessonId(a.id)))
+      - Number(progress.completed.includes(readingLessonId(b.id))));
   const cat = next.topic ? categories.find(c => c.id === next.topic!.cat)?.title : '基礎';
   const tp = topicProgress(next.topic?.id ?? 'basics', progress.completed);
   const goTab = (screen: string) => (nav as any).navigate('Tabs', { screen });
@@ -121,6 +128,11 @@ export default function HomeScreen() {
           </View>
         </Card>
 
+        {/* 段位：XP 的去處。只有數字看不出意義，掛上段位才有下一個目標 */}
+        <Card tone="soft" style={{ marginTop: space.md }} onPress={() => goTab('Me')} accessibilityLabel="查看段位">
+          <RankRow xp={progress.xp} />
+        </Card>
+
         <SectionTitle title="為你推薦" ja="おすすめ" action="所有主題" onAction={() => goTab('Course')} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl }}
           contentContainerStyle={{ paddingHorizontal: space.xl, gap: space.md, paddingVertical: 4 }}>
@@ -156,6 +168,48 @@ export default function HomeScreen() {
               onPress={() => nav.navigate('Chat', { scenarioId: `t-${chatTopic.id}` })} />
           </> : null}
         </Card>
+
+        {/* 讀物。課程是一句一句練，讀物是一次讀一段——
+            放在流行語前面，因為它需要的時間比較長，該在使用者還有耐心的位置 */}
+        <SectionTitle title="日文讀物" ja="よみもの" action={`全部 ${readings.length} 篇`}
+          onAction={() => nav.navigate('Readings')} />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl }}
+          contentContainerStyle={{ paddingHorizontal: space.xl, gap: space.md, paddingVertical: 4 }}>
+          {readList.slice(0, 6).map(r => {
+            const read = progress.completed.includes(readingLessonId(r.id));
+            const photo = photoFor(r.photo);
+            return (
+              <Card key={r.id} onPress={() => nav.navigate('Reading', { readingId: r.id })}
+                accessibilityLabel={r.titleZh} style={{ width: 208, padding: space.sm }}>
+                <View style={{ width: '100%', aspectRatio: 16 / 9, borderRadius: radius.lg, overflow: 'hidden',
+                  justifyContent: 'flex-end', backgroundColor: t.shell }}>
+                  {photo ? <>
+                    <Image source={photo} resizeMode="cover"
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+                    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(20,16,18,0.44)' }} />
+                  </> : null}
+                  <View style={{ position: 'absolute', top: space.sm, left: space.sm, flexDirection: 'row', gap: 4 }}>
+                    {r.id === todayRead.id ? <Pill icon="today" label="今日" color="#231A08" bg={t.gold} /> : null}
+                    {read ? <Pill icon="checkmark" label="讀過" color="#FFFFFF" bg="rgba(31,122,76,0.92)" /> : null}
+                  </View>
+                  <View style={{ padding: space.md }}>
+                    {/* 和讀物列表同一個理由：長標題縮字級，不要截成「…」 */}
+                    <Text style={{ fontSize: 18, fontFamily: fonts.serif, color: '#FFFFFF' }}
+                      numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{r.title}</Text>
+                  </View>
+                </View>
+                <View style={{ paddingHorizontal: space.xs, paddingTop: space.md, paddingBottom: space.xs }}>
+                  <T variant="heading" numberOfLines={1}>{r.titleZh}</T>
+                  <T variant="caption" color={t.sub} style={{ marginTop: 3 }} numberOfLines={2}>{r.hook}</T>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.sm }}>
+                    <Pill label={genreLabels[r.genre]} color={t.primary} bg={t.primarySoft} />
+                    <T variant="caption" color={t.faint}>{r.minutes} 分鐘</T>
+                  </View>
+                </View>
+              </Card>
+            );
+          })}
+        </ScrollView>
 
         {/* 流行語一共 52 個、每天換一個。標題講總量，「今日」掛在卡片上，
             這樣點進去看到 52 個才不會覺得跟標題對不起來 */}

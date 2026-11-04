@@ -7,7 +7,12 @@ import type { Goal } from '../state/data';
 export const levelLabels: Record<LevelId, string> = {
   L1: '入門（零基礎）', L2: '初級（N5〜N4）', L3: '中級（N3〜N2）', L4: '高級（N2〜N1）',
 };
-const levelOrder: LevelId[] = ['L1', 'L2', 'L3', 'L4'];
+/** 標籤上的短名。全名「入門（零基礎）」塞不進四格並排的頁籤 */
+export const levelShort: Record<LevelId, string> = { L1: '入門', L2: '初級', L3: '中級', L4: '高級' };
+/** 短名下面那行小字 */
+export const levelJlpt: Record<LevelId, string> = { L1: '零基礎', L2: 'N5〜N4', L3: 'N3〜N2', L4: 'N2〜N1' };
+
+export const levelOrder: LevelId[] = ['L1', 'L2', 'L3', 'L4'];
 export const levelIndex = (id: LevelId) => levelOrder.indexOf(id);
 
 /** 五十音基礎 */

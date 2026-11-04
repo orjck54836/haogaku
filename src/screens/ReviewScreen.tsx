@@ -7,6 +7,7 @@ import { useData, Word } from '../state/data';
 import { slang } from '../content/slang';
 import { speakJa } from '../lib/speech';
 import { StackProps } from '../navigation';
+import { REVIEW_XP } from '../lib/rank';
 
 type Mode = 'card' | 'choice' | 'write';
 
@@ -103,7 +104,7 @@ function Session({ mode, due, allWords, onClose, onAgain }: {
 
   function grade(ok: boolean) {
     d.reviewWord(w.ja, ok);
-    d.addXp(ok ? 3 : 1);
+    d.addXp(ok ? REVIEW_XP.known : REVIEW_XP.forgot);
     if (ok) setKnown(n => n + 1);
   }
 

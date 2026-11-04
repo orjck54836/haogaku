@@ -6,11 +6,12 @@ import { Screen, T, Card, Button, ProgressBar, Eyebrow } from '../ui';
 import { Seal, BASICS_KANJI } from '../ui/seal';
 import { topicPhotos } from '../ui/images';
 import CategoryChips, { CatFilter } from '../ui/CategoryChips';
+import LevelTabs from '../ui/LevelTabs';
 import TopicCard from '../ui/TopicCard';
 import { PageHeader } from '../ui/brand';
 import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
-import { topicProgress, BASICS_ID, KEIGO_ID, fitsLevel, gridCategories, gridTopics, keigoTopics } from '../content/curriculum';
+import { topicProgress, BASICS_ID, KEIGO_ID, fitsLevel, gridCategories, gridTopics, keigoTopics, levelShort, levelJlpt } from '../content/curriculum';
 import { Topic } from '../content/topics';
 import { RootStack } from '../navigation';
 
@@ -24,7 +25,7 @@ const ASPECTS = [1.35, 1.0, 1.15, 0.9];
 export default function CourseScreen() {
   const t = useTheme();
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
-  const { progress, profile } = useData();
+  const { progress, profile, setProfile } = useData();
   const [cat, setCat] = useState<CatFilter>('all');
   const doneTopics = gridTopics.filter(x => topicProgress(x.id, progress.completed).done === 3).length;
   const sections = cat === 'all' ? gridCategories : gridCategories.filter(c => c.id === cat);
@@ -63,6 +64,15 @@ export default function CourseScreen() {
   return (
     <Screen>
       <PageHeader ja="せいかつ" title="生活主題" subtitle={`${gridTopics.length} 個主題，從吃飯到職場，學日本人真正會說的話`} />
+
+      {/* 程度頁籤。原本在「我的 → 學習設定」裡，但它影響的是這一頁的推薦順序
+          和「進階」標記，調整完要跳回來看結果——所以搬到它生效的地方 */}
+      <View style={{ marginTop: space.xl }}>
+        <LevelTabs value={profile.startLevel} onChange={v => setProfile({ startLevel: v })} />
+        <T variant="caption" color={t.faint} style={{ marginTop: space.sm, textAlign: 'center' }}>
+          {levelShort[profile.startLevel]}（{levelJlpt[profile.startLevel]}）· 程度只決定難度，所有主題都點得進去
+        </T>
+      </View>
 
       {/* 語言基礎：橫向輪播，第二張露半邊 */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl, marginTop: space.xl }}

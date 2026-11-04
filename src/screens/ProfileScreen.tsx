@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import { View, Alert, Platform, Pressable, Text, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, T, Card, Row, Divider, SectionTitle, Rule, Avatar, RoundButton } from '../ui';
+import { Screen, T, Card, Row, Divider, SectionTitle, Rule, Avatar, RoundButton, Segmented } from '../ui';
 import { useTheme, space, fonts, radius } from '../theme';
 import { useAuth, providerLabels } from '../state/auth';
 import { useData, Goal } from '../state/data';
-import { levelLabels } from '../content/curriculum';
-import { LevelId } from '../content/types';
+import { levelShort, levelJlpt } from '../content/curriculum';
+import { isReadingLesson, readings } from '../content/readings';
 import { speakJa, setSpeechRate } from '../lib/speech';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStack } from '../navigation';
 import { BrandFooter } from '../ui/brand';
 import { topicPhotos, uiPhotos } from '../ui/images';
+import { RankCard } from '../ui/RankCard';
+import GrowthChart, { GrowthStat, cumulativeWords } from '../ui/GrowthChart';
+import { rankState } from '../lib/rank';
 
 const goalLabel: Record<Goal, string> = { travel: '去日本旅行', study: '留學或打工度假', work: '日商工作', hobby: '興趣' };
 /** 四個目標各配一張看得懂的照片：機場、區役所（留學手續）、會議室、KTV */
@@ -26,7 +29,6 @@ function RowPhoto({ source }: { source: number }) {
   return <Image source={source} resizeMode="cover" style={{ width: 44, height: 44, borderRadius: 13 }} />;
 }
 const paces = [30, 50, 80];
-const levelIds: LevelId[] = ['L1', 'L2', 'L3', 'L4'];
 const rates = [{ v: 1.0, l: '標準' }, { v: 0.85, l: '慢' }, { v: 1.15, l: '快' }];
 
 export default function ProfileScreen() {
@@ -36,7 +38,9 @@ export default function ProfileScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
   const name = d.profile.nickname || a.user?.displayName || (a.isGuest ? '訪客' : a.user?.email?.split('@')[0]) || '學習者';
-  const levelTitle = levelLabels[d.profile.startLevel];
+  // 成長曲線的時間範圍。0 代表「全部」（從第一個收藏的單字算起）
+  const [range, setRange] = useState(30);
+  const points = cumulativeWords(d.words, range);
 
   // 這台機器能用的登入方式。Apple 登入只在 iOS 出現
   type Linkable = 'apple.com' | 'google.com';
@@ -76,11 +80,6 @@ export default function ProfileScreen() {
       { text: '永久刪除', style: 'destructive', onPress: () => run('del', a.deleteAccount, '無法刪除') },
     ]);
   }
-
-  const cycleLevel = () => {
-    const next = levelIds[(levelIds.indexOf(d.profile.startLevel) + 1) % levelIds.length];
-    d.setProfile({ startLevel: next });
-  };
 
   /** 一個登入方式：已綁定顯示帳號，沒綁定才給綁定入口 */
   function ProviderRow({ id }: { id: Linkable }) {
@@ -155,11 +154,16 @@ export default function ProfileScreen() {
         ))}
       </View>
 
-      <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.section }}>
+      <SectionTitle title="段位" ja="だんい"
+        right={<T variant="caption" color={t.faint}>{levelShort[d.profile.startLevel]}（{levelJlpt[d.profile.startLevel]}）</T>} />
+      <RankCard xp={d.progress.xp} />
+
+      <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.lg }}>
         {[
           { n: d.streak(), l: '連續天數', icon: 'flame' as const, c: t.accent },
-          { n: d.progress.xp, l: '總 XP', icon: 'star' as const, c: t.warning },
-          { n: d.progress.completed.length, l: '完成課程', icon: 'checkmark-done' as const, c: t.success },
+          { n: `Lv.${rankState(d.progress.xp).rank.n}`, l: '等級', icon: 'star' as const, c: t.warning },
+          // 讀物也記在 completed 裡，但它不是課，不該灌水這個數字
+          { n: d.progress.completed.filter(id => !isReadingLesson(id)).length, l: '完成課程', icon: 'checkmark-done' as const, c: t.success },
           { n: d.progress.chats, l: 'AI 會話', icon: 'sparkles' as const, c: t.primary },
         ].map(s => (
           <Card key={s.l} tone="soft" style={{ flex: 1, alignItems: 'center', padding: space.md }}>
@@ -169,6 +173,30 @@ export default function ProfileScreen() {
           </Card>
         ))}
       </View>
+
+      <SectionTitle title="成長曲線" ja="のびかた"
+        right={<T variant="caption" color={t.faint}>收藏的單字累積量</T>} />
+      <Card tone="soft">
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+          <GrowthStat points={points} />
+          <View style={{ width: 168 }}>
+            <Segmented<number> value={range} onChange={setRange} options={[
+              { value: 30, label: '30 天' },
+              { value: 90, label: '90 天' },
+              { value: 0, label: '全部' },
+            ]} />
+          </View>
+        </View>
+        <View style={{ marginTop: space.lg }}>
+          <GrowthChart points={points} emptyText="在課程或讀物裡點「收藏」，單字會畫成曲線" />
+        </View>
+        <T variant="caption" color={t.faint} style={{ marginTop: space.sm }}>
+          {d.words.length
+            ? `目前 ${d.words.length} 個單字，其中 ${d.dueWords().length} 個今天該複習`
+            : '曲線用收藏時間畫，所以過去收的也都算在裡面'}
+          {`　·　讀物 ${d.progress.completed.filter(isReadingLesson).length}/${readings.length} 篇`}
+        </T>
+      </Card>
 
       <SectionTitle title="學習設定" />
       <Card tone="soft" style={{ paddingVertical: space.xs }}>
@@ -186,8 +214,6 @@ export default function ProfileScreen() {
             setSpeechRate(next.v);
             speakJa(next.l === '慢' ? 'ゆっくり話します。' : next.l === '快' ? '少し速く話します。' : '普通の速さで話します。');
           }} />
-        <Divider />
-        <Row leading={<RowPhoto source={topicPhotos.basics!} />} title="日語程度" subtitle={`${levelTitle} · 點一下切換`} onPress={cycleLevel} />
       </Card>
 
       <SectionTitle title="帳號" />
