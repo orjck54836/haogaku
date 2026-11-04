@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, ScrollView, Dimensions, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Button, ProgressBar, Eyebrow } from '../ui';
 import { Seal, BASICS_KANJI } from '../ui/seal';
 import { topicPhotos } from '../ui/images';
@@ -11,8 +12,9 @@ import TopicCard from '../ui/TopicCard';
 import { PageHeader } from '../ui/brand';
 import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
-import { topicProgress, BASICS_ID, KEIGO_ID, fitsLevel, gridCategories, gridTopics, keigoTopics, levelShort, levelJlpt } from '../content/curriculum';
+import { topicProgress, BASICS_ID, KEIGO_ID, fitsLevel, gridCategories, gridTopics, keigoTopics } from '../content/curriculum';
 import { Topic } from '../content/topics';
+import { LevelId } from '../content/types';
 import { RootStack } from '../navigation';
 
 /**
@@ -21,6 +23,22 @@ import { RootStack } from '../navigation';
  * 色版才不會壓過底下的文字（之後換成照片也是這個比例好看）。
  */
 const ASPECTS = [1.35, 1.0, 1.15, 0.9];
+
+/**
+ * 頁籤底下的說明。
+ * 用同一句日文的兩種說法當例子——光寫「比較難」沒有畫面，
+ * 看到「お弁当、温めますか？」變成「あっためてください。」才知道換的是什麼。
+ */
+const levelCopy: Record<LevelId, { title: string; example: string }> = {
+  L2: {
+    title: '課程裡會用です・ます體的完整短句',
+    example: '例：便利商店會學到「お弁当、温めますか？」「大丈夫です」',
+  },
+  L3: {
+    title: '課程裡會換成日本人實際講的口語',
+    example: '例：同一課變成「あっためてください。」「袋はご利用ですか？」',
+  },
+};
 
 export default function CourseScreen() {
   const t = useTheme();
@@ -65,13 +83,22 @@ export default function CourseScreen() {
     <Screen>
       <PageHeader ja="せいかつ" title="生活主題" subtitle={`${gridTopics.length} 個主題，從吃飯到職場，學日本人真正會說的話`} />
 
-      {/* 程度頁籤。原本在「我的 → 學習設定」裡，但它影響的是這一頁的推薦順序
-          和「進階」標記，調整完要跳回來看結果——所以搬到它生效的地方 */}
+      {/* 程度頁籤。原本在「我的 → 學習設定」裡，但它影響的是這一頁的
+          「進階」標記和課程內容的難度，調整完要跳回來看結果——所以搬到它生效的地方。
+
+          底下那張說明卡不是裝飾：切換之後主題清單長得一模一樣（只有「進階」標記會動），
+          差別全在課程裡面，不講的話使用者會以為這兩格沒作用。 */}
       <View style={{ marginTop: space.xl }}>
         <LevelTabs value={profile.startLevel} onChange={v => setProfile({ startLevel: v })} />
-        <T variant="caption" color={t.faint} style={{ marginTop: space.sm, textAlign: 'center' }}>
-          {levelShort[profile.startLevel]}（{levelJlpt[profile.startLevel]}）· 程度只決定難度，所有主題都點得進去
-        </T>
+        <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.md,
+          backgroundColor: t.surface2, borderRadius: radius.lg, padding: space.md }}>
+          <Ionicons name="information-circle" size={17} color={t.primary} style={{ marginTop: 2 }} />
+          <View style={{ flex: 1 }}>
+            <T variant="small" style={{ fontWeight: '700', lineHeight: 21 }}>{levelCopy[profile.startLevel].title}</T>
+            <T variant="caption" color={t.sub} style={{ marginTop: 3, lineHeight: 19 }}>{levelCopy[profile.startLevel].example}</T>
+            <T variant="caption" color={t.faint} style={{ marginTop: 5, lineHeight: 19 }}>{'主題清單不會變。點進任何一堂課，或按課程右邊的「內容」整課一次看完，就看得到差別。'}</T>
+          </View>
+        </View>
       </View>
 
       {/* 語言基礎：橫向輪播，第二張露半邊 */}

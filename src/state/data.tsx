@@ -54,7 +54,7 @@ export type Word = {
 type Store = { profile: Profile; progress: Progress; words: Word[] };
 
 const emptyStore: Store = {
-  profile: { onboarded: false, nickname: '', jaName: '', intro: '', goal: 'travel', startLevel: 'L1', dailyGoal: 50, speechRate: 1.0, leaderboard: true, plan: 'free' },
+  profile: { onboarded: false, nickname: '', jaName: '', intro: '', goal: 'travel', startLevel: 'L2', dailyGoal: 50, speechRate: 1.0, leaderboard: true, plan: 'free' },
   progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null, review: emptyReview },
   words: [],
 };
@@ -249,9 +249,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 
+/**
+ * 程度從四階改成兩階，舊資料裡還有 L1／L4。
+ * 沒搬的話 levelShort[startLevel] 會是 undefined，畫面直接空一塊。
+ */
+function migrateLevel(p: Profile): Profile {
+  const old = p.startLevel as string;
+  if (old === 'L1') return { ...p, startLevel: 'L2' };
+  if (old === 'L4') return { ...p, startLevel: 'L3' };
+  return p;
+}
+
 function merge(d: Partial<Store>): Store {
   return {
-    profile: { ...emptyStore.profile, ...(d.profile ?? {}) },
+    profile: migrateLevel({ ...emptyStore.profile, ...(d.profile ?? {}) }),
     // review 是後來才加的欄位，雲端舊資料沒有，要再補一層預設
     progress: { ...emptyStore.progress, ...(d.progress ?? {}), review: { ...emptyReview, ...(d.progress?.review ?? {}) } },
     words: Array.isArray(d.words) ? d.words : [],

@@ -18,6 +18,12 @@ export type OfficialLink = {
   desc: string;
   url: string;
   icon: IconName;
+  /**
+   * 用圖片當磚塊，而不是 Ionicons。
+   * 官網那一列放品牌 logo——globe-outline 是通用地球圖示，
+   * 跟其他兩列的 LINE、IG 擺在一起看不出哪個才是「我們自己」。
+   */
+  image?: number;
   /** 磚塊的底色調，對應 ui/seal 的 Tone 家族 */
   tone: 'wine' | 'ink' | 'gold';
 };
@@ -26,7 +32,7 @@ export const officialLinks: OfficialLink[] = [
   {
     id: 'site', title: '皓學官網', desc: '課程、師資與留學代辦服務',
     url: 'https://www.forma-global.com/study',
-    icon: 'globe-outline', tone: 'wine',
+    icon: 'globe-outline', image: require('../../assets/logo.png'), tone: 'wine',
   },
   {
     id: 'line', title: 'LINE 官方帳號', desc: '問課程、問留學，真人回覆',

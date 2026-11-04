@@ -1,4 +1,4 @@
-import { View, Pressable, Linking, Alert, Text } from 'react-native';
+import { View, Pressable, Linking, Alert, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { T } from './index';
 import { useTheme, space, radius } from '../theme';
@@ -42,8 +42,11 @@ export default function OfficialLinks() {
             opacity: pressed ? 0.75 : 1, transform: [{ scale: pressed ? 0.99 : 1 }],
           })}>
           <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: toneBg[l.tone],
-            alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name={l.icon} size={21} color={l.tone === 'gold' ? '#231A08' : '#FFFFFF'} />
+            alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            {l.image
+              /* logo 本身留白不多，contain ＋ 內縮才不會滿版頂到圓角 */
+              ? <Image source={l.image} resizeMode="contain" style={{ width: 32, height: 32 }} />
+              : <Ionicons name={l.icon} size={21} color={l.tone === 'gold' ? '#231A08' : '#FFFFFF'} />}
           </View>
           <View style={{ flex: 1 }}>
             <T variant="heading" numberOfLines={1}>{l.title}</T>

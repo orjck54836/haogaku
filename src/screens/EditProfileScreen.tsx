@@ -19,8 +19,7 @@ const goals: { value: Goal; label: string; icon: IconName }[] = [
   { value: 'hobby', label: '興趣', icon: 'heart-outline' },
 ];
 const levels: { value: LevelId; label: string }[] = [
-  { value: 'L1', label: '完全沒學過' }, { value: 'L2', label: '會五十音' },
-  { value: 'L3', label: '能簡單對話' }, { value: 'L4', label: '中高級' },
+  { value: 'L2', label: '初級' }, { value: 'L3', label: '進階' },
 ];
 const paces = [{ value: 30, label: '輕鬆 30 XP' }, { value: 50, label: '標準 50 XP' }, { value: 80, label: '認真 80 XP' }];
 const rates = [{ value: 0.85, label: '慢' }, { value: 1.0, label: '標準' }, { value: 1.15, label: '快' }];

@@ -19,7 +19,6 @@ import ProfileScreen from './screens/ProfileScreen';
 import LessonScreen from './screens/LessonScreen';
 import ChatScreen from './screens/ChatScreen';
 import ReportScreen from './screens/ReportScreen';
-import CheckScreen from './screens/CheckScreen';
 import ReviewScreen from './screens/ReviewScreen';
 import KanaChartScreen from './screens/KanaChartScreen';
 import SlangScreen from './screens/SlangScreen';
@@ -40,7 +39,6 @@ export type RootStack = {
   EditProfile: undefined;
   Chat: { scenarioId: string; lessonId?: string };
   Report: { report: ChatReport; scenarioId: string; lessonId?: string };
-  Check: undefined;
   Review: undefined;
   KanaChart: undefined;
   Slang: undefined;
@@ -121,7 +119,6 @@ export default function AppNavigator() {
         <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: '編輯個人資料' }} />
         <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'AI 會話' }} />
         <Stack.Screen name="Report" component={ReportScreen} options={{ title: '會話分析', headerBackVisible: false, gestureEnabled: false }} />
-        <Stack.Screen name="Check" component={CheckScreen} options={{ title: 'AI 句子健檢' }} />
         <Stack.Screen name="Review" component={ReviewScreen} options={{ title: '單字複習' }} />
         <Stack.Screen name="KanaChart" component={KanaChartScreen} options={{ title: '五十音表' }} />
         <Stack.Screen name="Slang" component={SlangScreen} options={{ title: '日本流行語' }} />

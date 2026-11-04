@@ -6,7 +6,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { TextToSpeechClient } from '@google-cloud/text-to-speech';
 import { createHash } from 'crypto';
 import { generateLesson, GenKind } from './lessonGen';
-import { askJSON, chatSchema, reportSchema, checkSchema } from './claude';
+import { askJSON, chatSchema, reportSchema } from './claude';
 
 initializeApp();
 const db = getFirestore();
@@ -14,18 +14,82 @@ const db = getFirestore();
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 const MODEL = 'claude-haiku-5-5';          // 會話用：便宜、快速
 const LESSON_MODEL = 'claude-sonnet-5-5';  // 課程內容用：品質優先（每個主題只產生一次）
-const LIMITS = { guest: 30, member: 60 };  // 每人每天 AI 對話次數（台灣時間換日）
+/**
+ * 額度表。
+ *
+ * ## 為什麼語音算「字元」不算「次」
+ *
+ * Chirp3-HD 是**按字元**計價（約 US$30 / 1M 字元）。播一個 5 字的單字和播一句
+ * 60 字的例句，成本差 12 倍，但舊版都記成「一次」——額度和實際花費對不上，
+ * 日上限 600 次乘上 30 天的最壞情況是月費的三倍以上。改成每月字元之後，
+ * 額度就是成本本身，最壞情況算得出來也守得住。
+ *
+ * AI 文字維持「每日次數」：一則回覆約 NT$0.008，便宜到不必精算，
+ * 而且日額度會讓人每天回來。
+ *
+ * ## 每個方案的最壞月成本（NT$32/USD）
+ *
+ *            AI 文字              語音                    合計    月費   毛利
+ *   訪客     5×30×0.008 = 1.2    3k 字 Neural2 = 1.5      2.7     0      —
+ *   免費     10×30×0.008 = 2.4   8k 字 Neural2 = 4.1      6.5     0      —
+ *   標準     60×30×0.008 = 14    40k 字 HD = 38           52      150    65%
+ *   無限     150×30×0.008 = 36   100k 字 HD = 96          132     320    59%
+ *
+ * 常駐實例（minInstances: 1）約 NT$300〜600/月是固定成本，和用量無關：
+ * **約 5 個標準方案訂戶就打平**，之後每一個都是淨賺。
+ *
+ * 這些是依單價推的估算。上架後拿真實的 Google Cloud 帳單校正一次，
+ * 特別是語音那一欄——它佔成本的四分之三。
+ */
+type PlanId = 'free' | 'plus' | 'pro';
+type Allowance = { aiPerDay: number; ttsCharsPerMonth: number; hd: boolean };
+
+const PLAN_ALLOWANCE: Record<PlanId, Allowance> = {
+  free: { aiPerDay: 10, ttsCharsPerMonth: 8_000, hd: false },
+  plus: { aiPerDay: 60, ttsCharsPerMonth: 40_000, hd: true },
+  pro: { aiPerDay: 150, ttsCharsPerMonth: 100_000, hd: true },
+};
+// 訪客（還沒綁定帳號）給免費方案的一半，綁定才有完整免費額度
+const GUEST_ALLOWANCE: Allowance = { aiPerDay: 5, ttsCharsPerMonth: 3_000, hd: false };
+
+/**
+ * 使用者目前的方案。
+ *
+ * **只讀 entitlements/{uid}，不讀 users/{uid}**：後者是手機寫上去的，
+ * 改個 client 就能把自己變成無限方案。entitlements 的寫入權在 firestore.rules
+ * 裡對所有人關閉，只有 Cloud Functions（admin SDK 繞過規則）寫得進去——
+ * 之後接 IAP 時，收據驗證通過才由後端寫這一筆。
+ * 現在沒有任何東西會寫它，所以everyone 都是 free，這是正確的預設。
+ */
+const entCache = new Map<string, { at: number; a: Allowance }>();
+
+async function allowanceOf(uid: string, guest: boolean): Promise<Allowance> {
+  if (guest) return GUEST_ALLOWANCE;
+  const hit = entCache.get(uid);
+  if (hit && Date.now() - hit.at < 60_000) return hit.a;   // 常駐實例上快取一分鐘，省一次讀取
+  let plan: PlanId = 'free';
+  try {
+    const d = (await db.doc(`entitlements/${uid}`).get()).data();
+    const p = d?.plan;
+    const live = !d?.expiresAt || Number(d.expiresAt) > Date.now();
+    if (live && (p === 'plus' || p === 'pro')) plan = p;
+  } catch (e) {
+    console.warn('entitlement lookup failed, 退回免費方案', e);
+  }
+  const a = PLAN_ALLOWANCE[plan];
+  entCache.set(uid, { at: Date.now(), a });
+  return a;
+}
 
 const opts = { region: 'asia-east1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 60, memory: '256MiB' as const, maxInstances: 20 };
 // 會話是最常用、最在意速度的功能：保留 1 個常駐實例，避免冷啟動多等 2～4 秒（每月約 NT$100～300 常駐費）
 const chatOpts = { ...opts, memory: '512MiB' as const, minInstances: 1 };
 
-type Level = 'L1' | 'L2' | 'L3' | 'L4';
+// 程度只有兩階（初級／進階）。id 沿用 L2／L3，見 src/content/types.ts 的說明
+type Level = 'L2' | 'L3';
 const LEVEL_GUIDE: Record<Level, string> = {
-  L1: '零基礎（N5 以下）：只用最基本的單字和です・ます體，每句 15 字以內',
   L2: 'N5〜N4：簡單句子與常用旅行表達，用です・ます體',
   L3: 'N3〜N2：自然的生活會話，可以用常體與敬體混合，符合角色身分',
-  L4: 'N2〜N1：商務場合，正確使用尊敬語與謙讓語',
 };
 
 type Msg = { role: 'user' | 'assistant'; content: string };
@@ -45,8 +109,10 @@ const str = (v: unknown, max: number, field: string) => {
   return v.trim();
 };
 
+// 舊版 App 還會送 L1／L4 上來，收斂到最接近的那一階，不要讓它退成預設值
 function parseLevel(v: unknown): Level {
-  return v === 'L1' || v === 'L2' || v === 'L3' || v === 'L4' ? v : 'L2';
+  if (v === 'L3' || v === 'L4') return 'L3';
+  return 'L2';
 }
 
 function parseScenario(v: any): ScenarioIn {
@@ -67,10 +133,10 @@ function parseMessages(v: unknown, allowEmpty = false): Msg[] {
 }
 
 const taipeiDate = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+const taipeiMonth = () => taipeiDate().slice(0, 7);
 
-/** 扣一次額度，回傳今天剩餘次數 */
-async function useQuota(uid: string, guest: boolean) {
-  const limit = guest ? LIMITS.guest : LIMITS.member;
+/** 扣一次 AI 額度，回傳今天剩餘次數 */
+async function useQuota(uid: string, guest: boolean, limit: number) {
   const ref = db.doc(`usage/${uid}`);
   return db.runTransaction(async tx => {
     const snap = await tx.get(ref);
@@ -109,7 +175,8 @@ export const aiChat = onCall(chatOpts, async req => {
   const history = parseMessages(req.data?.messages, true);
   if (history.length && history[history.length - 1].role !== 'user') throw new HttpsError('invalid-argument', '對話內容有誤');
 
-  const remaining = await useQuota(uid, guest);
+  const a = await allowanceOf(uid, guest);
+  const remaining = await useQuota(uid, guest, a.aiPerDay);
 
   const system = `你是「皓學日語」app 的日語會話教練，正在和台灣的日語學習者進行角色扮演。
 
@@ -127,7 +194,7 @@ export const aiChat = onCall(chatOpts, async req => {
 6. 所有中文一律使用繁體中文（台灣用語）。
 
 只輸出一個 JSON 物件，不要有任何其他文字：
-{"reply":"日文回覆","reading":"${level === 'L1' || level === 'L2' ? '回覆的完整平假名讀音' : '空字串'}","replyZh":"繁體中文翻譯","correction":null,"hints":[{"ja":"","zh":""}],"missionComplete":false}
+{"reply":"日文回覆","reading":"${level === 'L2' ? '回覆的完整平假名讀音' : '空字串'}","replyZh":"繁體中文翻譯","correction":null,"hints":[{"ja":"","zh":""}],"missionComplete":false}
 correction 有內容時格式為 {"corrected":"更自然的日文","explanation":"繁體中文說明"}`;
 
   // Claude 的對話必須由 user 開始，前面補一句開場
@@ -144,10 +211,11 @@ correction 有內容時格式為 {"corrected":"更自然的日文","explanation"
   let audio: string | undefined;
   if (req.data?.voice === 'female' || req.data?.voice === 'male') {
     try {
-      await useTtsQuota(uid, guest);
-      audio = (await synthesize(reply, req.data.voice, clampRate(req.data?.rate))) ?? undefined;
+      if (await useTtsChars(uid, reply.length, a.ttsCharsPerMonth)) {
+        audio = (await synthesize(reply, req.data.voice, clampRate(req.data?.rate), a.hd)) ?? undefined;
+      }
     } catch (e) {
-      console.warn('aiChat TTS skipped', e);   // 語音失敗不影響文字回覆，手機會自己再要一次
+      console.warn('aiChat TTS skipped', e);   // 語音失敗不影響文字回覆，手機會退回內建語音
     }
   }
 
@@ -172,7 +240,7 @@ export const aiReport = onCall(opts, async req => {
   const history = parseMessages(req.data?.messages);
   if (!history.some(m => m.role === 'user')) throw new HttpsError('invalid-argument', '還沒有對話內容');
 
-  const remaining = await useQuota(uid, guest);
+  const remaining = await useQuota(uid, guest, (await allowanceOf(uid, guest)).aiPerDay);
 
   const transcript = history.map(m => `${m.role === 'user' ? '學習者' : scenario.role}：${m.content}`).join('\n');
   const system = `你是專業的日語教師，負責分析台灣學習者在角色扮演會話中的表現。
@@ -201,64 +269,57 @@ improvements 最多 3 項，keyPhrases 3〜5 句。`;
   };
 });
 
-// ---------- 句子健檢 ----------
-
-export const aiCheck = onCall(opts, async req => {
-  const { uid, guest } = requireUser(req);
-  const text = str(req.data?.text, 200, '句子');
-  const level = parseLevel(req.data?.level);
-
-  const remaining = await useQuota(uid, guest);
-
-  const system = `你是專業的日語教師，幫台灣學習者檢查他寫的日文。學習者程度：${LEVEL_GUIDE[level]}。
-如果輸入不是日文（例如中文），把它當成「想表達的意思」，示範自然的日文說法。
-只處理日文學習相關內容。所有說明使用繁體中文（台灣用語）。
-只輸出一個 JSON 物件，不要有任何其他文字：
-{"natural":true或false,"corrected":"最自然的日文（原句已經自然就照抄）","explanation":"具體說明哪裡要改、為什麼；自然的話說明好在哪裡","politeness":"常體／丁寧語／敬語 其中之一，並用幾個字說明適用場合","alternatives":[{"ja":"其他說法","zh":"中文意思","nuance":"語氣或使用場合的差異"}]}
-alternatives 1〜3 項。`;
-
-  const r = await askClaude(system, [{ role: 'user', content: text }], 1200, checkSchema);
-  return {
-    natural: r?.natural === true,
-    corrected: s(r?.corrected) || text,
-    explanation: s(r?.explanation),
-    politeness: s(r?.politeness),
-    alternatives: arr(r?.alternatives, 3, x => (s(x?.ja) ? { ja: s(x.ja), zh: s(x?.zh), nuance: s(x?.nuance) } : null)),
-    remaining,
-  };
-});
-
 // ---------- 自然語音（Google Cloud Text-to-Speech） ----------
 
-const TTS_LIMITS = { guest: 150, member: 600 }; // 每人每天產生語音的次數（手機有快取，重複播放不計）
-// 依序嘗試：最自然的 Chirp 3 HD → Neural2 → WaveNet
+/**
+ * 音色。
+ *
+ * Chirp3-HD 最自然，但也最貴（約 US$30 / 1M 字元）；Neural2 約一半價，
+ * 品質對初學者來說夠用。所以 **HD 留給付費方案**，免費和訪客從 Neural2 開始，
+ * 這一條就把免費用戶的語音成本砍半。
+ * 陣列是 fallback 鏈：前面的音色失敗（區域不支援、服務異常）就往後試。
+ */
 const VOICES = {
-  female: ['ja-JP-Chirp3-HD-Aoede', 'ja-JP-Neural2-B', 'ja-JP-Wavenet-A'],
-  male: ['ja-JP-Chirp3-HD-Charon', 'ja-JP-Neural2-C', 'ja-JP-Wavenet-C'],
+  hd: {
+    female: ['ja-JP-Chirp3-HD-Aoede', 'ja-JP-Neural2-B', 'ja-JP-Wavenet-A'],
+    male: ['ja-JP-Chirp3-HD-Charon', 'ja-JP-Neural2-C', 'ja-JP-Wavenet-C'],
+  },
+  std: {
+    female: ['ja-JP-Neural2-B', 'ja-JP-Wavenet-A', 'ja-JP-Standard-A'],
+    male: ['ja-JP-Neural2-C', 'ja-JP-Wavenet-C', 'ja-JP-Standard-C'],
+  },
 };
-const workingVoice: Partial<Record<'female' | 'male', string>> = {};
+const workingVoice: Partial<Record<string, string>> = {};
 let ttsClient: TextToSpeechClient | null = null;
 
-async function useTtsQuota(uid: string, guest: boolean) {
-  const limit = guest ? TTS_LIMITS.guest : TTS_LIMITS.member;
+/**
+ * 扣這次要唸的字元數。額度不夠時回傳 false（不是丟錯）——
+ * 手機端收到沒有音檔就會安靜地改用內建語音，使用者還是聽得到，
+ * 只是音色退一階。用 throw 的話會在畫面上跳出錯誤，對一個「還能用」的
+ * 降級來說太吵了。
+ */
+async function useTtsChars(uid: string, chars: number, limit: number): Promise<boolean> {
   const ref = db.doc(`ttsUsage/${uid}`);
-  await db.runTransaction(async tx => {
+  return db.runTransaction(async tx => {
     const snap = await tx.get(ref);
-    const today = taipeiDate();
+    const month = taipeiMonth();
     const data = snap.data();
-    const count = data && data.date === today ? (data.count as number) : 0;
-    if (count >= limit) throw new HttpsError('resource-exhausted', '今天的語音次數已用完');
-    tx.set(ref, { date: today, count: count + 1 });
+    const used = data && data.month === month ? (data.chars as number) : 0;
+    if (used + chars > limit) return false;
+    tx.set(ref, { month, chars: used + chars });
+    return true;
   });
 }
 
 const clampRate = (v: unknown) => Math.max(0.7, Math.min(1.3, Number(v) || 1));
 
 /** 產生日文語音（base64 MP3），依序嘗試可用的聲音；全部失敗回傳 null */
-async function synthesize(text: string, voice: 'female' | 'male', rate: number): Promise<string | null> {
+async function synthesize(text: string, voice: 'female' | 'male', rate: number, hd: boolean): Promise<string | null> {
   ttsClient ??= new TextToSpeechClient();
-  const known = workingVoice[voice];
-  const candidates = known ? [known, ...VOICES[voice].filter(v => v !== known)] : VOICES[voice];
+  const chain = VOICES[hd ? 'hd' : 'std'][voice];
+  const key = `${hd ? 'hd' : 'std'}-${voice}`;
+  const known = workingVoice[key];
+  const candidates = known ? [known, ...chain.filter(v => v !== known)] : chain;
   for (const name of candidates) {
     try {
       const [res] = await ttsClient.synthesizeSpeech({
@@ -267,7 +328,7 @@ async function synthesize(text: string, voice: 'female' | 'male', rate: number):
         audioConfig: { audioEncoding: 'MP3', speakingRate: rate },
       });
       if (!res.audioContent) continue;
-      workingVoice[voice] = name;
+      workingVoice[key] = name;
       return typeof res.audioContent === 'string' ? res.audioContent : Buffer.from(res.audioContent).toString('base64');
     } catch (e) {
       console.warn(`TTS voice ${name} failed`, e);
@@ -280,9 +341,11 @@ export const aiSpeak = onCall({ region: 'asia-east1', timeoutSeconds: 30, memory
   const { uid, guest } = requireUser(req);
   const text = str(req.data?.text, 300, '文字');
   const voice: 'female' | 'male' = req.data?.voice === 'male' ? 'male' : 'female';
+  const a = await allowanceOf(uid, guest);
 
-  await useTtsQuota(uid, guest);
-  const audio = await synthesize(text, voice, clampRate(req.data?.rate));
+  // 額度不夠就回傳沒有音檔，手機端自己改用內建語音（見 src/lib/speech.ts）
+  if (!(await useTtsChars(uid, text.length, a.ttsCharsPerMonth))) return { audio: null, quota: 'exhausted' };
+  const audio = await synthesize(text, voice, clampRate(req.data?.rate), a.hd);
   if (!audio) throw new HttpsError('unavailable', '語音暫時無法產生');
   return { audio };
 });

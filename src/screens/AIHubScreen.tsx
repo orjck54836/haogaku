@@ -72,19 +72,6 @@ export default function AIHubScreen() {
       </View>
 
       <Sheet>
-        {/* 句子健檢：不是會話，所以獨立出來不要混在情境清單裡 */}
-        <Card tone="soft" onPress={() => nav.navigate('Check')} accessibilityLabel="句子健檢"
-          style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-          <View style={{ width: 46, height: 46, borderRadius: radius.sm, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="shield-checkmark" size={22} color={t.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <T variant="heading">句子健檢</T>
-            <T variant="caption" color={t.sub} style={{ marginTop: 3 }}>寫一句或說一句，AI 幫你改到自然</T>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={t.faint} />
-        </Card>
-
         <SectionTitle title="情境會話" ja="シチュエーション"
           right={<T variant="small" color={t.faint}>{list.length} 個</T>} />
         <CategoryChips value={cat} onChange={setCat} />

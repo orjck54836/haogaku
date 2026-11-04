@@ -8,9 +8,12 @@ import { useData } from '../state/data';
 export function useLesson(lessonId: string) {
   const d = useData();
   const ref = lessonRef(lessonId)!;
+  const level = d.profile.startLevel;
   const [lesson, setLesson] = useState<Lesson | null>(() => {
     if (ref.lesson.kind !== 'gen') return ref.lesson;
-    const steps = bundledLesson(ref.topic!.id, ref.lesson.genKind!, d.profile.startLevel);
+    // 手寫版只有初級那一階，進階一律用產生的，否則兩階會看到一樣的句子
+    if (level === 'L2' && ref.lesson.basicSteps?.length) return { ...ref.lesson, steps: ref.lesson.basicSteps };
+    const steps = bundledLesson(ref.topic!.id, ref.lesson.genKind!, level);
     return steps ? { ...ref.lesson, steps } : null;
   });
   const [error, setError] = useState('');
@@ -18,7 +21,7 @@ export function useLesson(lessonId: string) {
   async function reload() {
     setError('');
     try {
-      const steps = await aiLesson(ref.topic!, ref.lesson.genKind!, d.profile.startLevel);
+      const steps = await aiLesson(ref.topic!, ref.lesson.genKind!, level);
       setLesson({ ...ref.lesson, steps });
     } catch (e: any) { setError(e?.message ?? '載入失敗'); }
   }

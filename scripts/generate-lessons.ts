@@ -6,7 +6,7 @@
  *
  * 選項：
  *   --only=ramen,cafe     只產生指定主題
- *   --levels=L2,L3        只產生指定程度（預設 L1〜L4 全部）
+ *   --levels=L2,L3        只產生指定程度（預設兩階全部）
  *   --force               已經產生過的也重新產生
  *   --model=sonnet        使用的模型：haiku、sonnet（預設）、opus，或完整模型名稱
  *   --dry                 不呼叫 AI，只測試流程
@@ -23,7 +23,7 @@ const OUT = path.join(__dirname, '../src/content/generated/lessons.json');
 
 const arg = (name: string) => process.argv.find(a => a.startsWith(`--${name}`))?.split('=')[1];
 const only = arg('only')?.split(',');
-const levels = (arg('levels')?.split(',') ?? ['L1', 'L2', 'L3', 'L4']) as Level[];
+const levels = (arg('levels')?.split(',') ?? ['L2', 'L3']) as Level[];
 const force = process.argv.includes('--force');
 const dry = process.argv.includes('--dry');
 const modelArg = arg('model') ?? 'sonnet';

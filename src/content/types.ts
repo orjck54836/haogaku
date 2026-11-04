@@ -1,4 +1,12 @@
-export type LevelId = 'L1' | 'L2' | 'L3' | 'L4';
+/**
+ * 日語程度，只有兩階。
+ *
+ * 原本是 L1〜L4，但實際上只有兩份內容（lessons.json 的 L2／L3），
+ * L1 降級抓 L2、L4 降級抓 L3，於是四格頁籤裡有兩組畫面完全一樣，
+ * 使用者切了看不出差別。id 沿用 L2／L3 不改名——改了的話
+ * lessons.json 的 249×2 筆 key、Cloud Functions 和已存的使用者資料全要跟著動。
+ */
+export type LevelId = 'L2' | 'L3';
 
 export type Option = { text: string; sub?: string; hint?: string };
 
@@ -40,6 +48,12 @@ export type Lesson = {
   scenarioId?: string;     // AI 課程對應的會話情境
   topicId?: string;
   genKind?: GenKind;
+  /**
+   * 手寫版的內容，只給初級用（見 curriculum.ts 的 handwritten）。
+   * 不直接放進 steps：那樣會讓這堂課在兩階都長一樣，
+   * 切到進階的人看到的還是 N5 的句子。
+   */
+  basicSteps?: Step[];
 };
 
 export type Unit = { id: string; title: string; description: string; lessons: Lesson[]; hasKanaChart?: boolean };

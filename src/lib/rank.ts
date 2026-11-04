@@ -4,7 +4,7 @@ import type { Topic } from '../content/topics';
 /**
  * 等級制度。
  *
- * 「等級」是 XP 換來的**成就**，和「日語程度」（LevelId，L1〜L4）是兩件不同的事——
+ * 「等級」是 XP 換來的**成就**，和「日語程度」（LevelId，初級／進階）是兩件不同的事——
  * 程度是使用者自己選的難度，等級是練出來的。兩個都叫 level 會看不懂，
  * 所以這裡一律叫「段位」（rank），畫面上寫「Lv.3 道案内」。
  *
@@ -12,7 +12,7 @@ import type { Topic } from '../content/topics';
  * data 之後若要顯示段位就得 import 回來，變成循環。這裡自己留一份 levelOrder。
  */
 
-const levelOrder: LevelId[] = ['L1', 'L2', 'L3', 'L4'];
+const levelOrder: LevelId[] = ['L2', 'L3'];
 const levelIndex = (id: LevelId) => Math.max(0, levelOrder.indexOf(id));
 
 export type Rank = {
@@ -99,8 +99,8 @@ const genWeight = { basic: 1, native: 1.3, practice: 1.6 } as const;
 export function lessonWeight(lesson: Lesson, topic?: Topic): number {
   const base = lesson.kind === 'ai' ? 2
     : lesson.kind === 'gen' ? genWeight[lesson.genKind ?? 'basic']
-    : 1;   // 五十音、看懂招牌、人工寫的基本課
-  // L3 的主題比 L1 難，但不該難到兩倍——每升一階加 15%
+    : 1;   // 五十音、看懂招牌
+  // 標為進階的主題比較難，但不該難到兩倍——加 15%
   const byLevel = topic?.minLevel ? 1 + 0.15 * levelIndex(topic.minLevel) : 1;
   return Math.round(base * byLevel * 10) / 10;
 }
@@ -122,7 +122,7 @@ export function lessonXp(lesson: Lesson, topic?: Topic): LessonXp {
  * （讀一篇 L2 的文章，付出的心力和上一堂「道地說法」差不多）。
  */
 export function readingXp(level: LevelId): number {
-  return [25, 35, 45, 55][levelIndex(level)];
+  return [30, 45][levelIndex(level)];
 }
 
 /** AI 會話一場。要自己生句子，所以比任何一堂課都高 */

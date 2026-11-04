@@ -36,7 +36,7 @@ export function RankRow({ xp, onDark }: { xp: number; onDark?: boolean }) {
       <View style={{ alignItems: 'flex-end' }}>
         <T variant="caption" color={sub}>{xp} XP</T>
         <T variant="caption" color={sub} style={{ marginTop: 1 }}>
-          {r.next ? `還差 ${r.toNext}` : '已滿級'}
+          {r.next ? `還差 ${r.toNext} XP` : '已滿級'}
         </T>
       </View>
     </View>

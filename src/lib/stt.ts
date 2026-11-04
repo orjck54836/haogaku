@@ -37,8 +37,10 @@ export async function startListening(h: ListenHandlers): Promise<() => void> {
   ];
   M.start({
     lang: 'ja-JP', interimResults: true, continuous: false, addsPunctuation: true,
-    // 收音時也讓聲音走喇叭；結束後會恢復成一般播放模式（見 speech.ts）
-    iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'measurement' },
+    // 收音時也讓聲音走喇叭；結束後會恢復成一般播放模式（見 speech.ts）。
+    // mode 不能用 'measurement'：它會關掉輸出端的處理並把音量壓得很低，
+    // 而且辨識結束後這個 mode 會殘留，讓後面播放的語音整個變小聲。
+    iosCategory: { category: 'playAndRecord', categoryOptions: ['defaultToSpeaker', 'allowBluetooth'], mode: 'default' },
   });
   return () => M.stop();
 }

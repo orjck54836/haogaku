@@ -39,6 +39,8 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   const sendRef = useRef<(t: string) => void>(() => {});
   const [loadingVoice, setLoadingVoice] = useState<string | null>(null);
   const voice = scenario.voice ?? 'female';
+  /** 自己要跳走（結束並分析）時不要再攔截 */
+  const leaving = useRef(false);
 
   /** 播放並在語音準備好之前，於喇叭圖示顯示轉圈 */
   async function play(id: string, ja: string, audio?: string) {
@@ -51,6 +53,40 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     }
   }
   const userTurns = history.filter(m => m.role === 'user').length;
+
+  /**
+   * 離開前先問一聲。
+   * 原因：AI 的回覆是非同步的，直接退出時那一句（和它的語音）會在使用者
+   * 已經切到別的畫面之後才回來，變成「人走了 AI 才開口」。
+   * 攔在這裡，既能提醒進度不會留著，也有時間把播放和收音收乾淨。
+   *
+   * 用自己的返回鍵，不用 beforeRemove + preventDefault：native-stack 的
+   * 原生返回鍵和滑動手勢是在原生層先把畫面移掉才通知 JS，攔不住——
+   * 實測會先跳回上一頁，提示才疊在上面出現（還會噴 removed natively 警告）。
+   * 所以關掉原生返回鍵和手勢，出口只留這一個。
+   */
+  function leave() {
+    leaving.current = true;
+    stopSpeech();
+    stopRef.current?.();
+    navigation.goBack();
+  }
+
+  function confirmLeave() {
+    if (userTurns === 0 && !busy) return leave();
+    stopSpeech();
+    Alert.alert(
+      busy ? '對方還在回覆' : '要離開這場對話嗎？',
+      userTurns > 0
+        ? '這場對話不會保留，也不會拿到分析和 XP。要先結束並分析嗎？'
+        : '這場對話不會保留。',
+      [
+        { text: '繼續對話', style: 'cancel' },
+        ...(userTurns > 0 ? [{ text: '結束並分析', onPress: () => { void finish(); } }] : []),
+        { text: '離開', style: 'destructive' as const, onPress: leave },
+      ],
+    );
+  }
 
   useEffect(() => {
     if (scenario.opening) play('open', scenario.opening);
@@ -76,6 +112,15 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   useLayoutEffect(() => {
     navigation.setOptions({
       title: scenario.title,
+      headerBackVisible: false,
+      gestureEnabled: false,
+      headerLeft: () => (
+        <Pressable accessibilityRole="button" accessibilityLabel="返回" onPress={confirmLeave} hitSlop={10}
+          style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Ionicons name="chevron-back" size={26} color={t.ink} />
+          <T color={t.ink} style={{ fontSize: 17 }}>返回</T>
+        </Pressable>
+      ),
       headerRight: () => (
         <Pressable accessibilityRole="button" onPress={finish} disabled={reporting || userTurns === 0} hitSlop={10}>
           {reporting ? <ActivityIndicator color={t.primary} />
@@ -122,6 +167,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     if (reporting || userTurns === 0) return;
     setReporting(true);
     try {
+      leaving.current = true;
       const report = await aiReport(scenario, level, history);
       d.setAiRemaining(report.remaining);
       d.recordChat();
@@ -129,6 +175,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
       if (route.params.lessonId) d.completeLesson(route.params.lessonId);
       navigation.replace('Report', { report, scenarioId: scenario.id, lessonId: route.params.lessonId });
     } catch (e: any) {
+      leaving.current = false;
       Alert.alert('分析失敗', e.message);
     } finally {
       setReporting(false);

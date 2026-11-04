@@ -13,8 +13,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStack } from '../navigation';
 import { BrandFooter } from '../ui/brand';
 import { topicPhotos, uiPhotos } from '../ui/images';
-import { RankCard } from '../ui/RankCard';
-import GrowthChart, { GrowthStat, cumulativeWords } from '../ui/GrowthChart';
+import { RankRow } from '../ui/RankCard';
+import { Seal } from '../ui/seal';
 import { rankState } from '../lib/rank';
 import OfficialLinks from '../ui/OfficialLinks';
 import { planById } from '../content/plans';
@@ -25,6 +25,9 @@ const goalPhoto: Record<Goal, number> = {
   travel: topicPhotos.airport!, study: topicPhotos.cityhall!,
   work: topicPhotos.meeting!, hobby: topicPhotos.karaoke!,
 };
+
+/** 個人資料卡的底圖：明治神宮的大鳥居。累積到一個階段才走得過去，和卡片上那些數字講的是同一件事 */
+const statsPhoto = topicPhotos.newyear!;
 
 /** 設定列的小圖。44pt 方形，和主題卡的縮圖同一種圓角比例 */
 function RowPhoto({ source }: { source: number }) {
@@ -38,11 +41,9 @@ export default function ProfileScreen() {
   const a = useAuth();
   const d = useData();
   const [busy, setBusy] = useState<string | null>(null);
+  const plan = planById(d.profile.plan);
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
   const name = d.profile.nickname || a.user?.displayName || (a.isGuest ? '訪客' : a.user?.email?.split('@')[0]) || '學習者';
-  // 成長曲線的時間範圍。0 代表「全部」（從第一個收藏的單字算起）
-  const [range, setRange] = useState(30);
-  const points = cumulativeWords(d.words, range);
 
   // 這台機器能用的登入方式。Apple 登入只在 iOS 出現
   type Linkable = 'apple.com' | 'google.com';
@@ -122,43 +123,65 @@ export default function ProfileScreen() {
 
   return (
     <Screen>
-      <View style={{ borderRadius: radius.xl, backgroundColor: t.shell, padding: space.xl }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-          <Avatar name={name} size={64} bg={t.gold} fg="#231A08" />
-          <View style={{ flex: 1 }}>
-            <T variant="title" color="#FFFFFF" numberOfLines={1}>{name}</T>
-            {d.profile.jaName ? <Text style={{ fontFamily: fonts.serifMedium, fontSize: 13, color: t.gold, marginTop: 2 }}>{d.profile.jaName}</Text> : null}
-            <T variant="caption" color="rgba(255,255,255,0.6)" style={{ marginTop: 2 }} numberOfLines={1}>{identity}</T>
-          </View>
-          <RoundButton icon="create-outline" size={40} bg="rgba(255,255,255,0.14)" fg="#FFFFFF"
-            accessibilityLabel="編輯個人資料" onPress={() => nav.navigate('EditProfile')} />
-        </View>
-        {d.profile.intro ? (
-          <T variant="small" color="rgba(255,255,255,0.75)" style={{ marginTop: space.lg }}>{d.profile.intro}</T>
-        ) : null}
-      </View>
+      {/* 個人資料、段位、四個數字併成同一張卡。
+          原本是三塊分開的（深色大頭卡 → 段位區塊 → 深色數字塊），中間還夾著排行榜，
+          但它們講的都是同一件事：這個人現在練到哪。分三塊只是讓這一頁變長，
+          而且兩塊深色中間夾一塊酒紅，層次反而亂掉。
+          底圖鋪照片＋單層平光遮罩（不疊多層假漸層，實機會看到灰帶）。 */}
+      <View style={{ borderRadius: radius.xl, backgroundColor: t.shell, overflow: 'hidden' }}>
+        <Image source={statsPhoto} resizeMode="cover"
+          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+        <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: t.shell, opacity: 0.88 }} />
 
-      <SectionTitle title="登入方式" ja="ログイン" />
-      {a.isGuest ? (
-        <View style={{ borderLeftWidth: 2, borderLeftColor: t.gold, paddingLeft: space.md, marginBottom: space.lg }}>
-          <T variant="heading">綁定帳號，保存學習紀錄</T>
-          <T variant="small" color={t.sub} style={{ marginTop: 4 }}>
-            訪客紀錄只存在這台手機。綁定後換手機或重裝也能接續，AI 每日次數也會增加。
-          </T>
-        </View>
-      ) : null}
-      <View>
-        {options.map((id, i) => (
-          <View key={id}>
-            {i > 0 ? <Rule /> : null}
-            <ProviderRow id={id} />
+        <View style={{ padding: space.xl }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
+            <Avatar name={name} size={64} bg={t.gold} fg="#231A08" />
+            <View style={{ flex: 1 }}>
+              <T variant="title" color="#FFFFFF" numberOfLines={1}>{name}</T>
+              {d.profile.jaName ? <Text style={{ fontFamily: fonts.serifMedium, fontSize: 13, color: t.gold, marginTop: 2 }}>{d.profile.jaName}</Text> : null}
+              <T variant="caption" color="rgba(255,255,255,0.6)" style={{ marginTop: 2 }} numberOfLines={1}>{identity}</T>
+            </View>
+            <RoundButton icon="create-outline" size={40} bg="rgba(255,255,255,0.14)" fg="#FFFFFF"
+              accessibilityLabel="編輯個人資料" onPress={() => nav.navigate('EditProfile')} />
           </View>
-        ))}
-      </View>
+          {d.profile.intro ? (
+            <T variant="small" color="rgba(255,255,255,0.75)" style={{ marginTop: space.lg }}>{d.profile.intro}</T>
+          ) : null}
+        </View>
 
-      <SectionTitle title="段位" ja="だんい"
-        right={<T variant="caption" color={t.faint}>{levelShort[d.profile.startLevel]}（{levelJlpt[d.profile.startLevel]}）</T>} />
-      <RankCard xp={d.progress.xp} />
+        <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.14)' }} />
+
+        {/* 段位和日語程度並排標著名字。這兩個最容易被搞混——
+            一個是 XP 換來的成就，一個是使用者自己選的難度，不標的話會以為是同一條 */}
+        <View style={{ paddingHorizontal: space.xl, paddingVertical: space.lg }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: space.md }}>
+            <T variant="caption" color="rgba(255,255,255,0.55)" style={{ letterSpacing: 1 }}>だんい・段位</T>
+            <T variant="caption" color="rgba(255,255,255,0.55)">
+              {`日語程度 ${levelShort[d.profile.startLevel]}（${levelJlpt[d.profile.startLevel]}）`}
+            </T>
+          </View>
+          <RankRow xp={d.progress.xp} onDark />
+        </View>
+
+        <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.14)' }} />
+
+        <View style={{ flexDirection: 'row', paddingVertical: space.lg, paddingHorizontal: space.sm }}>
+          {[
+            { n: d.streak(), l: '連續天數', icon: 'flame' as const },
+            { n: `Lv.${rankState(d.progress.xp).rank.n}`, l: '等級', icon: 'star' as const },
+            // 讀物也記在 completed 裡，但它不是課，不該灌水這個數字
+            { n: d.progress.completed.filter(id => !isReadingLesson(id)).length, l: '完成課程', icon: 'checkmark-done' as const },
+            { n: d.progress.chats, l: 'AI 會話', icon: 'sparkles' as const },
+          ].map((x, i) => (
+            <View key={x.l} style={{ flex: 1, alignItems: 'center',
+              borderLeftWidth: i === 0 ? 0 : 1, borderLeftColor: 'rgba(255,255,255,0.14)' }}>
+              <Ionicons name={x.icon} size={16} color={t.gold} />
+              <T style={{ fontSize: 22, fontWeight: '800', letterSpacing: -0.6, marginTop: 5 }} color="#FFFFFF">{x.n}</T>
+              <T variant="caption" color="rgba(255,255,255,0.68)" style={{ marginTop: 2 }} numberOfLines={1}>{x.l}</T>
+            </View>
+          ))}
+        </View>
+      </View>
 
       {/* 排行榜入口。原本只是段位標題右邊的一行小字，使用者反映會整個滑過去，
           所以改成整張酒紅卡——這一頁上唯一的飽和色塊，掃過去不可能錯過 */}
@@ -182,45 +205,54 @@ export default function ProfileScreen() {
         <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
       </Pressable>
 
-      <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.lg }}>
-        {[
-          { n: d.streak(), l: '連續天數', icon: 'flame' as const, c: t.accent },
-          { n: `Lv.${rankState(d.progress.xp).rank.n}`, l: '等級', icon: 'star' as const, c: t.warning },
-          // 讀物也記在 completed 裡，但它不是課，不該灌水這個數字
-          { n: d.progress.completed.filter(id => !isReadingLesson(id)).length, l: '完成課程', icon: 'checkmark-done' as const, c: t.success },
-          { n: d.progress.chats, l: 'AI 會話', icon: 'sparkles' as const, c: t.primary },
-        ].map(s => (
-          <Card key={s.l} tone="soft" style={{ flex: 1, alignItems: 'center', padding: space.md }}>
-            <Ionicons name={s.icon} size={18} color={s.c} />
-            <T style={{ fontSize: 19, fontWeight: '800', letterSpacing: -0.5, marginTop: 4 }} color={t.ink}>{s.n}</T>
-            <T variant="caption" color={t.sub} style={{ marginTop: 2 }} numberOfLines={1}>{s.l}</T>
-          </Card>
+      <SectionTitle title="登入方式" ja="ログイン" />
+      {a.isGuest ? (
+        <View style={{ borderLeftWidth: 2, borderLeftColor: t.gold, paddingLeft: space.md, marginBottom: space.lg }}>
+          <T variant="heading">綁定帳號，保存學習紀錄</T>
+          <T variant="small" color={t.sub} style={{ marginTop: 4 }}>
+            訪客紀錄只存在這台手機。綁定後換手機或重裝也能接續，AI 每日次數也會增加。
+          </T>
+        </View>
+      ) : null}
+      <View>
+        {options.map((id, i) => (
+          <View key={id}>
+            {i > 0 ? <Rule /> : null}
+            <ProviderRow id={id} />
+          </View>
         ))}
       </View>
 
-      <SectionTitle title="成長曲線" ja="のびかた"
-        right={<T variant="caption" color={t.faint}>收藏的單字累積量</T>} />
-      <Card tone="soft">
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <GrowthStat points={points} />
-          <View style={{ width: 168 }}>
-            <Segmented<number> value={range} onChange={setRange} options={[
-              { value: 30, label: '30 天' },
-              { value: 90, label: '90 天' },
-              { value: 0, label: '全部' },
-            ]} />
+      <SectionTitle title="方案" ja="プラン"
+        right={<T variant="caption" color={t.faint}>課程永遠免費</T>} />
+      <Pressable accessibilityRole="button" accessibilityLabel={`方案，目前是${plan.name}方案`}
+        onPress={() => nav.navigate('Plans')}
+        style={({ pressed }) => ({
+          borderRadius: radius.xl, overflow: 'hidden', backgroundColor: t.shell,
+          borderWidth: 2, borderColor: t.gold,
+          opacity: pressed ? 0.9 : 1, transform: [{ scale: pressed ? 0.99 : 1 }],
+        })}>
+        <Image source={topicPhotos.gifts!} resizeMode="cover"
+          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+        <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: t.shell, opacity: 0.82 }} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.lg }}>
+          <Seal kanji={plan.kanji} size={48} tone={plan.id === 'free' ? 'soft' : 'gold'} />
+          <View style={{ flex: 1 }}>
+            <T variant="caption" color={t.gold} style={{ fontWeight: '700', letterSpacing: 0.5 }}>
+              {`目前：${plan.name}方案`}
+            </T>
+            <T variant="heading" color="#FFFFFF" style={{ fontSize: 18, marginTop: 2 }}>
+              {plan.id === 'free' ? '想要更多 AI 次數？' : '查看或更換方案'}
+            </T>
+            <T variant="caption" color="rgba(255,255,255,0.7)" style={{ marginTop: 3, lineHeight: 18 }}>
+              {plan.id === 'free'
+                ? '課程與讀物永遠免費，付費只買 AI 和語音的每日用量'
+                : plan.tagline}
+            </T>
           </View>
+          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
         </View>
-        <View style={{ marginTop: space.lg }}>
-          <GrowthChart points={points} emptyText="在課程或讀物裡點「收藏」，單字會畫成曲線" />
-        </View>
-        <T variant="caption" color={t.faint} style={{ marginTop: space.sm }}>
-          {d.words.length
-            ? `目前 ${d.words.length} 個單字，其中 ${d.dueWords().length} 個今天該複習`
-            : '曲線用收藏時間畫，所以過去收的也都算在裡面'}
-          {`　·　讀物 ${d.progress.completed.filter(isReadingLesson).length}/${readings.length} 篇`}
-        </T>
-      </Card>
+      </Pressable>
 
       <SectionTitle title="學習設定" />
       <Card tone="soft" style={{ paddingVertical: space.xs }}>
@@ -249,13 +281,6 @@ export default function ProfileScreen() {
             setSpeechRate(next.v);
             speakJa(next.l === '慢' ? 'ゆっくり話します。' : next.l === '快' ? '少し速く話します。' : '普通の速さで話します。');
           }} />
-      </Card>
-
-      <SectionTitle title="方案" ja="プラン" />
-      <Card tone="soft" style={{ paddingVertical: space.xs }}>
-        <Row leading={<RowPhoto source={topicPhotos.gifts!} />} title="目前方案"
-          subtitle={`${planById(d.profile.plan).name} · ${planById(d.profile.plan).tagline}`}
-          onPress={() => nav.navigate('Plans')} />
       </Card>
 
       <SectionTitle title="帳號" />

@@ -76,14 +76,14 @@ function loadX() { try { return require('expo-x'); } catch { return null; } }
 
 ## 內容
 
-- **課程**：`src/content/generated/lessons.json`，目前只有 **L2 的 249 堂**，L3 還沒生。
+- **課程**：`src/content/generated/lessons.json`，**初級 249 堂＋進階 249 堂**，兩階都齊了。
   產生要 `ANTHROPIC_API_KEY`（console.anthropic.com 發的 `sk-ant-api03-`，
   Claude Code 的登入憑證不能用）：`npm run generate-lessons -- --levels=L3`
 - **流行語**：`src/content/slang.ts`，52 個，每天輪一個。
   含漢字的要填 `kana`（平假名讀音），假名詞不用——詞形本身就是讀音
 - **主題**：`src/content/topics.ts`。`topicNumber()` 的編號是畫面上的身分，
   順序改了編號就會變，**不要拿它當資料的 key**，key 一律用 `topic.id`
-- **讀物**：`src/content/readings.ts`，11 篇。全部是**原創**，不收青空文庫或任何現成作品——
+- **讀物**：`src/content/readings.ts`，30 篇。全部是**原創**，不收青空文庫或任何現成作品——
   授權乾淨，而且明治大正的文體學了用不出去。寫作的三條約束寫在檔頭。
   完成紀錄也進 `progress.completed`，但 id 有 `read-` 前綴，統計「完成課程」時
   要用 `isReadingLesson()` 排掉，不然數字會灌水。
@@ -93,12 +93,24 @@ function loadX() { try { return require('expo-x'); } catch { return null; } }
 
 `src/lib/rank.ts`。兩個容易混的概念，命名上分開了：
 
-- **日語程度**（`LevelId`，L1〜L4）：使用者自己選的難度，切換入口在**主題頁**上方的
-  `LevelTabs`（不在「我的」——它影響的是主題頁的推薦和「進階」標記，要調完就看到結果）
+- **日語程度**（`LevelId`）：使用者自己選的難度，只有**兩階**——初級（N5〜N4）和進階（N3〜N2）。
+  切換入口在**主題頁**上方的 `LevelTabs`（不在「我的」——它影響的是主題頁的
+  「進階」標記和課程內容的難度，要調完就看到結果）。
+
+  **id 仍然是 `L2`／`L3`，不要改名**。原本是 L1〜L4，但只有兩份內容，L1 降級抓 L2、
+  L4 降級抓 L3，四格裡有兩組畫面一模一樣。砍成兩階時沿用舊 id，是因為改名要動
+  lessons.json 的 498 筆 key、Cloud Functions 和所有已存的使用者資料。
+  舊資料的 L1／L4 在 `data.tsx` 的 `migrateLevel()` 搬到 L2／L3，
+  後端 `parseLevel()` 也會把舊 App 送上來的 L1／L4 收斂掉。
+
+  **手寫的「基本說法」只有初級那一階**（`curriculum.ts` 的 `handwritten`：
+  地鐵、便利商店、餐廳、飯店四個主題）。它走 `Lesson.basicSteps`，
+  由 `useLesson` 只在初級時採用，進階一律用產生的——
+  直接塞進 `steps` 的話這四個主題切程度會看到一模一樣的 N5 句子。
 - **段位**（`Rank`，Lv.1〜10）：XP 換來的成就，畫面上寫「Lv.3 道案内」
 
 XP 依難度加權，不是每堂課都一樣：基本說法 ×1，道地說法 ×1.3，情境練習 ×1.6，
-AI 會話 ×2，主題的 `minLevel` 每升一階再 +15%。三堂給一樣的分等於在獎勵只刷基本說法。
+AI 會話 ×2，主題標為進階（`minLevel: 'L3'`）再 +15%。三堂給一樣的分等於在獎勵只刷基本說法。
 改 XP 一律改 `rank.ts`，不要在畫面裡寫死數字（ReportScreen 的「+30 XP」就犯過這個錯）。
 
 ## 排行榜
@@ -130,6 +142,8 @@ firebase deploy --only firestore:rules
 
 `src/content/links.ts`，網站／LINE／IG 都在這裡，畫面只讀不寫死。
 `url` 留空的項目會自動從畫面消失，所以要加新平台可以先補一筆再補網址。
+官網那一列用 `image`（`assets/logo.png`）而不是 Ionicons——通用的地球圖示
+和 LINE、IG 擺在一起，看不出哪個才是「我們自己」。
 
 ## 開銷
 
@@ -153,13 +167,46 @@ firebase deploy --only firestore:rules
 等級、成長曲線），付費買的只有 AI 次數和語音次數。
 
 定價的成本結構：會話用 claude-haiku-5-5（$0.10/$0.50 per MTok），
-一次回覆約 NT$0.015，一個月用好用滿也才幾十塊。**真正的成本是 Chirp3-HD 語音**，
-按字元計價，高一個量級。所以語音次數才是分級主軸，AI 次數可以給得大方。
-這些是依成本結構推的估算，上架前拿真實帳單校正一次。
+一則回覆約 **NT$0.008**，一份分析約 NT$0.017。
+**真正的成本是 Chirp3-HD 語音**（約 US$30 / 1M 字元），一句日文約 30 字 ≈ **NT$0.029**，
+是一則 AI 回覆的四倍，而且語音額度通常給得比 AI 多一個量級。
 
-**訂閱還沒接。** `profile.plan` 只拿來顯示畫面，不能用它決定額度——
-它存在手機上，改得動。真正的解鎖要接 IAP 並**在 Cloud Functions 驗證收據**
-之後才放寬 `functions/src/index.ts` 的 LIMITS。
+## 語音算字元，不算次數
+
+Google 按字元收費，播一個 5 字的單字和一句 60 字的例句成本差 12 倍。
+舊版記「每天 600 次」，乘 30 天是 NT$520 的成本，而月費 NT$150——用好用滿會賠。
+現在後端 `PLAN_ALLOWANCE` 用**每月字元**，額度和成本同一個單位，最壞情況算得出來：
+
+| 方案 | AI 文字 | 語音 | 最壞月成本 | 月費 | 毛利 |
+|---|---|---|---|---|---|
+| 訪客 | 5 次/天 | 3k 字 Neural2 | NT$2.7 | 0 | — |
+| 免費 | 10 次/天 | 8k 字 Neural2 | NT$6.5 | 0 | — |
+| 標準 | 60 次/天 | 40k 字 HD | NT$52 | 150 | 65% |
+| 無限 | 150 次/天 | 100k 字 HD | NT$132 | 320 | 59% |
+
+常駐實例（`chatOpts` 的 `minInstances: 1`）約 NT$300〜600/月是**固定成本**，
+和用量無關：**約 5 個標準訂戶就打平**，之後每一個都是淨賺。
+
+兩條省錢的設計：
+
+- **HD 只給付費**。免費和訪客從 Neural2 開始（約一半價），`VOICES` 分成 `hd` 和 `std` 兩條 fallback 鏈。
+- **額度用完不擋，降級**。`aiSpeak` 回傳 `audio: null`（不是丟錯），
+  手機端 `speakJa` 自己改用內建語音——使用者還是聽得到，只是音色退一階。
+  用 throw 的話畫面會跳錯誤，對一個「還能用」的降級太吵。
+
+`plans.ts` 的數字只負責**顯示**，真正的額度在 `functions/src/index.ts` 的 `PLAN_ALLOWANCE`。
+兩邊要一起改，不然畫面會承諾後端不給的東西。
+
+## 方案資格只信 `entitlements/{uid}`
+
+後端判斷方案時**只讀 `entitlements/{uid}`，不讀 `users/{uid}`**。
+後者是手機寫上去的，改個 client 就能把自己變成無限方案。
+`firestore.rules` 把 entitlements 的寫入對所有人關閉（本人也不行），
+只有 Cloud Functions 用 admin SDK 寫得進去。
+
+**訂閱還沒接**，所以現在沒有任何東西會寫 entitlements，每個人都是 free——
+這是正確的預設。接 IAP 時：收據送到 Cloud Functions 驗證，**驗證通過才由後端**
+寫 `entitlements/{uid} = { plan, expiresAt }`。`profile.plan` 永遠只拿來顯示畫面。
 
 ## 中文排版：JSX 的換行會變成空格
 
@@ -191,3 +238,13 @@ Expo Go 裡**看不到自訂 icon**（顯示的是 Expo Go 自己的），要驗
 
 `legalLinks`（`src/content/links.ts`）目前指向官網首頁，**上架前一定要換成真正的條款頁**，
 指向首頁一樣會被退件。
+
+**年繳先關著**（`plans.ts` 的 `YEARLY_AVAILABLE = false`）。價錢和 productId 都留著，
+但畫面上只開月繳，購買頁的年繳格子顯示「日後推出」且不能點。
+原因是語音按字元計價、目前的定價只是依成本結構推的估算——年繳等於先收 12 個月的錢，
+單位成本抓錯就得整年虧著跑，或者去動已經收錢的訂閱。先跑幾個月月繳、
+對過 Google Cloud 和 Firebase 的真實帳單，再把那個值改成 true。
+
+方案入口在「我的」的**金邊照片色塊**，排在「學習設定」上面。
+原本是設定清單裡的一列小字、位置在整頁倒數第三段，實測會被整個滑過去。
+和排行榜那張酒紅卡用不同顏色分開——兩張都是入口，去的地方不一樣。

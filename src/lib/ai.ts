@@ -27,15 +27,6 @@ export type ChatReport = {
   remaining: number;
 };
 
-export type CheckResult = {
-  natural: boolean;
-  corrected: string;
-  explanation: string;
-  politeness: string;
-  alternatives: { ja: string; zh: string; nuance: string }[];
-  remaining: number;
-};
-
 type ScenarioInput = Pick<Scenario, 'title' | 'role' | 'setting' | 'goal'>;
 const pick = (s: Scenario): ScenarioInput => ({ title: s.title, role: s.role, setting: s.setting, goal: s.goal });
 
@@ -63,8 +54,6 @@ export const aiChat = (scenario: Scenario, level: LevelId, messages: ChatMsg[], 
 export const aiReport = (scenario: Scenario, level: LevelId, messages: ChatMsg[]) =>
   call<ChatReport>('aiReport', { scenario: pick(scenario), level, messages });
 
-export const aiCheck = (text: string, level: LevelId) => call<CheckResult>('aiCheck', { text, level });
-
 // ---------- AI 主題課程 ----------
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Step, GenKind } from '../content/types';
@@ -73,7 +62,7 @@ import type { Topic } from '../content/topics';
 import bundledLessons from '../content/generated/lessons.json';
 
 const bundled = bundledLessons as Record<string, Step[]>;
-const levelFallback: Record<LevelId, LevelId[]> = { L1: ['L1', 'L2', 'L3'], L2: ['L2', 'L1', 'L3'], L3: ['L3', 'L2', 'L4'], L4: ['L4', 'L3', 'L2'] };
+const levelFallback: Record<LevelId, LevelId[]> = { L2: ['L2', 'L3'], L3: ['L3', 'L2'] };
 
 /** 隨 app 內建的課程（預先產生，立即開啟、離線可用） */
 export function bundledLesson(topicId: string, kind: GenKind, level: LevelId): Step[] | null {

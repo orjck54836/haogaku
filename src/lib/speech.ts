@@ -24,23 +24,40 @@ let deviceVoiceLoaded = false;
  * - allowsRecording: false：語音輸入後把音訊從「錄音模式」切回來，否則聲音會很小或從聽筒出來
  * - shouldRouteThroughEarpiece: false：一律從喇叭播放
  */
+async function applyPlaybackMode() {
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    allowsRecording: false,
+    shouldRouteThroughEarpiece: false,
+    interruptionMode: 'duckOthers',
+  });
+}
+
 async function ensureAudioMode() {
   if (audioReady) return;
   try {
-    await setAudioModeAsync({
-      playsInSilentMode: true,
-      allowsRecording: false,
-      shouldRouteThroughEarpiece: false,
-      interruptionMode: 'duckOthers',
-    });
+    await applyPlaybackMode();
     audioReady = true;
   } catch {
     // 設定失敗下次再試
   }
 }
 
-/** 語音辨識結束後呼叫，下次播放前會重新設定音訊模式 */
-export const resetAudioMode = () => { audioReady = false; };
+/**
+ * 語音辨識結束後呼叫。
+ *
+ * 只把旗標清掉不夠：辨識的原生 session 是在 'end' 事件之後才真正關閉，
+ * 這時候搶著設定播放模式會被它收尾時覆蓋回錄音用的 session，
+ * 結果就是「使用者講完話之後，AI 的回覆變得很小聲」。
+ * 所以這裡先立刻設一次（讓馬上要播的那句有正確模式），
+ * 再延遲補設一次，蓋掉辨識收尾留下的設定。
+ */
+export function resetAudioMode() {
+  audioReady = false;
+  const retry = async () => { try { await applyPlaybackMode(); audioReady = true; } catch { audioReady = false; } };
+  void retry();
+  setTimeout(retry, 400);
+}
 
 /** 備援：手機內建語音，優先選高品質的日文語音 */
 async function speakOnDevice(text: string) {

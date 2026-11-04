@@ -17,10 +17,8 @@ const goals: Opt<Goal>[] = [
   { value: 'hobby', title: '興趣', sub: '看動漫日劇、交日本朋友', icon: 'heart-outline' },
 ];
 const levelOpts: Opt<LevelId>[] = [
-  { value: 'L1', title: '完全沒學過', sub: '從五十音開始', icon: 'leaf-outline' },
-  { value: 'L2', title: '會五十音', sub: '從旅行會話開始', icon: 'walk-outline' },
-  { value: 'L3', title: '能簡單對話', sub: '從生活會話開始（N3〜N2）', icon: 'chatbubbles-outline' },
-  { value: 'L4', title: '中高級', sub: '直接挑戰職場日語（N2〜N1）', icon: 'trophy-outline' },
+  { value: 'L2', title: '初級', sub: '沒學過或剛會五十音（N5〜N4）', icon: 'leaf-outline' },
+  { value: 'L3', title: '進階', sub: '能簡單對話，想講得更自然（N3〜N2）', icon: 'chatbubbles-outline' },
 ];
 const paces: Opt<number>[] = [
   { value: 30, title: '輕鬆', sub: '每天約 5 分鐘', icon: 'cafe-outline' },
@@ -58,7 +56,7 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(0);
   const [nickname, setNickname] = useState(a.user?.displayName ?? '');
   const [goal, setGoal] = useState<Goal>('travel');
-  const [level, setLevel] = useState<LevelId>('L1');
+  const [level, setLevel] = useState<LevelId>('L2');
   const [pace, setPace] = useState(50);
 
   const titles = ['怎麼稱呼你？', '你學日語是為了？', '你目前的程度？', '每天想練多久？'];

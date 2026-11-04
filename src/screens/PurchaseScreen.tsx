@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Pressable, Alert, Linking, ActivityIndicator } from 'react-native';
+import { View, Pressable, Alert, Linking, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,11 +7,17 @@ import { T, Card, Button, Pill, Rule, RoundButton } from '../ui';
 import { Seal } from '../ui/seal';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
-import { planById, yearlySaving, yearlyPerMonth, Plan } from '../content/plans';
+import { planById, yearlySaving, yearlyPerMonth, YEARLY_AVAILABLE, PlanId } from '../content/plans';
+import { topicPhotos } from '../ui/images';
 import { legalLinks } from '../content/links';
 import { StackProps } from '../navigation';
 
 type Cycle = 'monthly' | 'yearly';
+
+/** 和方案比較頁用同一組照片，從那一頁點進來才接得起來 */
+const planPhoto: Record<PlanId, number> = {
+  free: topicPhotos.hanami!, plus: topicPhotos.shinkansen!, pro: topicPhotos.matsuri!,
+};
 
 /** 自繪頂欄的高度：上 padding ＋ 內容 44 ＋ 下 padding。內容要讓開這麼多 */
 const HEADER_H = space.sm + 44 + 6;
@@ -44,10 +50,11 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
   const t = useTheme();
   const d = useData();
   const plan = planById(route.params.planId);
-  const [cycle, setCycle] = useState<Cycle>(route.params.cycle ?? 'yearly');
+  // 年繳還沒開放（見 plans.ts 的 YEARLY_AVAILABLE），只能是月繳
+  const [cycle, setCycle] = useState<Cycle>(YEARLY_AVAILABLE ? (route.params.cycle ?? 'monthly') : 'monthly');
   const [busy, setBusy] = useState(false);
 
-  const yearly = cycle === 'yearly';
+  const yearly = YEARLY_AVAILABLE && cycle === 'yearly';
   const total = yearly ? plan.yearly : plan.monthly;
   const periodLabel = yearly ? '年' : '月';
   const trial = plan.trialDays ?? 0;
@@ -96,24 +103,37 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       <ScrollView contentContainerStyle={{ padding: space.xl, paddingTop: HEADER_H + space.xl,
         paddingBottom: space.section }} showsVerticalScrollIndicator={false}>
 
-        {/* 1. 訂閱名稱 */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-          <Seal kanji={plan.kanji} size={58} tone={plan.id === 'pro' ? 'gold' : 'wine'} />
-          <View style={{ flex: 1 }}>
-            <T variant="title" style={{ fontSize: 24 }}>{plan.name}方案</T>
-            <T style={{ fontSize: 12, fontFamily: fonts.serifRegular, letterSpacing: 1, marginTop: 1 }} color={t.faint}>
-              {plan.kana}
-            </T>
+        {/* 1. 訂閱名稱。照片橫幅：整頁都是條款和數字，沒有一張圖會像一份表單 */}
+        <View style={{ height: 136, borderRadius: radius.xl, overflow: 'hidden', backgroundColor: t.shell }}>
+          <Image source={planPhoto[plan.id]} resizeMode="cover"
+            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
+          <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: t.shell, opacity: 0.8 }} />
+          <View style={{ flex: 1, justifyContent: 'center', gap: space.md, paddingHorizontal: space.lg }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
+              <Seal kanji={plan.kanji} size={54} tone={plan.id === 'pro' ? 'gold' : 'soft'} />
+              <View style={{ flex: 1 }}>
+                <T variant="title" style={{ fontSize: 23 }} color="#FFFFFF">{plan.name}方案</T>
+                <T style={{ fontSize: 12, fontFamily: fonts.serifRegular, letterSpacing: 1, marginTop: 1 }} color="rgba(255,255,255,0.7)">
+                  {plan.kana}
+                </T>
+              </View>
+            </View>
+            <T variant="small" color="rgba(255,255,255,0.82)">{plan.tagline}</T>
           </View>
         </View>
-        <T variant="small" color={t.sub} style={{ marginTop: space.md }}>{plan.tagline}</T>
 
         {/* 2. 期間長度 ＋ 3. 每期價格。兩個選項並排，差價一眼看得出來 */}
         <View style={{ gap: space.md, marginTop: space.xl }}>
-          <CycleOption label="年繳" sub={`NT$${plan.yearly} / 年`} note={`約每月 NT$${yearlyPerMonth(plan)}`}
-            badge={`省 ${yearlySaving(plan)}%`} on={yearly} onPress={() => setCycle('yearly')} />
           <CycleOption label="月繳" sub={`NT$${plan.monthly} / 月`} note="隨時取消"
             on={!yearly} onPress={() => setCycle('monthly')} />
+          {/* 年繳的格子留著但不能點：直接拿掉的話，之後上線會像憑空多出一個選項，
+              現在先讓人知道有這條路，只是還沒開 */}
+          {YEARLY_AVAILABLE ? (
+            <CycleOption label="年繳" sub={`NT$${plan.yearly} / 年`} note={`約每月 NT$${yearlyPerMonth(plan)}`}
+              badge={`省 ${yearlySaving(plan)}%`} on={yearly} onPress={() => setCycle('yearly')} />
+          ) : (
+            <CycleOption label="年繳" sub="日後推出" note="先以月繳為主" on={false} disabled />
+          )}
         </View>
 
         {/* 這個方案買到什麼 */}
@@ -197,21 +217,21 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
 }
 
 /** 計費週期的選項列。整列可點，不用去瞄一個小圓鈕 */
-function CycleOption({ label, sub, note, badge, on, onPress }: {
-  label: string; sub: string; note?: string; badge?: string; on: boolean; onPress: () => void;
+function CycleOption({ label, sub, note, badge, on, onPress, disabled }: {
+  label: string; sub: string; note?: string; badge?: string; on: boolean; onPress?: () => void; disabled?: boolean;
 }) {
   const t = useTheme();
   return (
-    <Pressable accessibilityRole="radio" accessibilityState={{ selected: on }}
-      accessibilityLabel={`${label}，${sub}`} onPress={onPress}
+    <Pressable accessibilityRole="radio" accessibilityState={{ selected: on, disabled }}
+      accessibilityLabel={`${label}，${sub}`} onPress={onPress} disabled={disabled}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: space.md,
         borderRadius: radius.lg, padding: space.lg,
         borderWidth: 2, borderColor: on ? t.primary : t.line,
         backgroundColor: on ? t.primarySoft : 'transparent',
-        opacity: pressed ? 0.8 : 1,
+        opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
       })}>
-      <Ionicons name={on ? 'radio-button-on' : 'radio-button-off'} size={22} color={on ? t.primary : t.faint} />
+      <Ionicons name={disabled ? 'time-outline' : on ? 'radio-button-on' : 'radio-button-off'} size={22} color={on ? t.primary : t.faint} />
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <T variant="heading">{label}</T>

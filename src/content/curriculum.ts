@@ -5,14 +5,14 @@ import { topics, Topic, CategoryId, categories } from './topics';
 import type { Goal } from '../state/data';
 
 export const levelLabels: Record<LevelId, string> = {
-  L1: '入門（零基礎）', L2: '初級（N5〜N4）', L3: '中級（N3〜N2）', L4: '高級（N2〜N1）',
+  L2: '初級（N5〜N4）', L3: '進階（N3〜N2）',
 };
-/** 標籤上的短名。全名「入門（零基礎）」塞不進四格並排的頁籤 */
-export const levelShort: Record<LevelId, string> = { L1: '入門', L2: '初級', L3: '中級', L4: '高級' };
+/** 標籤上的短名。全名「初級（N5〜N4）」塞不進並排的頁籤 */
+export const levelShort: Record<LevelId, string> = { L2: '初級', L3: '進階' };
 /** 短名下面那行小字 */
-export const levelJlpt: Record<LevelId, string> = { L1: '零基礎', L2: 'N5〜N4', L3: 'N3〜N2', L4: 'N2〜N1' };
+export const levelJlpt: Record<LevelId, string> = { L2: 'N5〜N4', L3: 'N3〜N2' };
 
-export const levelOrder: LevelId[] = ['L1', 'L2', 'L3', 'L4'];
+export const levelOrder: LevelId[] = ['L2', 'L3'];
 export const levelIndex = (id: LevelId) => levelOrder.indexOf(id);
 
 /** 五十音基礎 */
@@ -36,6 +36,12 @@ export const gridCategories = categories.filter(c => c.id !== 'keigo');
 export const gridTopics = topics.filter(t => t.cat !== 'keigo');
 
 /** 已經人工寫好的基本課 */
+/**
+ * 這四個主題的「基本說法」有手寫版，品質比產生的好，**但只有初級那一階**。
+ * 所以不能直接當成這堂課的內容——那樣切到進階看到的還是同一批 N5 句子
+ * （實測就是這樣：便利商店在初級和進階的基本說法一字不差）。
+ * 手寫內容走 basicSteps，由 useLesson 只在初級時採用。
+ */
 const handwritten: Record<string, Lesson> = {
   subway: subwayLesson, konbini: konbiniLesson, restaurant: restaurantLesson, hotel: hotelLesson,
 };
@@ -44,9 +50,11 @@ const handwritten: Record<string, Lesson> = {
 export function topicLessons(t: Topic): Lesson[] {
   const basicId = `${t.id}-basic`;
   const hw = handwritten[t.id];
-  const basic: Lesson = hw
-    ? { ...hw, id: basicId, title: '基本說法', subtitle: t.focus, topicId: t.id }
-    : { id: basicId, title: '基本說法', subtitle: t.focus, kind: 'gen', minutes: 4, steps: [], topicId: t.id, genKind: 'basic' };
+  const basic: Lesson = {
+    id: basicId, title: '基本說法', subtitle: t.focus, kind: 'gen',
+    minutes: hw?.minutes ?? 4, steps: [], topicId: t.id, genKind: 'basic',
+    basicSteps: hw?.steps,
+  };
   return [
     basic,
     { id: `${t.id}-native`, title: '道地說法', subtitle: '日本人真正會說的口語與語感', kind: 'gen', minutes: 4, steps: [], topicId: t.id, genKind: 'native' },
@@ -103,7 +111,10 @@ export function recommendedTopics(goal: Goal, level: LevelId, completed: string[
 }
 
 export function nextLesson(completed: string[], goal: Goal, level: LevelId): LessonRef {
-  if (level === 'L1') {
+  // 初級而且什麼都還沒上過的人，先推五十音。
+  // 只看「完全沒開始」而不是只看程度：會五十音的人也會選初級，
+  // 一進來就被推「平假名 あ行」會像被當成零基礎。
+  if (level === 'L2' && completed.length === 0) {
     const kana = allLessons.find(r => !r.topic && !completed.includes(r.lesson.id));
     if (kana) return kana;
   }

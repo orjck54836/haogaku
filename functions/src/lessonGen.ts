@@ -2,14 +2,12 @@ import { askJSON, lessonSchema, AnthropicLike } from './claude';
 
 // 主題課的產生邏輯：後端（aiLesson）和預先產生腳本（scripts/generate-lessons.ts）共用
 
-export type Level = 'L1' | 'L2' | 'L3' | 'L4';
+export type Level = 'L2' | 'L3';
 export type GenKind = 'basic' | 'native' | 'practice';
 
 const LEVEL_LESSON: Record<Level, string> = {
-  L1: '剛學完五十音的初學者：句子要短，用最基本的です・ます體，reading 一律提供完整平假名',
   L2: 'N5〜N4：實用短句，reading 提供完整平假名',
   L3: 'N3〜N2：自然的生活會話，可以加入常體與口語，reading 只標較難的漢字讀音（可整句平假名）',
-  L4: 'N2〜N1：細膩的語感、敬語與委婉表達，reading 只標難字讀音',
 };
 
 const KANA = /[\u3040-\u30ff]/;  // 有假名才是日文台詞（純中文的情境描述不朗讀）

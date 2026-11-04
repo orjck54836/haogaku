@@ -42,5 +42,18 @@ service cloud.firestore {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow write: if false;
     }
+
+    // 付費資格。
+    //
+    // **寫入對所有人關閉**，連本人都不行——這是決定額度的那份資料，
+    // 手機改得動的話等於改個 client 就免費升級。只有 Cloud Functions
+    // （admin SDK 會繞過這些規則）寫得進去，之後接 IAP 時由收據驗證寫。
+    // 本人可讀，是為了讓畫面顯示目前方案而不必多打一支 API。
+    //
+    // profile.plan 存在手機上，只能拿來顯示，絕對不能拿來決定額度。
+    match /entitlements/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
   }
 }

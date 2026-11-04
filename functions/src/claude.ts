@@ -75,11 +75,6 @@ export const reportSchema = obj({
   keyPhrases: arr(obj({ ja: str, zh: str })),
 });
 
-export const checkSchema = obj({
-  natural: { type: 'boolean' }, corrected: str, explanation: str, politeness: str,
-  alternatives: arr(obj({ ja: str, zh: str, nuance: str })),
-});
-
 export const lessonSchema = obj({
   steps: arr({
     anyOf: [

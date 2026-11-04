@@ -52,11 +52,20 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
     : d.progress.resume?.lessonId === lesson.id ? Math.min(d.progress.resume.step, lesson.steps.length - 1) : 0;
 
   const [step, setStep] = useState(startStep);
-  const [wrong, setWrong] = useState<number[]>([]);
-  const [solved, setSolved] = useState(false);
-  const [hint, setHint] = useState('');
+  /**
+   * 每一題的作答狀態分開存。
+   * 原因：可以回到上一題，而回去時必須看得到當時答對／答錯的樣子；
+   * 若只用單一組 wrong/solved，一往回走就被清空，看起來像沒作答過。
+   */
+  const [answers, setAnswers] = useState<Record<number, { wrong: number[]; solved: boolean; hint: string }>>({});
+  const cur = answers[step];
+  const wrong = cur?.wrong ?? [];
+  const solved = cur?.solved ?? false;
+  const hint = cur?.hint ?? '';
   const [finished, setFinished] = useState(false);
   const earned = useRef(0);
+  /** 已經給過 XP 的題號，回到上一題重答時不再加分 */
+  const scored = useRef<Set<number>>(new Set());
   /** 進這一課時的總 XP。完成後拿它跟現在的比，才知道這一課有沒有升段 */
   const xpAtStart = useRef(d.progress.xp);
   // 難度加權：道地說法、情境練習和進階主題的 XP 比基本說法高
@@ -71,7 +80,7 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   useEffect(() => {
     if (jump === undefined || route.params.at === undefined) return;
     setStep(Math.max(0, Math.min(jump, lesson.steps.length - 1)));
-    setWrong([]); setSolved(false); setHint(''); setFinished(false);
+    setAnswers({}); setFinished(false);
   }, [route.params.at]);
   useEffect(() => {
     if (finished) return;
@@ -84,18 +93,25 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
     const c = s as ChoiceStep;
     if (solved) return;
     if (i === c.answer) {
-      const got = wrong.length ? xp.retry : xp.first;
-      earned.current += got; d.addXp(got);
-      setSolved(true); setHint('');
+      // 只有第一次答對才給 XP：可以回到上一題，不擋的話來回走就能重複刷分
+      if (!scored.current.has(step)) {
+        scored.current.add(step);
+        const got = wrong.length ? xp.retry : xp.first;
+        earned.current += got; d.addXp(got);
+      }
+      setAnswers(a => ({ ...a, [step]: { wrong, solved: true, hint: '' } }));
     } else {
-      setWrong(w => [...w, i]);
-      setHint(c.options[i].hint ?? '再想想看');
+      setAnswers(a => ({ ...a, [step]: { wrong: [...wrong, i], solved: false, hint: c.options[i].hint ?? '再想想看' } }));
     }
+  }
+
+  function prev() {
+    if (step > 0) setStep(step - 1);
   }
 
   function next() {
     if (step + 1 < lesson.steps.length) {
-      setStep(step + 1); setWrong([]); setSolved(false); setHint('');
+      setStep(step + 1);
     } else {
       earned.current += xp.finish; d.addXp(xp.finish);
       d.completeLesson(lesson.id);
@@ -219,9 +235,18 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
         )}
       </ScrollView>
 
-      <View style={{ padding: space.xl, paddingTop: space.sm }}>
-        <Button label={step + 1 < lesson.steps.length ? (s.type === 'learn' ? '記住了，下一個' : '下一題') : '完成這一課'}
-          variant="primary" disabled={!canNext} onPress={next} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.xl, paddingTop: space.sm }}>
+        {step > 0 ? (
+          <Pressable accessibilityRole="button" accessibilityLabel="回到上一題" onPress={prev}
+            style={({ pressed }) => ({ width: 56, height: 56, borderRadius: radius.pill, backgroundColor: t.surface2,
+              alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}>
+            <Ionicons name="arrow-back" size={24} color={t.sub} />
+          </Pressable>
+        ) : null}
+        <View style={{ flex: 1 }}>
+          <Button label={step + 1 < lesson.steps.length ? (s.type === 'learn' ? '記住了，下一個' : '下一題') : '完成這一課'}
+            variant="primary" disabled={!canNext} onPress={next} />
+        </View>
       </View>
     </SafeAreaView>
   );
