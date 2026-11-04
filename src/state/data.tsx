@@ -9,9 +9,17 @@ import { setSpeechRate } from '../lib/speech';
 import { rankOf } from '../lib/rank';
 import { ReviewState, emptyReview } from '../lib/review';
 import { isReadingLesson } from '../content/readings';
+import { track } from '../lib/analytics';
 import { PlanId } from '../content/plans';
+import { SavedReport, addReport, trimReports, makeReport, retentionOf, fetchReports, pushReport, dropReport, pruneReports } from '../lib/reports';
+import type { ChatReport } from '../lib/ai';
 
 export type Goal = 'travel' | 'study' | 'work' | 'hobby';
+
+/** 學習目標的中文說法。畫面和 AI 會話的 prompt 都要用，所以放在型別旁邊共用 */
+export const goalLabel: Record<Goal, string> = {
+  travel: '去日本旅行', study: '留學或打工度假', work: '日商工作', hobby: '興趣',
+};
 
 export type Profile = {
   onboarded: boolean;
@@ -51,12 +59,18 @@ export type Word = {
   due: string;            // 下次複習日 YYYY-MM-DD
 };
 
-type Store = { profile: Profile; progress: Progress; words: Word[] };
+/**
+ * 會話分析的歷史另外開一個欄位，不塞在 progress 裡。
+ * progress 整份會被「重設進度」清掉，而分析是內容不是進度；
+ * 而且它是這份文件裡唯一會長大的東西，分開才看得出文件大小是誰撐起來的。
+ */
+type Store = { profile: Profile; progress: Progress; words: Word[]; reports: SavedReport[] };
 
 const emptyStore: Store = {
   profile: { onboarded: false, nickname: '', jaName: '', intro: '', goal: 'travel', startLevel: 'L2', dailyGoal: 50, speechRate: 1.0, leaderboard: true, plan: 'free' },
   progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null, review: emptyReview },
   words: [],
+  reports: [],
 };
 
 const INTERVALS = [0, 1, 3, 7, 14]; // 熟練度對應的複習間隔（天）
@@ -119,6 +133,8 @@ type DataCtx = Store & {
   recordChat: () => void;
   setAiRemaining: (n: number) => void;
   setReview: (r: Partial<ReviewState>) => void;
+  saveReport: (scenarioId: string, report: ChatReport, lessonId?: string) => void;
+  removeReport: (id: string) => void;
   isSaved: (ja: string) => boolean;
   toggleWord: (w: { ja: string; zh?: string; source: string }) => void;
   removeWord: (ja: string) => void;
@@ -166,6 +182,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setDoc(doc(db, 'users', uid), { ...local, updatedAt: Date.now() }).catch(() => {});
         }
       } catch { /* 離線時使用快取 */ }
+
+      // 分析紀錄在子集合，要另外讀一次；失敗（離線）時保留手機上的快取
+      try {
+        const plan = ref.current.profile.plan;
+        const cloud = await fetchReports(uid, plan);
+        if (cancelled) return;
+        if (cloud) {
+          // 舊版把紀錄存在 users 文件裡，雲端還沒有就先把手機上那份搬上去
+          const local = ref.current.reports;
+          const merged = cloud.length ? cloud : local;
+          if (!cloud.length && local.length) local.forEach(r => pushReport(uid, r));
+          const next = { ...ref.current, reports: trimReports(merged, plan) };
+          ref.current = next; setStore(next);
+          AsyncStorage.setItem(localKey(uid), JSON.stringify(next)).catch(() => {});
+          // 超出額度的舊紀錄留在雲端會一直計費，而且使用者看不到也刪不掉
+          if (cloud.length > next.reports.length) pruneReports(uid, next.reports);
+        }
+      } catch { /* 離線時使用快取 */ }
+
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -181,7 +216,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       const cur = ref.current;
-      setDoc(doc(db, 'users', uid), { ...cur, updatedAt: Date.now() }).catch(() => {});
+      // reports 不進這份文件：commit 是整份重寫，分析跟著走的話每加一次 XP
+      // 都會重傳全部紀錄。它有自己的子集合，寫入只在產生那一次（lib/reports.ts）
+      const { reports, ...rest } = cur;
+      setDoc(doc(db, 'users', uid), { ...rest, updatedAt: Date.now() }).catch(() => {});
       // 排行榜跟著同一個 debounce 走：每加一次 XP 就寫一次雲端太浪費，
       // 而且榜單本來就不需要即時。退出排行榜的人要把既有的那筆刪掉，
       // 只停止更新的話他會永遠卡在榜上最後一次的分數。
@@ -209,21 +247,48 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value: DataCtx = {
     ...store,
     loaded,
-    setProfile: p => commit(s => ({ ...s, profile: { ...s.profile, ...p } })),
+    // 方案變動時順手砍一次：降級後畫面不該還看得到超出額度的分析
+    setProfile: p => {
+      commit(s => {
+        const profile = { ...s.profile, ...p };
+        return { ...s, profile, reports: trimReports(s.reports, profile.plan) };
+      });
+      // 降級砍掉的那幾筆也要從雲端清掉
+      if (uidRef.current) pruneReports(uidRef.current, ref.current.reports);
+    },
     addXp: n => withProgress(p => {
       const t = today();
       const streak = p.lastDay === t ? p.streak : p.lastDay === yesterday() ? p.streak + 1 : 1;
       const todayXp = p.todayXp.date === t ? p.todayXp.xp + n : n;
       return { ...p, xp: p.xp + n, streak, lastDay: t, todayXp: { date: t, xp: todayXp } };
     }),
-    completeLesson: id => withProgress(p => ({
-      ...p, resume: null, completed: p.completed.includes(id) ? p.completed : [...p.completed, id],
-    })),
+    completeLesson: id => {
+      // 只在第一次完成時記：重做一次不是新的學習行為，算進去會讓留存率看起來比實際好
+      const first = !ref.current.progress.completed.includes(id);
+      withProgress(p => ({
+        ...p, resume: null, completed: p.completed.includes(id) ? p.completed : [...p.completed, id],
+      }));
+      if (first) track(isReadingLesson(id) ? 'reading_complete' : 'lesson_complete', { level: ref.current.profile.startLevel });
+    },
     setResume: (lessonId, step) => withProgress(p => ({ ...p, resume: { lessonId, step } })),
     clearResume: () => withProgress(p => ({ ...p, resume: null })),
     recordChat: () => withProgress(p => ({ ...p, chats: p.chats + 1 })),
     setAiRemaining: n => withProgress(p => ({ ...p, aiRemaining: n })),
     setReview: r => withProgress(p => ({ ...p, review: { ...p.review, ...r } })),
+    saveReport: (scenarioId, report, lessonId) => {
+      const uid = uidRef.current;
+      const entry = makeReport(scenarioId, report, lessonId);
+      const dropped = ref.current.reports.slice(retentionOf(ref.current.profile.plan) - 1);
+      commit(s => ({ ...s, reports: addReport(s.reports, entry, s.profile.plan) }));
+      if (!uid) return;
+      pushReport(uid, entry);
+      // 被擠出額度的那幾筆要一起從雲端刪掉，不然會變成看不到也刪不掉的孤兒
+      dropped.forEach(r => dropReport(uid, r.id));
+    },
+    removeReport: id => {
+      commit(s => ({ ...s, reports: s.reports.filter(r => r.id !== id) }));
+      if (uidRef.current) dropReport(uidRef.current, id);
+    },
     isSaved: ja => store.words.some(w => w.ja === ja),
     toggleWord: w => commit(s => s.words.some(x => x.ja === w.ja)
       ? { ...s, words: s.words.filter(x => x.ja !== w.ja) }
@@ -266,6 +331,8 @@ function merge(d: Partial<Store>): Store {
     // review 是後來才加的欄位，雲端舊資料沒有，要再補一層預設
     progress: { ...emptyStore.progress, ...(d.progress ?? {}), review: { ...emptyReview, ...(d.progress?.review ?? {}) } },
     words: Array.isArray(d.words) ? d.words : [],
+    // 降級的人要在載入時就砍到方案額度，不然舊紀錄會比方案說明多
+    reports: trimReports(Array.isArray(d.reports) ? d.reports : [], d.profile?.plan ?? 'free'),
   };
 }
 

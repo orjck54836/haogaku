@@ -1,17 +1,19 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { View, TextInput, Pressable, FlatList, KeyboardAvoidingView, Platform, Alert, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { T, Pill } from '../ui';
 import SaveButton from '../ui/SaveButton';
 import { useTheme, space, radius } from '../theme';
-import { useData } from '../state/data';
+import { useData, goalLabel } from '../state/data';
 import { scenarioById } from '../content/scenarios';
 import { aiChat, aiReport, ChatMsg, ChatReply } from '../lib/ai';
+import { track } from '../lib/analytics';
 import { speakJa, stopSpeech, cacheAudio, getSpeechRate } from '../lib/speech';
 import { startListening, speechInputAvailable } from '../lib/stt';
 import { StackProps } from '../navigation';
 import { CHAT_XP } from '../lib/rank';
+import { chatMemory } from '../lib/reports';
 
 type Bubble =
   | { id: string; from: 'ai'; ja: string; reading?: string; zh: string }
@@ -39,6 +41,17 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   const sendRef = useRef<(t: string) => void>(() => {});
   const [loadingVoice, setLoadingVoice] = useState<string | null>(null);
   const voice = scenario.voice ?? 'female';
+  /**
+   * 送給 AI 的「我是誰」。每次呼叫都要帶——後端是無狀態的，不帶就等於每場都重新認識。
+   * 用 useMemo 不是為了效能，是為了讓同一場會話從頭到尾看到同一份記憶：
+   * 中途存了新分析的話，重算會讓 AI 在對話進行到一半時突然「想起」還沒發生的事。
+   */
+  const learner = useMemo(() => ({
+    jaName: d.profile.jaName || d.profile.nickname || undefined,
+    intro: d.profile.intro || undefined,
+    goal: goalLabel[d.profile.goal],
+    ...chatMemory(d.reports, scenario.id),
+  }), []);
   /** 自己要跳走（結束並分析）時不要再攔截 */
   const leaving = useRef(false);
 
@@ -98,7 +111,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   async function openWithAI() {
     setBusy(true);
     try {
-      const r = await aiChat(scenario, level, [], { voice, rate: getSpeechRate() });
+      const r = await aiChat(scenario, level, [], { voice, rate: getSpeechRate() }, learner);
       d.setAiRemaining(r.remaining);
       setHistory([{ role: 'assistant', content: r.reply }]);
       setBubbles([{ id: 'open', from: 'ai', ja: r.reply, reading: r.reading || undefined, zh: r.replyZh }]);
@@ -141,7 +154,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     setHistory(nextHistory);
     setInput(''); setHints([]); setBusy(true);
     try {
-      const r = await aiChat(scenario, level, nextHistory, { voice, rate: getSpeechRate() });
+      const r = await aiChat(scenario, level, nextHistory, { voice, rate: getSpeechRate() }, learner);
       d.setAiRemaining(r.remaining);
       const aiId = `ai-${Date.now()}`;
       setHistory(h => [...h, { role: 'assistant', content: r.reply }]);
@@ -171,6 +184,8 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
       const report = await aiReport(scenario, level, history);
       d.setAiRemaining(report.remaining);
       d.recordChat();
+      d.saveReport(scenario.id, report, route.params.lessonId);
+      track('chat_finish', { scenario: scenario.id, turns: userTurns, overall: report.overall, mission: report.missionComplete });
       d.addXp(CHAT_XP);
       if (route.params.lessonId) d.completeLesson(route.params.lessonId);
       navigation.replace('Report', { report, scenarioId: scenario.id, lessonId: route.params.lessonId });

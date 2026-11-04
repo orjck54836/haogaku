@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme, useNavTheme, fonts } from './theme';
 import { useAuth } from './state/auth';
 import { useData } from './state/data';
-import { ChatReport } from './lib/ai';
+import type { ReportBody } from './lib/reports';
 import { PlanId } from './content/plans';
 
 import LoginScreen from './screens/LoginScreen';
@@ -19,6 +19,7 @@ import ProfileScreen from './screens/ProfileScreen';
 import LessonScreen from './screens/LessonScreen';
 import ChatScreen from './screens/ChatScreen';
 import ReportScreen from './screens/ReportScreen';
+import ReportsScreen from './screens/ReportsScreen';
 import ReviewScreen from './screens/ReviewScreen';
 import KanaChartScreen from './screens/KanaChartScreen';
 import SlangScreen from './screens/SlangScreen';
@@ -38,7 +39,9 @@ export type RootStack = {
   LessonContent: { lessonId: string };
   EditProfile: undefined;
   Chat: { scenarioId: string; lessonId?: string };
-  Report: { report: ChatReport; scenarioId: string; lessonId?: string };
+  /** savedAt 有值代表是從歷史點進來看的，不是剛練完——畫面和返回行為都不同 */
+  Report: { report: ReportBody; scenarioId: string; lessonId?: string; savedAt?: number };
+  Reports: undefined;
   Review: undefined;
   KanaChart: undefined;
   Slang: undefined;
@@ -118,7 +121,10 @@ export default function AppNavigator() {
         <Stack.Screen name="LessonContent" component={LessonContentScreen} options={{ title: '單元內容' }} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: '編輯個人資料' }} />
         <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'AI 會話' }} />
-        <Stack.Screen name="Report" component={ReportScreen} options={{ title: '會話分析', headerBackVisible: false, gestureEnabled: false }} />
+        {/* 剛練完時鎖住返回（會退回已結束的會話），但從歷史點進來一定要退得回去 */}
+        <Stack.Screen name="Report" component={ReportScreen}
+          options={({ route }) => ({ title: '會話分析', headerBackVisible: !!route.params.savedAt, gestureEnabled: !!route.params.savedAt })} />
+        <Stack.Screen name="Reports" component={ReportsScreen} options={{ title: '會話分析紀錄' }} />
         <Stack.Screen name="Review" component={ReviewScreen} options={{ title: '單字複習' }} />
         <Stack.Screen name="KanaChart" component={KanaChartScreen} options={{ title: '五十音表' }} />
         <Stack.Screen name="Slang" component={SlangScreen} options={{ title: '日本流行語' }} />

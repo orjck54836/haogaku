@@ -72,9 +72,10 @@ ${structure}
 {"steps":[{"type":"learn","ja":"","reading":"","zh":"","note":""},{"type":"choice","label":"店員","line":"","lineZh":"","question":"","options":[{"text":"","sub":"","hint":""}],"answer":0,"explain":""}]}`;
 }
 
-export async function generateLesson(client: AnthropicLike, model: string, title: string, focus: string, kind: GenKind, level: Level) {
+export async function generateLesson(client: AnthropicLike, model: string, title: string, focus: string, kind: GenKind, level: Level,
+  onUsage?: (u: { inTok: number; outTok: number }) => void) {
   const r = await askJSON(client, {
-    model, maxTokens: 6000, effort: 'medium', schema: lessonSchema,
+    model, maxTokens: 6000, effort: 'medium', schema: lessonSchema, onUsage,
     system: lessonPrompt(title, focus, kind, level),
     messages: [{ role: 'user', content: `請設計「${title}」的${{ basic: '基本說法', native: '道地說法', practice: '情境練習' }[kind]}課程。` }],
   });

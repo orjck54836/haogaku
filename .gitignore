@@ -44,3 +44,9 @@ yarn-error.*
 .env
 functions/lib
 functions/node_modules
+
+# 後台的 Firebase 設定（從 .env 產生，見 public/admin/firebase-config.example.js）
+public/admin/firebase-config.js
+
+# firebase deploy 的本機快取
+.firebase/

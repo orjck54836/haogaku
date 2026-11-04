@@ -6,12 +6,15 @@ import { useTheme, space } from '../theme';
 import { scenarioById } from '../content/scenarios';
 import { StackProps } from '../navigation';
 import { CHAT_XP } from '../lib/rank';
+import { whenLabel } from '../lib/date';
 
 const labels: Record<string, string> = { grammar: '文法', vocabulary: '用詞', politeness: '禮貌程度', fluency: '流暢度' };
 
 export default function ReportScreen({ route, navigation }: StackProps<'Report'>) {
   const t = useTheme();
-  const { report } = route.params;
+  const { report, savedAt } = route.params;
+  // 從歷史點進來的那次 XP 早就給過了，再印一次 +XP 會讓人以為又加了一次
+  const fresh = !savedAt;
   const scenario = scenarioById(route.params.scenarioId)!;
   const color = (n: number) => (n >= 80 ? t.success : n >= 60 ? t.primary : t.warning);
 
@@ -27,7 +30,9 @@ export default function ReportScreen({ route, navigation }: StackProps<'Report'>
           <Pill icon={report.missionComplete ? 'checkmark-circle' : 'ellipse-outline'} label={report.missionComplete ? '任務完成' : '任務未完成'}
             color={report.missionComplete ? t.success : t.sub} bg={report.missionComplete ? t.successSoft : t.surface2} />
           {/* 寫死的 +30 會和 rank.ts 的設定脫鉤，直接讀同一個常數 */}
-          <Pill icon="star" label={`+${CHAT_XP} XP`} color={t.gold} bg={t.goldSoft} />
+          {fresh
+            ? <Pill icon="star" label={`+${CHAT_XP} XP`} color={t.gold} bg={t.goldSoft} />
+            : <Pill icon="time-outline" label={whenLabel(savedAt!)} color={t.sub} bg={t.surface2} />}
         </View>
         <T color={t.sub} style={{ marginTop: space.lg, textAlign: 'center', lineHeight: 22 }}>{report.summary}</T>
       </Card>
@@ -94,7 +99,7 @@ export default function ReportScreen({ route, navigation }: StackProps<'Report'>
 
       <View style={{ marginTop: space.xxl, gap: space.sm }}>
         <Button label="再練一次" icon="refresh" variant="secondary" onPress={() => navigation.replace('Chat', { scenarioId: scenario.id, lessonId: route.params.lessonId })} />
-        <Button label="完成" onPress={() => navigation.goBack()} />
+        <Button label={fresh ? '完成' : '返回紀錄'} onPress={() => navigation.goBack()} />
       </View>
     </Screen>
   );

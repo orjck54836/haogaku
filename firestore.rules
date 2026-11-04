@@ -6,6 +6,18 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // 會話分析紀錄。
+    //
+    // **規則不會從 users/{uid} 往下繼承到子集合**，所以這條一定要自己寫，
+    // 漏了的話 app 一打開就讀不到紀錄（而且錯誤被 catch 掉，只會看起來像沒資料）。
+    //
+    // 搬出 users 文件的原因見 lib/reports.ts：那份文件是整份重寫的，
+    // 分析跟著走等於每次加 XP 都重傳一次全部紀錄。
+    // 只有本人能讀寫，和 users 一樣——這是私人資料，不像排行榜要對外開放。
+    match /users/{uid}/reports/{reportId} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
     // 排行榜：登入者都讀得到，但只能寫自己那一筆。
     //
     // 這個集合是刻意和 users 分開的——users 裡有單字本和自我介紹，
@@ -39,6 +51,25 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /usage/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // 成本記錄（每人每天一筆，只有後端寫得進去）。
+    //
+    // 讀取限制成「admins/{uid} 這份文件存在的人」，而不是把 uid 寫死在規則裡：
+    // 規則改一次就要重新部署，而且 uid 寫在版控裡不好看。
+    // 要開通後台，在 Firebase 主控台手動建一筆空的 admins/{你的 uid} 就好。
+    //
+    // 這份資料跨所有使用者，等於整個營運數字——除了 admin 誰都不該讀得到。
+    match /costs/{id} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow write: if false;
+    }
+
+    // 誰是 admin。寫入對所有人關閉：能自己把自己加進來的話，上面那條就形同虛設
+    match /admins/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow write: if false;
     }

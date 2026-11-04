@@ -10,6 +10,7 @@ import { useData } from '../state/data';
 import { planById, yearlySaving, yearlyPerMonth, YEARLY_AVAILABLE, PlanId } from '../content/plans';
 import { topicPhotos } from '../ui/images';
 import { legalLinks } from '../content/links';
+import { track } from '../lib/analytics';
 import { StackProps } from '../navigation';
 
 type Cycle = 'monthly' | 'yearly';
@@ -61,6 +62,8 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
 
   async function purchase() {
     setBusy(true);
+    // 漏斗的最後一步。接了金流之後，這裡和實際成交的差距就是流失
+    track('purchase_tap', { plan: plan.id, cycle, price: total });
     try {
       // TODO：發起 IAP 購買，成功後把收據送到 Cloud Functions 驗證。
       // 驗證通過才由後端寫入方案——這裡絕對不要直接 setProfile({ plan })。

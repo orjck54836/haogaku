@@ -19,19 +19,20 @@ export function GoldRule({ width = 40, style }: { width?: number | `${number}%`;
 }
 
 /**
- * 字標膠囊：深色殼上的品牌名，做成描邊 pill。
- * 參考圖最上面那個「GoDash」就是這個角色。
+ * 字標：深色殼上的品牌名。
+ *
+ * 原本是描邊 pill，拿掉外框了——頂列的左右已經各有一顆圓形元件，
+ * 中間再框一個會變成三個互相競爭的形狀；字標本來就該是最輕的那個。
+ * 外框一拿掉就沒有東西幫它撐出存在感，所以 logo 和字一起放大。
  */
 export function Wordmark({ onDark = true }: { onDark?: boolean }) {
   const t = useTheme();
   const fg = onDark ? '#FFFFFF' : t.ink;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7,
-      borderWidth: 1.5, borderColor: onDark ? 'rgba(255,255,255,0.35)' : t.lineStrong,
-      borderRadius: radius.pill, paddingLeft: 10, paddingRight: 16, paddingVertical: 6 }}>
-      {/* logo 用 22pt：比字高一點點，看得出是圖標而不是另一個字 */}
-      <Logo size={22} />
-      <Text style={{ fontFamily: fonts.serif, fontSize: 15, color: fg, letterSpacing: 1 }}>皓學日語</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+      {/* logo 仍然比字高一點點，看得出是圖標而不是另一個字 */}
+      <Logo size={30} />
+      <Text style={{ fontFamily: fonts.serif, fontSize: 19, color: fg, letterSpacing: 1 }}>皓學日語</Text>
     </View>
   );
 }

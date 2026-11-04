@@ -4,7 +4,6 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Button, ProgressBar, Eyebrow } from '../ui';
-import { Seal, BASICS_KANJI } from '../ui/seal';
 import { topicPhotos } from '../ui/images';
 import CategoryChips, { CatFilter } from '../ui/CategoryChips';
 import LevelTabs from '../ui/LevelTabs';
@@ -53,9 +52,9 @@ export default function CourseScreen() {
 
   // 底圖用品牌色罩著，照片只當質感，不會蓋過白字，兩張卡的酒紅／深色也還分得出來
   const foundations = [
-    { id: BASICS_ID, kanji: BASICS_KANJI, title: '五十音基礎', desc: '平假名、片假名、看懂招牌',
+    { id: BASICS_ID, title: '五十音基礎', desc: '平假名、片假名、看懂招牌',
       bg: t.primary, fg: '#FFFFFF', photo: topicPhotos.basics },
-    { id: KEIGO_ID, kanji: '敬', title: '敬語', desc: `尊敬語、謙讓語、職場與服務業・${keigoTopics.length} 個主題`,
+    { id: KEIGO_ID, title: '敬語', desc: `尊敬語、謙讓語、職場與服務業・${keigoTopics.length} 個主題`,
       bg: t.shell, fg: '#FFFFFF', photo: topicPhotos['service-keigo'] },
   ];
 
@@ -116,12 +115,9 @@ export default function CourseScreen() {
                 <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: f.bg, opacity: 0.84 }} />
               </> : null}
               <View style={{ padding: space.xl }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-                <Seal kanji={f.kanji} size={46} tone="soft" />
-                <View style={{ flex: 1 }}>
-                  <Eyebrow color="rgba(255,255,255,0.6)">Foundation</Eyebrow>
-                  <T variant="title" color={f.fg} style={{ fontSize: 22, marginTop: 1 }} numberOfLines={1}>{f.title}</T>
-                </View>
+              <View>
+                <Eyebrow color="rgba(255,255,255,0.6)">Foundation</Eyebrow>
+                <T variant="title" color={f.fg} style={{ fontSize: 22, marginTop: 1 }} numberOfLines={1}>{f.title}</T>
               </View>
               <T variant="small" color="rgba(255,255,255,0.75)" style={{ marginTop: space.md }} numberOfLines={2}>{f.desc}</T>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.lg }}>

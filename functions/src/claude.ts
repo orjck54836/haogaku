@@ -14,6 +14,13 @@ export type AskOptions = {
   maxTokens: number;
   effort: 'low' | 'medium' | 'high';
   schema?: Record<string, unknown>;   // 結構化輸出：保證回傳合法 JSON
+  /**
+   * 這次用掉的 token。成本要算得準只能靠它——
+   * 「次數 × 平均單價」會被長對話和長課程拉掉，歷史愈久偏差愈大。
+   * 做成 callback 而不是改回傳值，是因為 scripts/generate-lessons.ts 也在用這支，
+   * 改回傳的形狀那邊要跟著改，而它根本不需要這個數字。
+   */
+  onUsage?: (u: { inTok: number; outTok: number }) => void;
 };
 
 function parseJSON(text: string): any {
@@ -39,6 +46,9 @@ export async function askJSON(client: AnthropicLike, o: AskOptions): Promise<any
     try {
       const res = await client.messages.create(params as any);
       const text = res.content.map((b: any) => (b.type === 'text' ? b.text : '')).join('');
+      // 先回報用量再解析：解析失敗會退到下一種設定再打一次，但這次的 token 已經花掉了，
+      // 不記的話帳面成本會比帳單少一截，而且少的剛好是出問題的那些次
+      o.onUsage?.({ inTok: Number(res.usage?.input_tokens) || 0, outTok: Number(res.usage?.output_tokens) || 0 });
       return parseJSON(text);
     } catch (e: any) {
       lastError = e;

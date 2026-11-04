@@ -47,9 +47,29 @@ async function call<T>(name: string, data: unknown): Promise<T> {
   }
 }
 
-/** voice、rate 有給時，後端會把回覆的語音一起回傳，省掉一次往返 */
-export const aiChat = (scenario: Scenario, level: LevelId, messages: ChatMsg[], speech?: { voice: 'female' | 'male'; rate: number }) =>
-  call<ChatReply>('aiChat', { scenario: pick(scenario), level, messages, ...(speech ?? {}) });
+/**
+ * 「這個學習者是誰」。後端會把它拼進 system prompt，AI 才不會每次都像初次見面。
+ * 全部選填，沒填的欄位後端會整段略過。
+ */
+export type Learner = {
+  jaName?: string;
+  intro?: string;
+  goal?: string;
+  /** 最近幾場會話的摘要（見 lib/reports.ts 的 chatMemory） */
+  recent?: string[];
+  weak?: string[];
+};
+
+/**
+ * voice、rate 有給時，後端會把回覆的語音一起回傳，省掉一次往返。
+ *
+ * learner 每一次呼叫都要送：後端是無狀態的，不送就等於失憶。
+ * 多出來的 input token 大約 150〜250 個，一次不到 NT$0.0001。
+ */
+export const aiChat = (
+  scenario: Scenario, level: LevelId, messages: ChatMsg[],
+  speech?: { voice: 'female' | 'male'; rate: number }, learner?: Learner,
+) => call<ChatReply>('aiChat', { scenario: pick(scenario), level, messages, ...(speech ?? {}), learner });
 
 export const aiReport = (scenario: Scenario, level: LevelId, messages: ChatMsg[]) =>
   call<ChatReport>('aiReport', { scenario: pick(scenario), level, messages });

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>皓學日語 — 成本後台</title>
+<style>
+  :root {
+    --surface: #FCFCFB; --panel: #FFFFFF; --ink: #1A1614; --sub: #6B625C; --faint: #9A918B;
+    --line: #E7E1DA;
+    /* 兩條數列的顏色通過 dataviz 的六項檢查（亮色底，CVD ΔE 10.8 / 一般視覺 18.3） */
+    --ai: #A8394A; --tts: #9A7B16;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface); color: var(--ink);
+    font: 15px/1.5 -apple-system, "PingFang TC", "Noto Sans TC", sans-serif; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; margin: 0; }
+  .muted { color: var(--sub); }
+  .faint { color: var(--faint); font-size: 13px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    border-radius: 999px; padding: 7px 15px; cursor: pointer; }
+  button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .between { justify-content: space-between; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 18px 0; }
+  .kpi .label { font-size: 13px; color: var(--sub); }
+  .kpi .value { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; margin-top: 4px; }
+  .kpi .note { font-size: 12px; color: var(--faint); margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: right; padding: 9px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-size: 12px; color: var(--sub); font-weight: 600; }
+  .uid { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .chart { display: flex; align-items: flex-end; gap: 2px; height: 180px; margin-top: 14px; }
+  .day { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; min-width: 4px; }
+  .seg { border-radius: 2px 2px 0 0; min-height: 1px; }
+  .seg:last-child { border-radius: 2px; }
+  .legend { display: flex; gap: 14px; margin-top: 12px; font-size: 13px; color: var(--sub); }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; }
+  .hide { display: none; }
+  .err { color: #A8394A; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row between">
+    <h1>成本後台</h1>
+    <div class="row">
+      <span id="who" class="faint"></span>
+      <button id="auth">登入</button>
+    </div>
+  </div>
+
+  <p id="msg" class="muted">請用有管理權限的 Google 帳號登入。</p>
+
+  <div id="app" class="hide">
+    <div class="row" style="margin-top:16px">
+      <button data-days="7" aria-pressed="false">最近 7 天</button>
+      <button data-days="30" aria-pressed="true">最近 30 天</button>
+      <button data-days="90" aria-pressed="false">最近 90 天</button>
+    </div>
+
+    <div class="kpis">
+      <div class="panel kpi"><div class="label">總成本</div><div class="value" id="kTotal">—</div><div class="note" id="kTotalNote"></div></div>
+      <div class="panel kpi"><div class="label">AI 文字</div><div class="value" id="kAi">—</div><div class="note" id="kAiNote"></div></div>
+      <div class="panel kpi"><div class="label">語音</div><div class="value" id="kTts">—</div><div class="note" id="kTtsNote"></div></div>
+      <div class="panel kpi"><div class="label">有用量的人</div><div class="value" id="kUsers">—</div><div class="note" id="kUsersNote"></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="row between">
+        <strong>每日成本</strong>
+        <span class="faint" id="chartMax"></span>
+      </div>
+      <div class="chart" id="chart"></div>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--ai)"></i>AI 文字</span>
+        <span><i class="dot" style="background:var(--tts)"></i>語音</span>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="row between">
+        <strong>每人花費</strong>
+        <span class="faint" id="userCount"></span>
+      </div>
+      <table>
+        <thead><tr>
+          <th>使用者</th><th>會話</th><th>分析</th><th>課程</th>
+          <th>輸入 tok</th><th>輸出 tok</th><th>語音字元</th><th>成本</th>
+        </tr></thead>
+        <tbody id="users"></tbody>
+      </table>
+      <p class="faint" style="margin-top:14px">
+        成本以目前的單價換算（Haiku 5.5 $0.10／$0.50、Sonnet 5.5 $2／$10 per MTok；
+        Chirp3-HD US$30、Neural2 US$16 per 1M 字元；匯率 1 USD = 32 TWD）。
+        資料庫只存用量不存金額，單價改了把 PRICES 改掉就會整段重算。
+        不含 Cloud Functions 常駐實例的固定成本（約 NT$300〜600／月）。
+      </p>
+    </div>
+  </div>
+
+  <p id="error" class="err"></p>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, collection, query, where, getDocs }
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { firebaseConfig } from './firebase-config.js';
+
+/**
+ * 單價表。只有這裡寫金額——Firestore 存的是 token 和字元。
+ * 單價會變（換模型、Google 調價、匯率），存金額的話歷史資料會被舊單價鎖死。
+ */
+const USD_TWD = 32;
+const PRICES = {
+  // 每 1M token 的美金價
+  'claude-haiku-5-5': { in: 0.10, out: 0.50 },
+  'claude-sonnet-5-5': { in: 2.00, out: 10.00 },
+};
+const TTS_USD_PER_M = { hd: 30, std: 16 };   // 每 1M 字元
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $ = id => document.getElementById(id);
+const nt = n => 'NT$' + (n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString());
+const num = n => Math.round(n).toLocaleString();
+
+let days = 30;
+
+$('auth').onclick = () => auth.currentUser ? signOut(auth) : signInWithPopup(auth, new GoogleAuthProvider());
+
+onAuthStateChanged(auth, user => {
+  $('auth').textContent = user ? '登出' : '登入';
+  $('who').textContent = user ? (user.email ?? '') : '';
+  $('app').classList.toggle('hide', !user);
+  $('error').textContent = '';
+  if (user) { $('msg').textContent = ''; load(); }
+  else $('msg').textContent = '請用有管理權限的 Google 帳號登入。';
+});
+
+for (const b of document.querySelectorAll('[data-days]')) {
+  b.onclick = () => {
+    days = Number(b.dataset.days);
+    for (const x of document.querySelectorAll('[data-days]')) x.setAttribute('aria-pressed', String(x === b));
+    load();
+  };
+}
+
+/** 台北時間的 YYYY-MM-DD，和後端 taipeiDate() 用同一個基準 */
+const taipeiDay = offset => new Date(Date.now() + 8 * 3600e3 - offset * 86400e3).toISOString().slice(0, 10);
+
+function costOf(d) {
+  let ai = 0;
+  for (const [model, t] of Object.entries(d.tokens ?? {})) {
+    const p = PRICES[model];
+    if (!p) continue;   // 認不得的模型寧可少算，也不要用猜的單價混進去
+    ai += ((t.in ?? 0) * p.in + (t.out ?? 0) * p.out) / 1e6 * USD_TWD;
+  }
+  const tts = ((d.tts?.hd ?? 0) * TTS_USD_PER_M.hd + (d.tts?.std ?? 0) * TTS_USD_PER_M.std) / 1e6 * USD_TWD;
+  return { ai, tts };
+}
+
+async function load() {
+  try {
+    const from = taipeiDay(days - 1);
+    const snap = await getDocs(query(collection(db, 'costs'), where('date', '>=', from)));
+    render(snap.docs.map(d => d.data()));
+  } catch (e) {
+    // 最常見的是沒有 admins/{uid} 那筆，規則擋下來
+    $('error').textContent = '讀取失敗：' + (e?.message ?? e)
+      + '（要在 Firestore 建一筆 admins/<你的 uid> 才讀得到）';
+  }
+}
+
+function render(rows) {
+  const byDay = new Map(), byUser = new Map();
+  let ai = 0, tts = 0;
+
+  for (const r of rows) {
+    const c = costOf(r);
+    ai += c.ai; tts += c.tts;
+
+    const d = byDay.get(r.date) ?? { ai: 0, tts: 0 };
+    d.ai += c.ai; d.tts += c.tts; byDay.set(r.date, d);
+
+    const u = byUser.get(r.uid) ?? { uid: r.uid, chat: 0, report: 0, lesson: 0, in: 0, out: 0, chars: 0, cost: 0 };
+    u.chat += r.calls?.chat ?? 0; u.report += r.calls?.report ?? 0; u.lesson += r.calls?.lesson ?? 0;
+    for (const t of Object.values(r.tokens ?? {})) { u.in += t.in ?? 0; u.out += t.out ?? 0; }
+    u.chars += (r.tts?.hd ?? 0) + (r.tts?.std ?? 0);
+    u.cost += c.ai + c.tts;
+    byUser.set(r.uid, u);
+  }
+
+  const total = ai + tts;
+  const users = [...byUser.values()].sort((a, b) => b.cost - a.cost);
+
+  $('kTotal').textContent = nt(total);
+  $('kTotalNote').textContent = `最近 ${days} 天・平均每天 ${nt(total / days)}`;
+  $('kAi').textContent = nt(ai);
+  $('kAiNote').textContent = total ? `佔 ${Math.round(ai / total * 100)}%` : '';
+  $('kTts').textContent = nt(tts);
+  $('kTtsNote').textContent = total ? `佔 ${Math.round(tts / total * 100)}%` : '';
+  $('kUsers').textContent = users.length;
+  $('kUsersNote').textContent = users.length ? `平均每人 ${nt(total / users.length)}` : '';
+
+  // 每日長條：一天一根，堆疊 AI 和語音兩段，中間留 2px 的底色縫
+  const dayList = Array.from({ length: days }, (_, i) => taipeiDay(days - 1 - i));
+  const max = Math.max(0.01, ...dayList.map(d => (byDay.get(d)?.ai ?? 0) + (byDay.get(d)?.tts ?? 0)));
+  $('chartMax').textContent = `單日最高 ${nt(max)}`;
+  $('chart').innerHTML = dayList.map(d => {
+    const v = byDay.get(d) ?? { ai: 0, tts: 0 };
+    const h = x => (x / max * 160).toFixed(1);
+    return `<div class="day" title="${d}　AI ${nt(v.ai)}　語音 ${nt(v.tts)}">
+      <div class="seg" style="height:${h(v.ai)}px;background:var(--ai)"></div>
+      <div class="seg" style="height:${h(v.tts)}px;background:var(--tts)"></div>
+    </div>`;
+  }).join('');
+
+  $('userCount').textContent = `${users.length} 人`;
+  $('users').innerHTML = users.length ? users.map(u => `<tr>
+    <td class="uid">${u.uid ?? '(未知)'}</td>
+    <td>${u.chat}</td><td>${u.report}</td><td>${u.lesson}</td>
+    <td>${num(u.in)}</td><td>${num(u.out)}</td><td>${num(u.chars)}</td>
+    <td><strong>${nt(u.cost)}</strong></td>
+  </tr>`).join('') : '<tr><td colspan="8" class="faint">這段期間還沒有任何用量</td></tr>';
+}
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Row, Divider, SectionTitle, Rule, Avatar, RoundButton, Segmented } from '../ui';
 import { useTheme, space, fonts, radius } from '../theme';
 import { useAuth, providerLabels } from '../state/auth';
-import { useData, Goal } from '../state/data';
+import { useData, Goal, goalLabel } from '../state/data';
 import { levelShort, levelJlpt } from '../content/curriculum';
 import { isReadingLesson, readings } from '../content/readings';
 import { speakJa, setSpeechRate } from '../lib/speech';
@@ -19,7 +19,6 @@ import { rankState } from '../lib/rank';
 import OfficialLinks from '../ui/OfficialLinks';
 import { planById } from '../content/plans';
 
-const goalLabel: Record<Goal, string> = { travel: '去日本旅行', study: '留學或打工度假', work: '日商工作', hobby: '興趣' };
 /** 四個目標各配一張看得懂的照片：機場、區役所（留學手續）、會議室、KTV */
 const goalPhoto: Record<Goal, number> = {
   travel: topicPhotos.airport!, study: topicPhotos.cityhall!,

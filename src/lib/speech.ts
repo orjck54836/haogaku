@@ -1,6 +1,6 @@
 import * as Speech from 'expo-speech';
 import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from 'expo-audio';
-import { File, Paths } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import * as Crypto from 'expo-crypto';
 import { httpsCallable } from 'firebase/functions';
 import { auth, functions } from './firebase';
@@ -71,28 +71,77 @@ async function speakOnDevice(text: string) {
   Speech.speak(text, { language: 'ja-JP', rate, voice: deviceVoice });
 }
 
+/**
+ * 快取檔名的版本前綴。
+ *
+ * v1（`tts-`）那一版寫檔沒有 await，可能留下寫到一半的 MP3——檔案大小看起來正常、
+ * 播出來卻是雜音，而且永遠不會自己重抓。沒辦法從外面判斷一個 MP3 是不是截斷的，
+ * 所以**整批作廢**：換前綴等於舊的全部不採用，第一次播會重新跟雲端要一份乾淨的。
+ */
+const CACHE_VERSION = 'tts2';
+
 async function cacheFile(text: string, voice: Voice) {
   const key = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA1, `${voice}|${rate}|${text}`);
-  return new File(Paths.cache, `tts-${key}.mp3`);
+  return new File(Paths.cache, `${CACHE_VERSION}-${key}.mp3`);
 }
+
+/**
+ * 把 v1 留下來的檔案清掉。不清的話，那些（有些是壞的）MP3 會一直佔著手機空間，
+ * 而且再也沒有人會去讀它。整個 app 生命週期只跑一次，失敗就算了。
+ */
+let swept = false;
+function sweepOldCache() {
+  if (swept) return;
+  swept = true;
+  try {
+    for (const entry of new Directory(Paths.cache).list()) {
+      if (entry instanceof File && entry.name.startsWith('tts-')) {
+        try { entry.delete(); } catch { /* 忽略 */ }
+      }
+    }
+  } catch { /* 忽略：清不掉只是佔空間，不該影響播放 */ }
+}
+
+/**
+ * 把 base64 寫成快取檔。
+ *
+ * **一定要先寫暫存檔再搬過去，而且要 await。**
+ * `file.write()` 是非同步的，直接接著用 `file.uri` 去播，會播到一個還沒寫完
+ * （甚至 0 byte）的檔案——聽起來就是一陣雜音。更糟的是那個半成品會用正式檔名
+ * 留在快取裡，`file.exists` 永遠是 true，所以**那一句從此每次都是雜音**，
+ * 重開 app 也不會好。先寫 .part 再 move，中斷時壞檔不會佔到正式檔名。
+ */
+async function writeCache(file: File, base64: string) {
+  const part = new File(Paths.cache, `${file.name}.part`);
+  try { if (part.exists) part.delete(); } catch { /* 忽略 */ }
+  await part.write(base64, { encoding: 'base64' });
+  part.moveSync(file);
+}
+
+/** 快取檔小到不可能是一段 MP3，就是上面那種寫壞的半成品 */
+const MIN_AUDIO_BYTES = 256;
+const usableCache = (file: File) => file.exists && (file.size ?? 0) >= MIN_AUDIO_BYTES;
 
 /** 把後端一起回傳的語音存進快取（AI 會話用：文字和語音同時到，不必再多等一次） */
 export async function cacheAudio(text: string, voice: Voice, base64: string) {
   try {
     const file = await cacheFile(text, voice);
-    if (!file.exists) file.write(base64, { encoding: 'base64' });
+    if (!usableCache(file)) await writeCache(file, base64);
   } catch { /* 忽略，播放時會再向雲端要 */ }
 }
 
 /** 雲端自然語音：第一次產生後存在手機，之後離線也能播、不再計費 */
 async function cloudAudio(text: string, voice: Voice): Promise<string | null> {
+  sweepOldCache();
   const file = await cacheFile(text, voice);
-  if (file.exists) return file.uri;
+  if (usableCache(file)) return file.uri;
+  // 舊版留下來的壞檔要先清掉，否則下面寫不進去，使用者會一直聽到雜音
+  try { if (file.exists) file.delete(); } catch { /* 忽略 */ }
   if (!auth.currentUser) return null;
   const res = await httpsCallable(functions, 'aiSpeak')({ text, voice, rate });
   const audio = (res.data as { audio?: string })?.audio;
   if (!audio) return null;
-  file.write(audio, { encoding: 'base64' });
+  await writeCache(file, audio);
   return file.uri;
 }
 

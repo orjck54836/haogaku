@@ -1,7 +1,8 @@
+import { useEffect } from 'react';
 import { View, Pressable, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Sheet, T, Card, Button, Pill, SectionTitle, Rule } from '../ui';
-import { Seal } from '../ui/seal';
+import { track } from '../lib/analytics';
 import { TopBar, WineCard } from '../ui/brand';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
@@ -30,6 +31,9 @@ const planPhoto: Record<PlanId, number> = {
  * 不要用「進階功能」這種看不懂的詞。
  */
 export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
+  // 付費漏斗的第一步：有多少人真的走到方案頁
+  useEffect(() => { track('plans_view'); }, []);
+
   const t = useTheme();
   const d = useData();
   const current = planById(d.profile.plan);
@@ -150,7 +154,8 @@ function PlanCard({ plan, current, onPress }: {
       borderWidth: featured ? 2 : 0, borderColor: featured ? t.gold : 'transparent',
       ...(current ? { borderWidth: 2, borderColor: t.primary } : null),
     }}>
-      {/* 照片橫幅：漢字章壓在上面，名稱和價錢疊在照片上。
+      {/* 照片橫幅：名稱和價錢直接疊在照片上。
+          不放漢字章——「免／標／無」單字看不出意思，和旁邊寫全名的標題打對台。
           照片一定要給 width/height，只下四邊 inset 會照圖片內建尺寸放大成局部特寫 */}
       <View style={{ height: 112, backgroundColor: t.shell }}>
         <Image source={planPhoto[plan.id]} resizeMode="cover"
@@ -158,7 +163,6 @@ function PlanCard({ plan, current, onPress }: {
         <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0,
           backgroundColor: t.shell, opacity: free ? 0.72 : 0.8 }} />
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg }}>
-          <Seal kanji={plan.kanji} size={46} tone={featured ? 'gold' : 'soft'} />
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <T variant="heading" style={{ fontSize: 18 }} color="#FFFFFF">{plan.name}</T>

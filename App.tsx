@@ -1,4 +1,5 @@
-import { View, Text, ActivityIndicator } from 'react-native';
+import { useEffect } from 'react';
+import { View, Text, ActivityIndicator, AppState } from 'react-native';
 import { useFonts } from 'expo-font';
 // 只引入用到的三種粗細，避免把整套字型（8 種）包進 app
 // Regular 做大標、Bold 做小標——字重反著用是設計系統的一部分，見 src/theme.ts
@@ -11,6 +12,7 @@ import { AuthProvider } from './src/state/auth';
 import { DataProvider } from './src/state/data';
 import { firebaseConfigured } from './src/lib/firebase';
 import AppNavigator from './src/navigation';
+import { track, flushAnalytics } from './src/lib/analytics';
 
 function SetupNeeded() {
   return (
@@ -25,6 +27,14 @@ function SetupNeeded() {
 
 export default function App() {
   const [fontsLoaded] = useFonts({ NotoSerifTC_400Regular, NotoSerifTC_500Medium, NotoSerifTC_700Bold });
+
+  // 切到背景時把還沒送出的事件送掉，不然最後那幾筆會跟著 app 一起消失
+  useEffect(() => {
+    track('app_open');
+    const sub = AppState.addEventListener('change', st => { if (st !== 'active') flushAnalytics(); });
+    return () => sub.remove();
+  }, []);
+
   if (!fontsLoaded) {
     return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF7F1' }}><ActivityIndicator color="#8A2432" /></View>;
   }

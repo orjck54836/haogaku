@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { TopBar, WineCard } from '../ui/brand';
-import { Screen, Sheet, T, Card, Pill, RoundButton, Avatar, SectionTitle, StationSign } from '../ui';
+import { Screen, Sheet, T, Card, Pill, RoundButton, Avatar, SectionTitle, StationSign, IconBox } from '../ui';
 import { TopicThumb } from '../ui/seal';
 import CategoryChips, { CatFilter } from '../ui/CategoryChips';
 import { useTheme, space, radius } from '../theme';
@@ -14,11 +14,12 @@ import { topics, categories } from '../content/topics';
 import { photoFor, uiPhotos } from '../ui/images';
 import { RootStack } from '../navigation';
 import { planById } from '../content/plans';
+import { whenLabel } from '../lib/date';
 
 export default function AIHubScreen() {
   const t = useTheme();
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
-  const { progress, profile } = useData();
+  const { progress, profile, reports } = useData();
   const a = useAuth();
   const [cat, setCat] = useState<CatFilter>('all');
   const list = cat === 'all' ? topics : topics.filter(x => x.cat === cat);
@@ -72,6 +73,22 @@ export default function AIHubScreen() {
       </View>
 
       <Sheet>
+        {/* 分析紀錄只在有東西的時候出現——空的入口點進去是一片空白，
+            而且會把真正要用的「情境會話」往下推一整塊 */}
+        {reports.length ? (
+          <Card onPress={() => nav.navigate('Reports')} accessibilityLabel="會話分析紀錄"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.lg }}>
+            <IconBox name="document-text-outline" color={t.primary} bg={t.primarySoft} />
+            <View style={{ flex: 1 }}>
+              <T variant="heading">會話分析紀錄</T>
+              <T variant="caption" color={t.sub} style={{ marginTop: 2 }}>
+                {`${reports.length} 份・最近一次 ${whenLabel(reports[0].at)}`}
+              </T>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={t.faint} />
+          </Card>
+        ) : null}
+
         <SectionTitle title="情境會話" ja="シチュエーション"
           right={<T variant="small" color={t.faint}>{list.length} 個</T>} />
         <CategoryChips value={cat} onChange={setCat} />
