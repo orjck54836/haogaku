@@ -57,10 +57,8 @@ export default function HomeScreen() {
     <Screen shell padded={false}>
       {/* 深色殼：頂列＋酒紅大卡 */}
       <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
-        <TopBar
-          left={<RoundButton icon="menu" accessibilityLabel="單字複習" onPress={() => nav.navigate('Review')}
-            bg="rgba(255,255,255,0.12)" fg="#FFFFFF" size={44} />}
-          right={<Avatar name={name || '學'} size={44} onPress={() => goTab('Me')} bg={t.gold} fg="#231A08" />} />
+        {/* 左邊不放漢堡：它去的「單字複習」下面的白面板已經有一格，重複的入口只是噪音 */}
+        <TopBar right={<Avatar name={name || '學'} size={44} onPress={() => goTab('Me')} bg={t.gold} fg="#231A08" />} />
 
         <WineCard style={{ marginTop: space.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>

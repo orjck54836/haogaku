@@ -26,8 +26,11 @@ export function Wordmark({ onDark = true }: { onDark?: boolean }) {
   const t = useTheme();
   const fg = onDark ? '#FFFFFF' : t.ink;
   return (
-    <View style={{ borderWidth: 1.5, borderColor: onDark ? 'rgba(255,255,255,0.35)' : t.lineStrong,
-      borderRadius: radius.pill, paddingHorizontal: 16, paddingVertical: 7 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7,
+      borderWidth: 1.5, borderColor: onDark ? 'rgba(255,255,255,0.35)' : t.lineStrong,
+      borderRadius: radius.pill, paddingLeft: 10, paddingRight: 16, paddingVertical: 6 }}>
+      {/* logo 用 22pt：比字高一點點，看得出是圖標而不是另一個字 */}
+      <Logo size={22} />
       <Text style={{ fontFamily: fonts.serif, fontSize: 15, color: fg, letterSpacing: 1 }}>皓學日語</Text>
     </View>
   );

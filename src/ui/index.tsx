@@ -420,18 +420,57 @@ export function Divider() {
 }
 
 export function Segmented<V extends string | number>({ value, options, onChange }: { value: V; options: { value: V; label: string }[]; onChange: (v: V) => void }) {
-  const t = useTheme();
   return (
-    <View style={{ flexDirection: 'row', backgroundColor: t.surface2, borderRadius: radius.pill, padding: 4 }}>
-      {options.map(o => {
-        const on = o.value === value;
-        return (
-          <Pressable key={o.value} accessibilityRole="tab" accessibilityState={{ selected: on }} onPress={() => onChange(o.value)}
-            style={{ flex: 1, paddingVertical: 10, borderRadius: radius.pill, alignItems: 'center', backgroundColor: on ? t.shell : 'transparent' }}>
-            <Text style={{ fontSize: 14, fontWeight: '700', color: on ? '#FFFFFF' : t.sub }}>{o.label}</Text>
-          </Pressable>
-        );
-      })}
+    <FolderTabs
+      items={options.map(o => ({ key: String(o.value), label: o.label, on: o.value === value, onPress: () => onChange(o.value) }))} />
+  );
+}
+
+/**
+ * 資料夾式頁籤：選中的那格是白卡、頂上一條酒紅、往下蓋住底線，
+ * 像一張抽出來的索引卡；沒選的是淺灰、留在底線後面。
+ *
+ * 用這個而不是膠囊，是因為頁籤切換的是「同一頁的不同內容」，
+ * 白卡和下面的面板連成一片，看得出來內容屬於哪一格；
+ * 膠囊看起來像獨立的按鈕，切了不知道換到哪去。
+ *
+ * 圓角只給上面兩角——下面兩角一圓，白卡就和下方面板斷開了。
+ */
+export function FolderTabs({ items }: {
+  items: { key: string; label: string; sub?: string; on: boolean; onPress: () => void }[];
+}) {
+  const t = useTheme();
+  const TOP = 4;
+  // 底線用 lineStrong 不用 line：#EDE8E2 在白底上實機幾乎看不見，
+  // 線一消失，沒選的那幾格就變成飄著的圓角方塊，看不出是頁籤。
+  return (
+    <View style={{ flexDirection: 'row', gap: 4, borderBottomWidth: 2, borderBottomColor: t.lineStrong }}>
+      {items.map(it => (
+        <Pressable key={it.key} accessibilityRole="tab" accessibilityState={{ selected: it.on }}
+          accessibilityLabel={it.sub ? `${it.label} ${it.sub}` : it.label}
+          onPress={it.onPress}
+          style={({ pressed }) => ({
+            flex: 1, alignItems: 'center', paddingTop: TOP, paddingBottom: 11,
+            borderTopLeftRadius: radius.md, borderTopRightRadius: radius.md,
+            backgroundColor: it.on ? t.surface : t.surface2,
+            // 白卡往下蓋掉底線，才連得上下面的內容
+            marginBottom: it.on ? -2 : 0,
+            opacity: pressed ? 0.75 : 1,
+          })}>
+          {/* 頂上那條酒紅是「選中」的記號；沒選的放同寬的透明條，兩邊字的基線才齊 */}
+          <View style={{ alignSelf: 'stretch', height: 4, marginTop: -TOP, marginBottom: 9,
+            borderTopLeftRadius: radius.md, borderTopRightRadius: radius.md,
+            backgroundColor: it.on ? t.primary : 'transparent' }} />
+          <Text style={{ fontSize: 14, fontWeight: '700', letterSpacing: -0.3, color: it.on ? t.primary : t.sub }}>
+            {it.label}
+          </Text>
+          {it.sub ? (
+            <Text style={{ fontSize: 10, marginTop: 1, color: it.on ? t.primary : t.faint, opacity: it.on ? 0.7 : 1 }}>
+              {it.sub}
+            </Text>
+          ) : null}
+        </Pressable>
+      ))}
     </View>
   );
 }
