@@ -13,6 +13,7 @@ import { useAuth } from '../state/auth';
 import { topics, categories } from '../content/topics';
 import { photoFor, uiPhotos } from '../ui/images';
 import { RootStack } from '../navigation';
+import { planById } from '../content/plans';
 
 export default function AIHubScreen() {
   const t = useTheme();
@@ -22,6 +23,7 @@ export default function AIHubScreen() {
   const [cat, setCat] = useState<CatFilter>('all');
   const list = cat === 'all' ? topics : topics.filter(x => x.cat === cat);
   const name = profile.nickname || a.user?.displayName || '';
+  const plan = planById(profile.plan);
   const goTab = (screen: string) => (nav as any).navigate('Tabs', { screen });
 
   return (
@@ -52,15 +54,20 @@ export default function AIHubScreen() {
             說錯不用怕，AI 會即時糾正並在結束後給你一份分析
           </T>
 
-          {/* 額度：只寫「剩幾次」看不出一次是什麼，所以把計算方式寫在旁邊 */}
-          {progress.aiRemaining !== null ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md }}>
-              <Pill icon="flash" label={`今日還有 ${progress.aiRemaining} 次`} color="#FFFFFF" bg="rgba(255,255,255,0.16)" />
-              <T variant="caption" color="rgba(255,255,255,0.55)" style={{ flex: 1 }}>
-                每則 AI 回覆、每份分析各算一次
-              </T>
-            </View>
-          ) : null}
+          {/* 額度：只寫「剩幾次」看不出一次是什麼，所以把計算方式寫在旁邊。
+              整條可以點——次數見底時，使用者第一個想知道的就是怎麼拿到更多 */}
+          <Pressable accessibilityRole="button" accessibilityLabel="查看方案與用量"
+            onPress={() => nav.navigate('Plans')}
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.sm,
+              marginTop: space.md, opacity: pressed ? 0.7 : 1 })}>
+            <Pill icon="flash"
+              label={progress.aiRemaining !== null ? `今日還有 ${progress.aiRemaining} 次` : `${plan.name}方案`}
+              color="#FFFFFF" bg="rgba(255,255,255,0.16)" />
+            <T variant="caption" color="rgba(255,255,255,0.55)" style={{ flex: 1 }}>
+              每則 AI 回覆、每份分析各算一次
+            </T>
+            <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.55)" />
+          </Pressable>
         </WineCard>
       </View>
 

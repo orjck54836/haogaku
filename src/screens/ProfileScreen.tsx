@@ -16,6 +16,8 @@ import { topicPhotos, uiPhotos } from '../ui/images';
 import { RankCard } from '../ui/RankCard';
 import GrowthChart, { GrowthStat, cumulativeWords } from '../ui/GrowthChart';
 import { rankState } from '../lib/rank';
+import OfficialLinks from '../ui/OfficialLinks';
+import { planById } from '../content/plans';
 
 const goalLabel: Record<Goal, string> = { travel: '去日本旅行', study: '留學或打工度假', work: '日商工作', hobby: '興趣' };
 /** 四個目標各配一張看得懂的照片：機場、區役所（留學手續）、會議室、KTV */
@@ -158,6 +160,28 @@ export default function ProfileScreen() {
         right={<T variant="caption" color={t.faint}>{levelShort[d.profile.startLevel]}（{levelJlpt[d.profile.startLevel]}）</T>} />
       <RankCard xp={d.progress.xp} />
 
+      {/* 排行榜入口。原本只是段位標題右邊的一行小字，使用者反映會整個滑過去，
+          所以改成整張酒紅卡——這一頁上唯一的飽和色塊，掃過去不可能錯過 */}
+      <Pressable accessibilityRole="button" accessibilityLabel="查看學習排行榜"
+        onPress={() => nav.navigate('Leaderboard')}
+        style={({ pressed }) => ({
+          marginTop: space.md, backgroundColor: t.primary, borderRadius: radius.xl,
+          padding: space.lg, flexDirection: 'row', alignItems: 'center', gap: space.md,
+          opacity: pressed ? 0.88 : 1, transform: [{ scale: pressed ? 0.99 : 1 }],
+        })}>
+        <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.18)',
+          alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="trophy" size={22} color="#FFFFFF" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <T variant="heading" color="#FFFFFF">學習排行榜</T>
+          <T variant="caption" color="rgba(255,255,255,0.75)" style={{ marginTop: 1 }}>
+            {d.profile.leaderboard ? '看看你在其他學員之中排第幾' : '你目前沒有參加，點進去可以加入'}
+          </T>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
+      </Pressable>
+
       <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.lg }}>
         {[
           { n: d.streak(), l: '連續天數', icon: 'flame' as const, c: t.accent },
@@ -205,6 +229,17 @@ export default function ProfileScreen() {
         <Row leading={<RowPhoto source={topicPhotos.invitations!} />} title="每日目標" subtitle={`${d.profile.dailyGoal} XP · 點一下切換`}
           onPress={() => d.setProfile({ dailyGoal: paces[(paces.indexOf(d.profile.dailyGoal) + 1) % paces.length] })} />
         <Divider />
+        <Row leading={<RowPhoto source={topicPhotos.friends!} />} title="排行榜"
+          subtitle={d.profile.leaderboard ? '參加中，暱稱與 XP 會公開 · 點一下退出' : '未參加 · 點一下加入'}
+          right={<Ionicons name={d.profile.leaderboard ? 'toggle' : 'toggle-outline'} size={30}
+            color={d.profile.leaderboard ? t.primary : t.faint} />}
+          onPress={() => {
+            // 退出時順手說明資料會被刪掉——不然使用者不知道自己還在不在榜上
+            const on = !d.profile.leaderboard;
+            d.setProfile({ leaderboard: on });
+            if (!on) Alert.alert('已退出排行榜', '你在排行榜上的資料會在下次同步時刪除，學習紀錄不受影響。');
+          }} />
+        <Divider />
         <Row leading={<RowPhoto source={uiPhotos.coach} />} title="語音速度"
           subtitle={`${rates.find(r => r.v === d.profile.speechRate)?.l ?? '標準'} · 點一下切換`}
           onPress={() => {
@@ -216,12 +251,23 @@ export default function ProfileScreen() {
           }} />
       </Card>
 
+      <SectionTitle title="方案" ja="プラン" />
+      <Card tone="soft" style={{ paddingVertical: space.xs }}>
+        <Row leading={<RowPhoto source={topicPhotos.gifts!} />} title="目前方案"
+          subtitle={`${planById(d.profile.plan).name} · ${planById(d.profile.plan).tagline}`}
+          onPress={() => nav.navigate('Plans')} />
+      </Card>
+
       <SectionTitle title="帳號" />
       <Card tone="soft" style={{ paddingVertical: space.xs }}>
         <Row icon="log-out-outline" iconColor={t.sub} iconBg="#FFFFFF" title="登出" onPress={confirmSignOut} />
         <Divider />
         <Row icon="trash-outline" iconColor={t.danger} iconBg={t.dangerSoft} title="刪除帳號" subtitle="永久刪除帳號與學習紀錄" onPress={confirmDelete} />
       </Card>
+
+      <SectionTitle title="追蹤皓學" ja="フォロー"
+        right={<T variant="caption" color={t.faint}>課程・留學代辦</T>} />
+      <OfficialLinks />
 
       <BrandFooter text="皓學日語 v2.0 · FORMA Global" />
     </Screen>

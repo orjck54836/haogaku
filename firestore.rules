@@ -5,6 +5,31 @@ service cloud.firestore {
     match /users/{uid} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+
+    // 排行榜：登入者都讀得到，但只能寫自己那一筆。
+    //
+    // 這個集合是刻意和 users 分開的——users 裡有單字本和自我介紹，
+    // 不能為了做榜單就把整份資料開放。這裡只收榜上要顯示的欄位，
+    // 而且用 hasOnly 擋住：有人改 client 想偷塞欄位（例如 email）也寫不進來。
+    //
+    // xp 只檢查型別和下限，不防作弊——真要防得把加分搬到 Cloud Functions。
+    // 以目前的規模，擋住「亂塞欄位」和「改別人的分數」就夠了。
+    match /leaderboard/{uid} {
+      allow read: if request.auth != null;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'jaName', 'xp', 'lv', 'streak', 'lessons', 'updatedAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 12
+        && request.resource.data.jaName is string
+        && request.resource.data.jaName.size() <= 12
+        && request.resource.data.xp is int && request.resource.data.xp >= 0
+        && request.resource.data.lv is int
+        && request.resource.data.streak is int
+        && request.resource.data.lessons is int;
+    }
+
     // AI 使用次數只有後端能寫
     // AI 產生的課程只有後端能讀寫（可在 Firebase 主控台檢查、修改）
     match /lessons/{id} {

@@ -9,6 +9,7 @@ import { useData } from '../state/data';
 import { readingById, genreLabels, readingLessonId } from '../content/readings';
 import { levelShort, levelJlpt } from '../content/curriculum';
 import { readingXp } from '../lib/rank';
+import { useReviewPrompt } from '../lib/useReviewPrompt';
 import { photoFor } from '../ui/images';
 import { speakJa, stopSpeech } from '../lib/speech';
 import { StackProps } from '../navigation';
@@ -36,6 +37,7 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
   const [speaking, setSpeaking] = useState<number | null>(null);
   const [justDone, setJustDone] = useState(false);
   const xp = readingXp(r.level);
+  useReviewPrompt(justDone);
   const photo = photoFor(r.photo);
   // 重讀不再給 XP，但也不該讓按鈕消失（讀完想再按一次確認讀過是很自然的動作）
   const earned = useRef(0);

@@ -29,6 +29,7 @@
     "expo-speech": "~58.0.3",
     "expo-speech-recognition": "^58.0.1",
     "expo-status-bar": "~58.0.4",
+    "expo-store-review": "~58.0.2",
     "firebase": "^13.1.0",
     "react": "19.3.0",
     "react-native": "0.88.1",

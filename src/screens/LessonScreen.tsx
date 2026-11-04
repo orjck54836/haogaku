@@ -13,6 +13,7 @@ import { ActivityIndicator } from 'react-native';
 import { speakJa, stopSpeech } from '../lib/speech';
 import { StackProps } from '../navigation';
 import { lessonXp, rankOf, weightLabel } from '../lib/rank';
+import { useReviewPrompt } from '../lib/useReviewPrompt';
 import { Seal } from '../ui/seal';
 
 /** 外層：AI 主題課先載入內容 */
@@ -61,6 +62,9 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   // 難度加權：道地說法、情境練習和進階主題的 XP 比基本說法高
   const xp = lessonXp(lesson, ref.topic);
   const s = lesson.steps[step];
+
+  // 上完一堂課是使用者心情最好的時刻，評價就在這時問（時機規則見 lib/review.ts）
+  useReviewPrompt(finished);
 
   useEffect(() => { d.setResume(lesson.id, step); }, [step]);
   // 已在上課時，從「單元內容」點別張回來：跳到那一張

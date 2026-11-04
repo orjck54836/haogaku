@@ -17,6 +17,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: false,
     usesAppleSignIn: true,
     infoPlist: { ...(config.ios?.infoPlist ?? {}), ITSAppUsesNonExemptEncryption: false },
+    // 上架後把 App Store ID 填進來。expo-store-review 在原生評分視窗叫不出來時
+    // （例如系統已達次數上限）會用它退回商店頁；沒填就只是不退回，不會壞掉：
+    // appStoreUrl: 'https://apps.apple.com/tw/app/id0000000000',
   },
   android: {
     ...config.android,

@@ -188,7 +188,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await reauthenticateWithCredential(u, cred);
     }
 
-    await deleteDoc(doc(db, 'users', u.uid)).catch(() => {});
+    // 排行榜那筆要一起刪。只刪 users 的話，帳號沒了名字還留在榜上
+    await Promise.all([
+      deleteDoc(doc(db, 'users', u.uid)).catch(() => {}),
+      deleteDoc(doc(db, 'leaderboard', u.uid)).catch(() => {}),
+    ]);
     try {
       await deleteUser(u);
     } catch (e: any) {

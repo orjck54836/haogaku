@@ -128,9 +128,15 @@ export default function HomeScreen() {
           </View>
         </Card>
 
-        {/* 段位：XP 的去處。只有數字看不出意義，掛上段位才有下一個目標 */}
-        <Card tone="soft" style={{ marginTop: space.md }} onPress={() => goTab('Me')} accessibilityLabel="查看段位">
+        {/* 段位：XP 的去處。只有數字看不出意義，掛上段位才有下一個目標。
+            點進去是排行榜而不是「我的」——看完自己的等級，下一個想知道的是別人到哪了 */}
+        <Card tone="soft" style={{ marginTop: space.md }} onPress={() => nav.navigate('Leaderboard')}
+          accessibilityLabel="查看排行榜">
           <RankRow xp={progress.xp} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: space.md }}>
+            <Ionicons name="trophy-outline" size={13} color={t.faint} />
+            <T variant="caption" color={t.faint}>看看其他學員的進度</T>
+          </View>
         </Card>
 
         <SectionTitle title="為你推薦" ja="おすすめ" action="所有主題" onAction={() => goTab('Course')} />
@@ -172,7 +178,7 @@ export default function HomeScreen() {
         {/* 讀物。課程是一句一句練，讀物是一次讀一段——
             放在流行語前面，因為它需要的時間比較長，該在使用者還有耐心的位置 */}
         <SectionTitle title="日文讀物" ja="よみもの" action={`全部 ${readings.length} 篇`}
-          onAction={() => nav.navigate('Readings')} />
+          onAction={() => goTab('Readings')} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl }}
           contentContainerStyle={{ paddingHorizontal: space.xl, gap: space.md, paddingVertical: 4 }}>
           {readList.slice(0, 6).map(r => {

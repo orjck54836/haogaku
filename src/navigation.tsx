@@ -24,6 +24,8 @@ import KanaChartScreen from './screens/KanaChartScreen';
 import SlangScreen from './screens/SlangScreen';
 import ReadingsScreen from './screens/ReadingsScreen';
 import ReadingScreen from './screens/ReadingScreen';
+import LeaderboardScreen from './screens/LeaderboardScreen';
+import PlansScreen from './screens/PlansScreen';
 import TopicScreen from './screens/TopicScreen';
 import LessonContentScreen from './screens/LessonContentScreen';
 import EditProfileScreen from './screens/EditProfileScreen';
@@ -40,10 +42,11 @@ export type RootStack = {
   Review: undefined;
   KanaChart: undefined;
   Slang: undefined;
-  Readings: undefined;
   Reading: { readingId: string };
+  Leaderboard: undefined;
+  Plans: undefined;
 };
-export type Tabs = { Home: undefined; Course: undefined; AI: undefined; Words: undefined; Me: undefined };
+export type Tabs = { Home: undefined; Course: undefined; Readings: undefined; AI: undefined; Words: undefined; Me: undefined };
 export type StackProps<K extends keyof RootStack> = NativeStackScreenProps<RootStack, K>;
 
 const Stack = createNativeStackNavigator<RootStack>();
@@ -52,6 +55,7 @@ const Tab = createBottomTabNavigator<Tabs>();
 const tabIcons: Record<keyof Tabs, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap]> = {
   Home: ['home', 'home-outline'],
   Course: ['grid', 'grid-outline'],
+  Readings: ['book', 'book-outline'],
   AI: ['sparkles', 'sparkles-outline'],
   Words: ['bookmark', 'bookmark-outline'],
   Me: ['person-circle', 'person-circle-outline'],
@@ -66,13 +70,17 @@ function MainTabs() {
       tabBarInactiveTintColor: t.faint,
       tabBarStyle: { backgroundColor: t.surface, borderTopWidth: 0, height: 86, paddingTop: 8,
         shadowColor: t.shadow, shadowOpacity: 1, shadowRadius: 16, shadowOffset: { width: 0, height: -4 }, elevation: 12 },
-      tabBarLabelStyle: { fontSize: 11, fontWeight: '700', letterSpacing: -0.1 },
+      // 6 格之後每格只剩約 65pt，11pt 的「AI 教練」會被擠到換行。
+      // 降到 10pt 並把字距收緊，四字標籤才排得下
+      tabBarLabelStyle: { fontSize: 10, fontWeight: '700', letterSpacing: -0.3 },
+      tabBarItemStyle: { paddingHorizontal: 0 },
       tabBarIcon: ({ focused, color, size }) => (
         <Ionicons name={tabIcons[route.name][focused ? 0 : 1]} size={size} color={color} />
       ),
     })}>
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: '首頁' }} />
       <Tab.Screen name="Course" component={CourseScreen} options={{ title: '主題' }} />
+      <Tab.Screen name="Readings" component={ReadingsScreen} options={{ title: '讀物' }} />
       <Tab.Screen name="AI" component={AIHubScreen} options={{ title: 'AI 教練' }} />
       <Tab.Screen name="Words" component={WordbookScreen} options={{ title: '單字本' }} />
       <Tab.Screen name="Me" component={ProfileScreen} options={{ title: '我的' }} />
@@ -114,9 +122,11 @@ export default function AppNavigator() {
         <Stack.Screen name="Review" component={ReviewScreen} options={{ title: '單字複習' }} />
         <Stack.Screen name="KanaChart" component={KanaChartScreen} options={{ title: '五十音表' }} />
         <Stack.Screen name="Slang" component={SlangScreen} options={{ title: '日本流行語' }} />
-        <Stack.Screen name="Readings" component={ReadingsScreen} options={{ title: '日文讀物' }} />
         {/* 讀物的標題橫幅要頂到畫面最上緣，所以不用系統 header，返回靠手勢和底部按鈕 */}
         <Stack.Screen name="Reading" component={ReadingScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: '排行榜' }} />
+        {/* 方案頁自己有深色殼和返回鈕，不用系統 header */}
+        <Stack.Screen name="Plans" component={PlansScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

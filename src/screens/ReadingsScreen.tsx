@@ -33,7 +33,7 @@ export default function ReadingsScreen() {
   const doneCount = readings.filter(r => progress.completed.includes(readingLessonId(r.id))).length;
 
   return (
-    <Screen edges={['bottom']}>
+    <Screen>
       <PageHeader ja="よみもの" title="日文讀物"
         subtitle={`${readings.length} 篇原創短文，每篇三到五分鐘。讀完 ${doneCount} 篇`} />
 
