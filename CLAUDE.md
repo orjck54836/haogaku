@@ -109,7 +109,7 @@ function loadX() {
   要用 `isReadingLesson()` 排掉，不然數字會灌水。
   `photo` 共用 `images.ts` 的主題照片，但**每篇要不同張**——重複了列表掃下來像同一篇
 
-## 單字本的自己加字
+## 單字本的自己加單字
 
 使用者手打一個單字或句子，後端 `aiExample` 回讀音、中文意思和**一句**例句
 （`src/lib/ai.ts` → `functions/src/index.ts`）。幾個決定的原因：

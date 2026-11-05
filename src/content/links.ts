@@ -47,24 +47,27 @@ export const officialLinks: OfficialLink[] = [
 ];
 
 /**
- * 法務連結。
+ * 法務與支援連結。
  *
- * 兩頁都是靜態頁，放在 `public/`，跟著 Firebase Hosting 一起部署：
- *
- * ```bash
- * firebase deploy --only hosting
- * ```
- *
- * 網址沒有 `.html` 是因為 firebase.json 開了 `cleanUrls`。
+ * 四頁都在官網（Nuxt）的 `pages/study/` 底下，跟官網一起部署，
+ * 版面共用 `components/LegalPage.vue`。這個 repo 的 `public/` 裡還留著
+ * 同內容的靜態版本（舊的 Firebase Hosting 網址），改條文時兩邊要一起改，
+ * 或是直接把 Firebase 那份停掉、只留官網這份。
  * App Store 審查（Guideline 3.1.2）要求訂閱頁的條款與隱私權連結「點得開、
  * 而且真的是那份文件」，指向官網首頁會被退件——所以不要為了省事改回首頁。
  * 隱私權政策網址同時也是 App Store Connect 送審表單的必填欄位，填同一個。
  *
- * 之後若把文件搬到 forma-global.com 自己的網域，改這裡就好，畫面不用動。
+ * support 與 deleteAccount 這兩筆也是 App Store Connect 的必填欄位：
+ * Support URL 不接受指向首頁，而有註冊帳號功能就必須提供對外可見的
+ * 帳號刪除說明網址——App 內做得到不算，Apple 要的是一個公開網頁。
+ *
+ * 網址若再變動，改這裡就好，畫面不用動。
  */
 export const legalLinks = {
-  terms: 'https://haogaku-60c56.web.app/terms',
-  privacy: 'https://haogaku-60c56.web.app/privacy',
+  terms: 'https://www.forma-global.com/study/terms',
+  privacy: 'https://www.forma-global.com/study/privacy',
+  support: 'https://www.forma-global.com/study/support',
+  deleteAccount: 'https://www.forma-global.com/study/delete-account',
 };
 
 export const linkById = (id: string) => officialLinks.find(l => l.id === id);

@@ -119,9 +119,9 @@ export default function WordbookScreen() {
         <Button label={due ? `開始複習（${due}）` : '今天沒有要複習的單字'} icon="repeat"
           disabled={!due} onPress={() => nav.navigate('Review')} />
 
-        {/* 自己加字：放在複習按鈕下面、列表上面。列表空的時候也要在，
+        {/* 自己加單字：放在複習按鈕下面、列表上面。列表空的時候也要在，
             不然新使用者看到的是一個「請去別的畫面收藏」的死路 */}
-        <SectionTitle title="自己加字" ja="じぶんで" />
+        <SectionTitle title="自己加單字" ja="じぶんで" />
         <Card tone="soft">
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
             <TextInput value={input} onChangeText={setInput} maxLength={60}

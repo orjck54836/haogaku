@@ -40,15 +40,15 @@ export function Wordmark({ onDark = true }: { onDark?: boolean }) {
         borderWidth: 1, borderColor: onDark ? 'rgba(255,255,255,0.22)' : 'transparent',
         ...(onDark ? { shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } } : null),
       }}>
-        <Logo size={30} rounded />
+        <Logo size={40} rounded />
       </View>
       <View>
         <Text style={{ fontFamily: fonts.serif, fontSize: 19, color: fg, letterSpacing: 1.5, includeFontPadding: false }}>
           皓學日語
         </Text>
         {/* 假名用更寬的字距：日文小標排得開才像標示，擠在一起像註解 */}
-        <Text style={{ fontFamily: fonts.serifRegular, fontSize: 9.5, color: sub, letterSpacing: 2.5, marginTop: 3, includeFontPadding: false }}>
-          こうがく にほんご
+        <Text style={{ fontFamily: fonts.serifRegular, fontSize: 9.5, color: sub, letterSpacing: 2.5, marginTop: 1, includeFontPadding: false, textAlign: 'center' }}>
+          Haogaku
         </Text>
       </View>
     </View>

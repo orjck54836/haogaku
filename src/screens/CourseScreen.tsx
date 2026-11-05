@@ -80,7 +80,7 @@ export default function CourseScreen() {
 
   return (
     <Screen>
-      <PageHeader ja="せいかつ" title="生活主題" subtitle={`${gridTopics.length} 個主題，從吃飯到職場，學日本人真正會說的話`} />
+      <PageHeader ja="せいかつ" title="生活主題" subtitle={`${gridTopics.length} 個主題，從生活主題來學習日文`} />
 
       {/* 程度頁籤。原本在「我的 → 學習設定」裡，但它影響的是這一頁的
           「進階」標記和課程內容的難度，調整完要跳回來看結果——所以搬到它生效的地方。
@@ -89,15 +89,6 @@ export default function CourseScreen() {
           差別全在課程裡面，不講的話使用者會以為這兩格沒作用。 */}
       <View style={{ marginTop: space.xl }}>
         <LevelTabs value={profile.startLevel} onChange={v => setProfile({ startLevel: v })} />
-        <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.md,
-          backgroundColor: t.surface2, borderRadius: radius.lg, padding: space.md }}>
-          <Ionicons name="information-circle" size={17} color={t.primary} style={{ marginTop: 2 }} />
-          <View style={{ flex: 1 }}>
-            <T variant="small" style={{ fontWeight: '700', lineHeight: 21 }}>{levelCopy[profile.startLevel].title}</T>
-            <T variant="caption" color={t.sub} style={{ marginTop: 3, lineHeight: 19 }}>{levelCopy[profile.startLevel].example}</T>
-            <T variant="caption" color={t.faint} style={{ marginTop: 5, lineHeight: 19 }}>{'主題清單不會變。點進任何一堂課，或按課程右邊的「內容」整課一次看完，就看得到差別。'}</T>
-          </View>
-        </View>
       </View>
 
       {/* 語言基礎：橫向輪播，第二張露半邊 */}

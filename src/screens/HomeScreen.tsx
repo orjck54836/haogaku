@@ -142,7 +142,7 @@ export default function HomeScreen() {
 
         {/* 讀物。課程是一句一句練，讀物是一次讀一段——
             放在流行語前面，因為它需要的時間比較長，該在使用者還有耐心的位置 */}
-        <SectionTitle title="日文讀物" ja="よみもの" action={`全部 ${readings.length} 篇`}
+        <SectionTitle title="日文小品" ja="よみもの" action={`全部 ${readings.length} 篇`}
           onAction={() => goTab('Readings')} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl }}
           contentContainerStyle={{ paddingHorizontal: space.xl, gap: space.md, paddingVertical: 4 }}>

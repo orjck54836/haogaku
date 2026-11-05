@@ -129,7 +129,7 @@ export const plans: Plan[] = [
     icon: 'leaf-outline',
     perks: [
       '83 個生活主題・249 堂課',
-      '30 篇日文讀物',
+      '30 篇日文小品',
       '五十音、敬語、流行語',
       '單字本與間隔複習',
       '排行榜與等級',
@@ -251,7 +251,7 @@ export const yearlyPerMonth = (p: Plan) => Math.round(p.yearly / 12);
  */
 export const freeForever: { icon: IconName; label: string }[] = [
   { icon: 'grid-outline', label: '83 個生活主題、249 堂課' },
-  { icon: 'book-outline', label: '30 篇日文讀物' },
+  { icon: 'book-outline', label: '30 篇日文小品' },
   { icon: 'language-outline', label: '五十音與敬語' },
   { icon: 'bookmark-outline', label: '單字本與間隔複習' },
   { icon: 'trophy-outline', label: '排行榜與等級' },

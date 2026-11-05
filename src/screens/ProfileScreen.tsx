@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Alert, Platform, Pressable, Text, Image } from 'react-native';
+import { View, Alert, Platform, Pressable, Text, Image, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Row, Divider, SectionTitle, Rule, Avatar, RoundButton, Segmented } from '../ui';
 import { useTheme, space, fonts, radius, shadows, tintedShadow } from '../theme';
@@ -18,6 +18,7 @@ import { Seal } from '../ui/seal';
 import { rankState } from '../lib/rank';
 import OfficialLinks from '../ui/OfficialLinks';
 import { planById } from '../content/plans';
+import { legalLinks } from '../content/links';
 import { loadAnalyticsChoice, setAnalyticsEnabled } from '../lib/analytics';
 import {
   remindersSupported, remindersEnabled, reminderHour, enableReminders, disableReminders, DEFAULT_HOUR,
@@ -86,6 +87,10 @@ export default function ProfileScreen() {
     try { await fn(); } catch (e: any) { Alert.alert(failTitle, e?.message ?? '請稍後再試'); }
     finally { setBusy(null); }
   }
+
+  /** 開不起來就說一句，不要讓人點了沒反應以為是當掉 */
+  const openUrl = (url: string) => Linking.openURL(url).catch(() =>
+    Alert.alert('打不開連結', '請確認網路連線，或稍後再試。'));
 
   function confirmSignOut() {
     const msg = a.isGuest ? '訪客帳號登出後，學習紀錄將無法找回。建議先綁定帳號。' : '下次登入同一個帳號就能接續學習。';
@@ -184,7 +189,7 @@ export default function ProfileScreen() {
             一個是 XP 換來的成就，一個是使用者自己選的難度，不標的話會以為是同一條 */}
         <View style={{ paddingHorizontal: space.xl, paddingVertical: space.lg }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: space.md }}>
-            <T variant="caption" color="rgba(255,255,255,0.55)" style={{ letterSpacing: 1 }}>だんい・段位</T>
+            <T variant="caption" color="rgba(255,255,255,0.55)" style={{ letterSpacing: 1 }}>段位</T>
             <T variant="caption" color="rgba(255,255,255,0.55)">
               {`日語程度 ${levelShort[d.profile.startLevel]}（${levelJlpt[d.profile.startLevel]}）`}
             </T>
@@ -335,18 +340,37 @@ export default function ProfileScreen() {
           onPress={() => { const on = !analyticsOn; setAnalyticsOn(on); setAnalyticsEnabled(on); }} />
       </Card>
 
+      {/* 技術支援與法務頁。Support URL 和帳號刪除說明是 App Store Connect 的必填欄位，
+          網頁存在就能送審，但使用者在 App 裡找不到的話等於沒有——真的要聯絡時
+          才不必回去翻官網。網址一律讀 links.ts，不要在這裡寫死。 */}
+      <SectionTitle title="說明與支援" ja="サポート" />
+      <Card tone="soft" style={{ paddingVertical: space.xs }}>
+        <Row icon="help-buoy-outline" iconColor={t.sub} iconBg="#FFFFFF" title="技術支援"
+          subtitle="常見問題與聯絡方式" onPress={() => openUrl(legalLinks.support)} />
+        <Divider />
+        <Row icon="document-text-outline" iconColor={t.sub} iconBg="#FFFFFF" title="服務條款"
+          onPress={() => openUrl(legalLinks.terms)} />
+        <Divider />
+        <Row icon="lock-closed-outline" iconColor={t.sub} iconBg="#FFFFFF" title="隱私權政策"
+          onPress={() => openUrl(legalLinks.privacy)} />
+      </Card>
+
       <SectionTitle title="帳號" />
       <Card tone="soft" style={{ paddingVertical: space.xs }}>
         <Row icon="log-out-outline" iconColor={t.sub} iconBg="#FFFFFF" title="登出" onPress={confirmSignOut} />
         <Divider />
         <Row icon="trash-outline" iconColor={t.danger} iconBg={t.dangerSoft} title="刪除帳號" subtitle="永久刪除帳號與學習紀錄" onPress={confirmDelete} />
+        <Divider />
+        {/* 刪除是不可復原的，說明頁排在動作下面讓人按下去之前還有機會先看清楚 */}
+        <Row icon="information-circle-outline" iconColor={t.sub} iconBg="#FFFFFF" title="刪除帳號說明"
+          subtitle="會移除哪些資料、訂閱要另外取消" onPress={() => openUrl(legalLinks.deleteAccount)} />
       </Card>
 
       <SectionTitle title="追蹤皓學" ja="フォロー"
         right={<T variant="caption" color={t.faint}>課程・留學代辦</T>} />
       <OfficialLinks />
 
-      <BrandFooter text="皓學日語 v2.0 · FORMA Global" />
+      <BrandFooter text="皓學日語 v1.0.0 · FORMA Global" />
     </Screen>
   );
 }

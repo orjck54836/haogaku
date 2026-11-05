@@ -34,7 +34,7 @@ export default function ReadingsScreen() {
 
   return (
     <Screen>
-      <PageHeader ja="よみもの" title="日文讀物"
+      <PageHeader ja="よみもの" title="日文小品"
         subtitle={`${readings.length} 篇原創短文，每篇三到五分鐘。讀完 ${doneCount} 篇`} />
 
       <View style={{ marginTop: space.xl }}>

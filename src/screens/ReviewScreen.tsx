@@ -9,6 +9,14 @@ import { speakJa } from '../lib/speech';
 import { StackProps } from '../navigation';
 import { REVIEW_XP } from '../lib/rank';
 
+// 題目的中文常常帶一段括號註解（「你這傢伙（粗魯的第二人稱代詞…）」）。
+// 拆開是為了排版：主詞用重字、註解用淡色細字，一眼就看得出要翻的是哪幾個字。
+function splitZh(zh: string): { main: string; note: string } {
+  const m = zh.match(/^(.*?)[（(]([^（(]*)[）)]\s*$/);
+  if (!m || !m[1].trim()) return { main: zh, note: '' };
+  return { main: m[1].trim(), note: m[2].trim() };
+}
+
 type Mode = 'card' | 'choice' | 'write';
 
 const MODES: { id: Mode; icon: IconName; title: string; desc: string; needsZh: boolean }[] = [
@@ -152,7 +160,18 @@ function Session({ mode, due, allWords, onClose, onAgain }: {
               {/* 選擇和默寫都是「看中文想日文」，題目長一樣 */}
               <Card tone="soft" style={{ alignItems: 'center', paddingVertical: space.xxl }}>
                 <T variant="caption" color={t.faint}>這句日文怎麼說？</T>
-                <T variant="heading" style={{ fontSize: 20, lineHeight: 30, marginTop: space.sm, textAlign: 'center' }}>{w.zh}</T>
+                {(() => {
+                  // 括號裡的語感說明拆成第二行的淡色細字：整句都用 800 重字會擠成一團黑，讀不出哪個才是題目
+                  const { main, note } = splitZh(w.zh ?? '');
+                  return (
+                    <>
+                      <T variant="heading" style={{ fontSize: main.length > 12 ? 19 : 22, lineHeight: main.length > 12 ? 29 : 32, marginTop: space.sm, textAlign: 'center' }}>{main}</T>
+                      {note ? (
+                        <T variant="small" color={t.sub} style={{ marginTop: space.xs, textAlign: 'center', lineHeight: 21 }}>{note}</T>
+                      ) : null}
+                    </>
+                  );
+                })()}
               </Card>
 
               {mode === 'choice' ? (
