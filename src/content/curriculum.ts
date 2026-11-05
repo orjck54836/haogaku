@@ -59,6 +59,55 @@ export const unitsOf: Record<string, Unit[]> = {
   [ONOMATO_ID]: onomatoUnits,
 };
 
+/**
+ * 四個集合的門面資料，主題頁的卡、集合頁的抬頭、首頁的「接著上次」共用一份。
+ *
+ * 以前只有五十音和敬語時，這些字串散在三個畫面裡寫死——首頁甚至把
+ * 「基礎」和五十音的照片當成所有非主題課程的預設值。多了兩個集合之後
+ * 那個預設就錯了：讀擬聲擬態語的人會看到五十音的照片配「基礎」兩個字。
+ *
+ * `photoKey` 指向 images.ts 的鍵。基本文法沒有專屬照片，借用「堆疊的舊書」那張；
+ * 要換成專屬的一張就只改這裡。
+ */
+export const collectionMeta: Record<string, {
+  title: string; caption: string; focus: string; desc: string; photoKey: string;
+}> = {
+  [BASICS_ID]: {
+    title: '五十音基礎', caption: 'ごじゅうおん', photoKey: 'basics',
+    desc: '平假名、片假名、看懂招牌',
+    focus: '日文的起點。從字源聯想記假名，再練到看懂招牌上的漢字。',
+  },
+  [GRAMMAR_ID]: {
+    title: '基本文法介紹', caption: 'きそぶんぽう', photoKey: 'idioms',
+    desc: '句子的骨架、助詞、動詞、形容詞',
+    focus: '看懂一個日文句子最少需要的四件事：句尾、助詞、動詞變化、形容詞。學完就拆得開主題課裡的句子。',
+  },
+  [ONOMATO_ID]: {
+    title: 'オノマトペ', caption: 'ぎおんご・ぎたいご', photoKey: 'onomatopoeia',
+    desc: '擬聲擬態語・心情、表情、口感、天氣・8 堂',
+    focus: '日本人形容痛、形容口感、形容心情幾乎都靠這套詞。它沒有中文對應，要連「後面接什麼」一起記。',
+  },
+  [KEIGO_ID]: {
+    title: '敬語', caption: 'けいご', photoKey: 'service-keigo',
+    desc: `尊敬語、謙讓語、職場與服務業・${keigoTopics.length} 個主題`,
+    focus: '敬語不是「更客氣的說法」，而是一套看關係決定語氣的系統。先弄懂三種敬語的分工，再分場合練。',
+  },
+};
+
+/** 這堂課屬於哪一個集合；主題課回 undefined */
+export function collectionOf(lessonId: string): string | undefined {
+  for (const [id, units] of Object.entries(unitsOf)) {
+    if (units.some(u => u.lessons.some(l => l.id === lessonId))) return id;
+  }
+  return undefined;
+}
+
+/** 這堂課適不適合這個程度：集合的課看 foundationIds，主題課一律可以 */
+function collectionFitsLevel(lessonId: string, level: LevelId) {
+  const c = collectionOf(lessonId);
+  return !c || foundationIds[level].includes(c);
+}
+
 /** 生活主題網格用的分類：敬語已獨立，不在這裡重複出現 */
 export const gridCategories = categories.filter(c => c.id !== 'keigo');
 export const gridTopics = topics.filter(t => t.cat !== 'keigo');
@@ -153,5 +202,10 @@ export function nextLesson(completed: string[], goal: Goal, level: LevelId): Les
   }
   const topic = recommendedTopics(goal, level, completed, 1)[0];
   const ref = topic && allLessons.find(r => r.topic?.id === topic.id && !completed.includes(r.lesson.id));
-  return ref ?? allLessons.find(r => !completed.includes(r.lesson.id)) ?? allLessons[0];
+  // 最後的 fallback 會掃過整份清單，所以要擋掉不屬於這個程度的集合——
+  // 否則初級的人做完五十音就會被推進階才該看的擬聲擬態語
+  return ref
+    ?? allLessons.find(r => !completed.includes(r.lesson.id) && collectionFitsLevel(r.lesson.id, level))
+    ?? allLessons.find(r => !completed.includes(r.lesson.id))
+    ?? allLessons[0];
 }

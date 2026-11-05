@@ -6,26 +6,10 @@ import { Seal, BASICS_KANJI, TopicBanner, TopicThumb } from '../ui/seal';
 import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
 import { topicById, categories } from '../content/topics';
-import { topicLessons, BASICS_ID, KEIGO_ID, GRAMMAR_ID, ONOMATO_ID, unitsOf, keigoTopics, topicProgress, fitsLevel, levelLabels } from '../content/curriculum';
+import { topicLessons, BASICS_ID, KEIGO_ID, unitsOf, collectionMeta, keigoTopics, topicProgress, fitsLevel, levelLabels } from '../content/curriculum';
 import { Lesson } from '../content/types';
 import { StackProps } from '../navigation';
 import { prefetchLesson } from '../lib/ai';
-
-/**
- * 單元集合的抬頭文案。
- *
- * 和 `unitsOf` 分開放：那邊是內容（哪些單元），這邊是這一頁要怎麼介紹它。
- * 文案寫的是「為什麼要學這個」而不是「這裡有什麼」——
- * 清單自己就看得到有什麼，抬頭要回答的是值不值得點進去。
- */
-const COLLECTION: Record<string, { title: string; caption: string; focus: string }> = {
-  [BASICS_ID]: { title: '五十音基礎', caption: 'ごじゅうおん',
-    focus: '日文的起點。從字源聯想記假名，再練到看懂招牌上的漢字。' },
-  [GRAMMAR_ID]: { title: '基本文法介紹', caption: 'きそぶんぽう',
-    focus: '看懂一個日文句子最少需要的四件事：句尾、助詞、動詞變化、形容詞。學完就拆得開主題課裡的句子。' },
-  [ONOMATO_ID]: { title: 'オノマトペ', caption: 'ぎおんご・ぎたいご',
-    focus: '日本人形容痛、形容口感、形容心情幾乎都靠這套詞。它沒有中文對應，要連「後面接什麼」一起記。' },
-};
 
 export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) {
   const t = useTheme();
@@ -38,7 +22,7 @@ export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) 
   const topic = units || isKeigo ? undefined : topicById(id);
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: COLLECTION[id]?.title ?? (isKeigo ? '敬語' : topic?.title ?? '') });
+    navigation.setOptions({ title: collectionMeta[id]?.title ?? (isKeigo ? '敬語' : topic?.title ?? '') });
   }, []);
   useEffect(() => {
     if (!topic) return;
@@ -99,7 +83,7 @@ export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) 
 
   // 單元集合：五十音基礎、基本文法介紹、オノマトペ
   if (units) {
-    const meta = COLLECTION[id];
+    const meta = collectionMeta[id];
     return (
       <Screen edges={['bottom']}>
         <TopicBanner title={meta.title} caption={meta.caption} focus={meta.focus} />

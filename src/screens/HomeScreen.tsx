@@ -12,7 +12,7 @@ import { PlanButton } from '../ui/PlanButton';
 import { photoFor, uiPhotos } from '../ui/images';
 import { useTheme, space, radius, fonts, type } from '../theme';
 import { useData } from '../state/data';
-import { nextLesson, lessonRef, recommendedTopics, topicProgress } from '../content/curriculum';
+import { nextLesson, lessonRef, recommendedTopics, topicProgress, collectionOf, collectionMeta } from '../content/curriculum';
 import { categories } from '../content/topics';
 import { slang, todaySlangIndex } from '../content/slang';
 import { readings, todayReadingIndex, readingLessonId, genreLabels } from '../content/readings';
@@ -43,8 +43,17 @@ export default function HomeScreen() {
   const readList = [todayRead, ...readings.filter(r => r.id !== todayRead.id)]
     .sort((a, b) => Number(progress.completed.includes(readingLessonId(a.id)))
       - Number(progress.completed.includes(readingLessonId(b.id))));
-  const cat = next.topic ? categories.find(c => c.id === next.topic!.cat)?.title : '基礎';
-  const tp = topicProgress(next.topic?.id ?? 'basics', progress.completed);
+  /**
+   * 非主題的課屬於哪一個集合。
+   *
+   * 以前這裡寫死成 'basics'：那時候非主題課只有五十音，所以沒出過事。
+   * 多了文法和擬聲擬態語之後，寫死會讓這兩個集合的課
+   * 配上五十音的照片和「基礎」兩個字。
+   */
+  const coll = next.topic ? undefined : collectionOf(next.lesson.id) ?? 'basics';
+  const cat = next.topic ? categories.find(c => c.id === next.topic!.cat)?.title
+    : coll ? collectionMeta[coll].title : '基礎';
+  const tp = topicProgress(next.topic?.id ?? coll ?? 'basics', progress.completed);
   const goTab = (screen: string) => (nav as any).navigate('Tabs', { screen });
 
   const open = () => next.lesson.kind === 'ai'
@@ -74,7 +83,7 @@ export default function HomeScreen() {
           <View style={{ marginTop: space.lg }}>
             {/* 站名牌鋪這一課所屬主題的照片。五十音沒有 topic，用 basics 這個假 id 去查 */}
             <StationSign compact kana={next.group} zh={cat ?? ''} bar={next.lesson.title} barColor={t.shell}
-              photo={photoFor(next.topic?.id ?? 'basics', next.topic?.cat) ?? undefined} />
+              photo={photoFor(next.topic?.id ?? (coll ? collectionMeta[coll].photoKey : 'basics'), next.topic?.cat) ?? undefined} />
           </View>
 
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: space.lg, marginBottom: space.md }}>

@@ -11,7 +11,7 @@ import TopicCard from '../ui/TopicCard';
 import { PageHeader } from '../ui/brand';
 import { useTheme, space, radius, shadows } from '../theme';
 import { useData } from '../state/data';
-import { topicProgress, BASICS_ID, KEIGO_ID, GRAMMAR_ID, ONOMATO_ID, foundationIds, fitsLevel, gridCategories, gridTopics, keigoTopics } from '../content/curriculum';
+import { topicProgress, collectionMeta, foundationIds, fitsLevel, gridCategories, gridTopics } from '../content/curriculum';
 import { Topic } from '../content/topics';
 import { LevelId } from '../content/types';
 import { RootStack } from '../navigation';
@@ -53,20 +53,17 @@ export default function CourseScreen() {
   /**
    * 語言基礎卡：四張，依程度顯示其中兩張（見 curriculum 的 foundationIds）。
    *
-   * 底圖用品牌色罩著，照片只當質感不會蓋過白字。同一排的兩張一定一酒紅一深色，
-   * 不然並排滑過去分不出是兩張還是一張。
+   * 文案和照片來自 collectionMeta，集合頁和首頁讀的是同一份。
+   * 底色在這裡決定：同一排的兩張一定一酒紅一深色，不然並排滑過去
+   * 分不出是兩張還是一張。
    */
-  const foundationCards: Record<string, { title: string; desc: string; bg: string; photo?: number }> = {
-    [BASICS_ID]: { title: '五十音基礎', desc: '平假名、片假名、看懂招牌',
-      bg: t.primary, photo: topicPhotos.basics },
-    [GRAMMAR_ID]: { title: '基本文法介紹', desc: '句子的骨架、助詞、動詞、形容詞',
-      bg: t.shell, photo: topicPhotos.idioms },
-    [ONOMATO_ID]: { title: 'オノマトペ', desc: '擬聲擬態語・心情、身體、口感、聲音',
-      bg: t.primary, photo: topicPhotos.onomatopoeia },
-    [KEIGO_ID]: { title: '敬語', desc: `尊敬語、謙讓語、職場與服務業・${keigoTopics.length} 個主題`,
-      bg: t.shell, photo: topicPhotos['service-keigo'] },
-  };
-  const foundations = foundationIds[profile.startLevel].map(id => ({ id, fg: '#FFFFFF', ...foundationCards[id] }));
+  const foundations = foundationIds[profile.startLevel].map((id, i) => ({
+    id, fg: '#FFFFFF',
+    bg: i % 2 === 0 ? t.primary : t.shell,
+    title: collectionMeta[id].title,
+    desc: collectionMeta[id].desc,
+    photo: topicPhotos[collectionMeta[id].photoKey],
+  }));
 
   /** 把一個分類的主題分成左右兩欄，右欄往下推一點做出錯落感 */
   const grid = (list: Topic[], offset: number) => {
