@@ -50,6 +50,11 @@ service cloud.firestore {
     match /lessons/{id} {
       allow read, write: if false;
     }
+    // 單字例句的共用快取。全使用者共用一份，所以 client 一律讀不到也寫不到：
+    // 開放讀取等於讓人跳過額度直接撈別人產生過的內容
+    match /examples/{id} {
+      allow read, write: if false;
+    }
     match /ttsUsage/{uid} {
       allow read, write: if false;
     }
@@ -94,6 +99,15 @@ service cloud.firestore {
         && request.resource.data.reason.size() <= 40
         && request.resource.data.text is string
         && request.resource.data.text.size() <= 1000;
+    }
+
+    // 哪一筆 Apple 訂閱已經綁給哪個 uid（文件 id 是 originalTransactionId）。
+    //
+    // 沒有這份的話，一個人買一份訂閱，拿同一組 Apple ID 在 N 個帳號上各驗一次，
+    // N 個帳號都會變成付費。讀寫都對所有人關閉：這是防作弊用的，
+    // 開讀取等於告訴人家哪些交易號還沒被綁走。
+    match /subscriptionClaims/{originalTransactionId} {
+      allow read, write: if false;
     }
 
     // 付費資格。

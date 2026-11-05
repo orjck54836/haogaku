@@ -16,7 +16,6 @@ import { nextLesson, lessonRef, recommendedTopics, topicProgress } from '../cont
 import { categories } from '../content/topics';
 import { slang, todaySlangIndex } from '../content/slang';
 import { readings, todayReadingIndex, readingLessonId, genreLabels } from '../content/readings';
-import { RankRow } from '../ui/RankCard';
 import { RootStack } from '../navigation';
 import { useAuth } from '../state/auth';
 
@@ -35,8 +34,6 @@ export default function HomeScreen() {
 
   const resumeRef = progress.resume ? lessonRef(progress.resume.lessonId) : undefined;
   const next = resumeRef ?? nextLesson(progress.completed, profile.goal, profile.startLevel);
-  const xpToday = d.todayXp();
-  const goalPct = xpToday / profile.dailyGoal;
   const due = d.dueWords().length;
   const recs = recommendedTopics(profile.goal, profile.startLevel, progress.completed, 8);
   const chatTopic = recs[0];
@@ -106,37 +103,6 @@ export default function HomeScreen() {
           <IconTile kanji="覚" label={due ? `複習 ${due}` : '複習'} photo={uiPhotos.review}
             onPress={() => nav.navigate('Review')} />
         </View>
-
-        {/* 今日進度 */}
-        <Card tone="soft" style={{ marginTop: space.lg }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View>
-              <T variant="caption" color={t.sub}>今日目標</T>
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 2 }}>
-                <T variant="numeral">{xpToday}</T>
-                <T variant="small" color={t.faint}>/ {profile.dailyGoal} XP</T>
-              </View>
-            </View>
-            <View style={{ alignItems: 'flex-end', gap: 6 }}>
-              <Pill icon="flame" label={`連續 ${d.streak()} 天`} color={t.primary} bg={t.primarySoft} />
-              <T variant="caption" color={t.faint}>{goalPct >= 1 ? '今天達標了' : `還差 ${profile.dailyGoal - xpToday} XP`}</T>
-            </View>
-          </View>
-          <View style={{ marginTop: space.md }}>
-            <ProgressBar value={goalPct} />
-          </View>
-        </Card>
-
-        {/* 段位：XP 的去處。只有數字看不出意義，掛上段位才有下一個目標。
-            點進去是排行榜而不是「我的」——看完自己的等級，下一個想知道的是別人到哪了 */}
-        <Card tone="soft" style={{ marginTop: space.md }} onPress={() => nav.navigate('Leaderboard')}
-          accessibilityLabel="查看排行榜">
-          <RankRow xp={progress.xp} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: space.md }}>
-            <Ionicons name="trophy-outline" size={13} color={t.faint} />
-            <T variant="caption" color={t.faint}>看看其他學員的進度</T>
-          </View>
-        </Card>
 
         <SectionTitle title="為你推薦" ja="おすすめ" action="所有主題" onAction={() => goTab('Course')} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl }}

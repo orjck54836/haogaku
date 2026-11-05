@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Pressable, Alert, Linking, Image } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Pressable, Alert, Linking, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,8 @@ import { planById, yearlySaving, yearlyPerMonth, YEARLY_AVAILABLE, IAP_AVAILABLE
 import { topicPhotos } from '../ui/images';
 import { legalLinks } from '../content/links';
 import { track } from '../lib/analytics';
+import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription } from '../lib/iap';
+import { useAuth } from '../state/auth';
 import { StackProps } from '../navigation';
 
 type Cycle = 'monthly' | 'yearly';
@@ -38,51 +40,116 @@ const HEADER_H = space.sm + 44 + 6;
  * 這裡全部排在按鈕上方同一個畫面，不用捲動也看得到前三項。
  * 少一項就是退件，所以不要為了版面好看把它們拿掉。
  *
- * ## 還沒接金流
+ * ## 金流
  *
- * `purchase()` 現在只跳說明。真的要收費得：
- *   1. 在 App Store Connect／Google Play 建好 plans.ts 裡那四個 productId
- *   2. 用 IAP 套件發起購買、拿到收據
- *   3. **在 Cloud Functions 驗證收據**，把方案寫進 users/{uid}
- *   4. 後端 LIMITS 改成讀那個值
- * 第 3 步不能省：profile.plan 存在手機上，前端說了不算。
+ * 購買走 `src/lib/iap.ts`（expo-iap／StoreKit 2），拿到 transactionId 之後送到
+ * Cloud Functions 的 `verifyPurchase`，**由後端跟 Apple 查證後寫 entitlements/{uid}**。
+ * 這裡絕對不要把 `setProfile({ plan })` 當成「買到了」——profile.plan 存在手機上，
+ * 前端說了不算，它只是驗證成功之後順手更新的顯示值。
+ *
+ * 目前只賣月繳（見 plans.ts 的 YEARLY_AVAILABLE）。
+ *
+ * 價格以 App Store 回的 displayPrice 為準，問不到才退回 plans.ts 的數字：
+ * 別的國家看到的是當地幣別和當地定價，寫死 NT$ 會變成價格標示不實。
  */
 export default function PurchaseScreen({ route, navigation }: StackProps<'Purchase'>) {
   const t = useTheme();
   const d = useData();
+  const a = useAuth();
   const plan = planById(route.params.planId);
   // 年繳還沒開放（見 plans.ts 的 YEARLY_AVAILABLE），只能是月繳
   const [cycle, setCycle] = useState<Cycle>(YEARLY_AVAILABLE ? (route.params.cycle ?? 'monthly') : 'monthly');
   const [busy, setBusy] = useState(false);
+  /**
+   * 商店回的售價，和這台手機到底買不買得到。
+   *
+   * **在 effect 裡問一次存進 state**，不要寫在 render 的判斷式裡：
+   * iap.ts 要載原生模組，在 render 裡丟錯是整頁白掉（見 CLAUDE.md）。
+   * null 代表還在問，'' 代表問不到（Expo Go、離線、或商品還沒在 ASC 建好）。
+   */
+  const [storePrice, setStorePrice] = useState<string | null>(null);
+  const [canBuy, setCanBuy] = useState<boolean | null>(null);
 
   const yearly = YEARLY_AVAILABLE && cycle === 'yearly';
   const total = yearly ? plan.yearly : plan.monthly;
   const periodLabel = yearly ? '年' : '月';
   const trial = plan.trialDays ?? 0;
+  const sku = plan.productId?.[yearly ? 'yearly' : 'monthly'];
+  /** 畫面上的價格一律用這個：商店問得到就用商店的，問不到才退回我們寫死的 */
+  const priceText = storePrice || `NT$${total}`;
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!IAP_AVAILABLE || !sku || !iapSupported()) {
+        if (alive) { setCanBuy(false); setStorePrice(''); }
+        return;
+      }
+      try {
+        const prices = await fetchPrices([sku]);
+        if (!alive) return;
+        const hit = prices.find(x => x.productId === sku);
+        // 商品還沒在 App Store Connect 建好時會查無此商品，這時不該讓人按下去
+        setStorePrice(hit?.price ?? '');
+        setCanBuy(!!hit);
+      } catch {
+        if (alive) { setStorePrice(''); setCanBuy(false); }
+      }
+    })();
+    return () => { alive = false; };
+  }, [sku]);
 
   async function purchase() {
+    if (!sku) return;
+    // 訪客帳號換一台手機就沒了，訂閱綁在上面等於買了會不見。後端也會再擋一次
+    if (a.isGuest) {
+      Alert.alert('請先綁定帳號',
+        '訂閱會綁在你的帳號上。先用 Apple 或 Google 綁定，換手機或重裝才找得回來。',
+        [{ text: '知道了' }]);
+      return;
+    }
     setBusy(true);
-    // 漏斗的最後一步。接了金流之後，這裡和實際成交的差距就是流失
+    // 漏斗的最後一步：這裡和實際成交的差距就是流失
     track('purchase_tap', { plan: plan.id, cycle, price: total });
     try {
-      // TODO：發起 IAP 購買，成功後把收據送到 Cloud Functions 驗證。
-      // 驗證通過才由後端寫入方案——這裡絕對不要直接 setProfile({ plan })。
-      Alert.alert(
-        '訂閱尚未開放',
-        `你選擇的是「${plan.name}」${periodLabel}繳方案，NT$${total}。\n\n`
-        + '付款功能還在跟 App Store 的審核流程一起準備，開放後會在這裡通知你。'
-        + '在那之前，所有課程與讀物都是免費的，AI 也有每日免費額度可以用。',
-        [{ text: '知道了' }],
-      );
+      const res = await purchaseSubscription(sku);
+      if (!res.active) throw new Error('verify-inactive');
+      // 後端已經寫好 entitlements，這裡只是把畫面的顯示值跟上
+      d.setProfile({ plan: res.plan });
+      track('purchase_done', { plan: res.plan, cycle });
+      Alert.alert('訂閱完成', `${plan.name}方案已經開通，AI 和語音額度立刻生效。`,
+        [{ text: '開始用', onPress: () => navigation.goBack() }]);
+    } catch (e: any) {
+      // 在 Apple 的付款表單上按取消不是錯誤，不要跳視窗罵他
+      const code = String(e?.code ?? e?.message ?? '');
+      if (/cancel/i.test(code)) return;
+      console.warn('purchase failed', e);
+      Alert.alert('購買沒有完成',
+        '沒有扣款。如果你確定已經付過，請按「還原購買」，或稍後再試一次。',
+        [{ text: '知道了' }]);
     } finally {
       setBusy(false);
     }
   }
 
-  function restore() {
-    // TODO：接 IAP 的 restorePurchases，把收據重新送驗。
-    // Apple 要求訂閱型 app 一定要提供「還原購買」，不提供會退件。
-    Alert.alert('還原購買', '目前還沒有可以還原的訂閱。付款功能開放後，換手機或重裝 App 都可以從這裡找回訂閱。');
+  async function restore() {
+    setBusy(true);
+    try {
+      const res = await restoreSubscription();
+      if (res) {
+        d.setProfile({ plan: res.plan });
+        Alert.alert('已還原', `找回了${planById(res.plan).name}方案。`,
+          [{ text: '好', onPress: () => navigation.goBack() }]);
+      } else {
+        Alert.alert('沒有可以還原的訂閱',
+          '這組 Apple ID 名下沒有有效的訂閱。如果你用的是另一組 Apple ID，請先到「設定」切換。');
+      }
+    } catch (e) {
+      console.warn('restore failed', e);
+      Alert.alert('還原失敗', '請確認網路之後再試一次。');
+    } finally {
+      setBusy(false);
+    }
   }
 
   const open = (url: string) => Linking.openURL(url).catch(() => {
@@ -127,7 +194,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
 
         {/* 2. 期間長度 ＋ 3. 每期價格。兩個選項並排，差價一眼看得出來 */}
         <View style={{ gap: space.md, marginTop: space.xl }}>
-          <CycleOption label="月繳" sub={`NT$${plan.monthly} / 月`} note="隨時取消"
+          <CycleOption label="月繳" sub={`${priceText} / 月`} note="隨時取消"
             on={!yearly} onPress={() => setCycle('monthly')} />
           {/* 年繳的格子留著但不能點：直接拿掉的話，之後上線會像憑空多出一個選項，
               現在先讓人知道有這條路，只是還沒開 */}
@@ -166,8 +233,9 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
             <T variant="heading" style={{ marginTop: 2 }}>每{periodLabel}扣款</T>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3 }}>
-            <T variant="caption" color={t.sub}>NT$</T>
-            <T style={{ fontSize: 32, fontWeight: '800', letterSpacing: -1.2 }} color={t.ink}>{total}</T>
+            {/* displayPrice 本身就含幣別（NT$150、US$4.99、¥700），
+                不要再自己在前面拼一個 NT$ */}
+            <T style={{ fontSize: 32, fontWeight: '800', letterSpacing: -1.2 }} color={t.ink}>{priceText}</T>
             <T variant="caption" color={t.sub}>/{periodLabel}</T>
           </View>
         </View>
@@ -182,15 +250,28 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
           </View>
         ) : null}
 
-        {/* 金流還沒接時不留任何可以按的付款動作（見 plans.ts 的 IAP_AVAILABLE）：
-            有完整的訂閱介面、按下去卻只跳一個「尚未開放」，審查會當成未完成功能退件。
-            「還原購買」也一起收起來——沒有東西可買，就沒有東西可還原。 */}
-        {IAP_AVAILABLE ? <>
-          <Button label={busy ? '處理中' : trial ? `開始 ${trial} 天免費試用` : `訂閱 NT$${total}/${periodLabel}`}
+        {/*
+          付款動作只在「真的買得到」的時候出現。
+
+          買不到的情況有三種，但對使用者來說只有一句話的差別，所以共用一個說明框：
+            - Expo Go（沒有 ExpoIap 原生模組）
+            - 商品還沒在 App Store Connect 建好，或還在審核中
+            - 離線
+
+          **不要在買不到的時候留一顆按得下去的訂閱鈕。** 有完整的訂閱介面、
+          按下去卻跳一個錯誤，審查會當成未完成的功能退件（Guideline 2.1）。
+          「還原購買」跟著一起收起來——沒有東西可買就沒有東西可還原。
+        */}
+        {canBuy === null ? (
+          <View style={{ alignItems: 'center', paddingVertical: space.xl, marginTop: space.md }}>
+            <ActivityIndicator color={t.primary} />
+          </View>
+        ) : canBuy ? <>
+          <Button label={busy ? '處理中' : trial ? `開始 ${trial} 天免費試用` : `訂閱 ${priceText}/${periodLabel}`}
             variant={plan.id === 'pro' ? 'gold' : 'primary'} loading={busy} disabled={busy}
             style={{ marginTop: space.xl }} onPress={purchase} />
 
-          <Pressable accessibilityRole="button" onPress={restore} hitSlop={10}
+          <Pressable accessibilityRole="button" onPress={busy ? undefined : restore} hitSlop={10}
             style={({ pressed }) => ({ alignSelf: 'center', paddingVertical: space.md, opacity: pressed ? 0.6 : 1 })}>
             <T variant="small" color={t.primary} style={{ fontWeight: '600' }}>還原購買</T>
           </Pressable>
@@ -199,7 +280,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
             backgroundColor: t.surface2, borderRadius: radius.lg, padding: space.lg, marginTop: space.xl }}>
             <Ionicons name="time-outline" size={18} color={t.sub} />
             <T variant="small" color={t.sub} style={{ flex: 1, lineHeight: 20 }}>
-              {'付費方案還在準備中。開放後這裡會出現訂閱按鈕，在那之前課程、讀物與每日免費 AI 額度都照常使用。'}
+              {'這個版本暫時無法購買。課程、讀物與每日免費 AI 額度都照常使用，稍後再回來看看。'}
             </T>
           </View>
         )}
@@ -217,7 +298,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
 
         {/* 自動續訂的揭露文字。這段是 Apple 明列要寫的，不要縮短 */}
         <T variant="caption" color={t.faint} style={{ marginTop: space.lg, lineHeight: 18 }}>
-          {`訂閱會自動續訂。除非在當期結束前至少 24 小時取消，否則系統會在到期前 24 小時內以 NT$${total} 扣款。`}
+          {`訂閱會自動續訂。除非在當期結束前至少 24 小時取消，否則系統會在到期前 24 小時內以 ${priceText} 扣款。`}
         </T>
         <T variant="caption" color={t.faint} style={{ marginTop: 6, lineHeight: 18 }}>
           {'付款會在確認購買時由你的 Apple ID 帳戶收取。購買後可以在「設定 → Apple ID → 訂閱」管理或取消訂閱。'}

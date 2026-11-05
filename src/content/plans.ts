@@ -14,28 +14,45 @@ import type { IconName } from '../ui';
  *
  * ## 定價怎麼來的
  *
- * 文字 AI 便宜得出乎意料：會話用 claude-haiku-5-5（$0.10 / $0.50 per MTok），
- * 一次回覆連同情境和歷史大約 2000 input + 500 output，約 NT$0.015。
- * 一天 60 次、一個月 1800 次也才 NT$30 上下。
+ * 文字 AI 便宜，但沒有想像中那麼便宜：會話用 claude-haiku-5-5（$0.10 / $0.50 per MTok），
+ * 一次回覆約 3000 input（系統提示＋最近 12 則歷史）＋ 吃滿 700 output ≈ **NT$0.0205**。
+ * 一份會話分析是 **NT$0.0425**（input 吃整份逐字稿，output 上限 2000），**是一則回覆的兩倍**。
  *
- * **真正的成本是語音**。Chirp3-HD 按字元計價（約 US$30 / 1M 字元），
- * 一句日文約 30 字 ≈ NT$0.029，是一則 AI 回覆（NT$0.008）的四倍。
- * 所以語音才是分級的主軸，AI 次數反而可以給得大方。
+ * **語音仍然是最大宗**。Chirp3-HD 按字元計價（約 US$30 / 1M 字元），
+ * 一句日文約 30 字 ≈ NT$0.029，和一則 AI 回覆差不多，但語音額度給得比 AI 多一個量級。
  * （手機會把播過的音檔存起來，重播不計，所以實際用量比上限低很多。）
  *
- * ## 額度是照「最壞情況也要賺」訂的
+ * ## 真正入袋的錢比月費少三成
  *
- * 舊版的語音額度是「每天 600 次」，乘上 30 天是 NT$520 的成本，
- * 而月費只有 NT$150——用好用滿的人會讓你每月賠 NT$380。
- * 現在改成每月字元，每個方案的最壞月成本都壓在月費的 45% 以下：
+ * **Apple 抽 30%，而且台灣的定價是含 5% 營業稅的。** NT$150 實際入袋只有 **NT$100**。
+ * 這一條以前漏算，整張毛利表因此高估了一倍以上。
+ * 申請 App Store 小型企業方案（年營收 100 萬美元以下）抽成降到 15%，入袋會變成 NT$121——
+ * 不用改任何程式，是目前投報率最高的一件事。
  *
- *   方案   AI 文字   語音              最壞成本   月費    毛利
- *   免費   NT$2.4    8k 字 Neural2     NT$6.5     0       —
- *   標準   NT$14     40k 字 HD         NT$52      150     65%
- *   無限   NT$36     100k 字 HD        NT$132     320     59%
+ * ## 用好用滿的真實損益（每月，匯率 NT$31.5）
+ *
+ *   方案   AI 文字   語音              成本    入袋    利潤
+ *   訪客   3.1      3k 字 Neural2     4.6     0       -4.6
+ *   免費   6.1      8k 字 Neural2     10.2    0       -10.2
+ *   標準   36.9     40k 字 HD         74.7    100     +25.3
+ *   無限   92.1     100k 字 HD        186.6   233.3   +46.7
+ *
+ * 付費方案用好用滿還是賺，但毛利是 **25%／20%**，不是原本寫的 65%。
+ * 免費和訪客用滿一定虧——這是獲客成本，不是錯誤，但要知道它多少：
+ * **1 個標準訂戶的淨利只養得起 2.5 個「天天用滿」的免費使用者。**
  *
  * 常駐實例（functions 的 minInstances: 1）約 NT$300〜600/月是固定成本，
- * 和用量無關：**約 5 個標準方案訂戶就打平**，之後每一個都是淨賺。
+ * 要 **12〜24 個標準訂戶**才打平（抽 30% 時）。
+ *
+ * ## 會話分析為什麼要另外限次
+ *
+ * 分析和會話共用同一個 aiPerDay 的桶，但成本是兩倍。
+ * 把次數全部拿去產分析的話，標準方案一個月的成本是 NT$114（虧 14），無限是 NT$286（虧 53）——
+ * 而且不需要惡意，一個很認真複盤的人就做得到。
+ * 所以 reportsPerDay 另外加一道上限（免費 3／標準 10／無限 20），會話本身完全不受影響。
+ *
+ * 上面都是**依單價推的估算**，不是實際帳單。上架後拿真實的
+ * Firebase 和 Google Cloud 帳單回來校正一次，特別是語音那一欄。
  *
  * ## 分析紀錄的份數例外
  *
@@ -73,6 +90,13 @@ export type Plan = {
   /** 每天的 AI 次數（每則回覆、每份分析各算一次） */
   aiPerDay: number;
   /**
+   * 每天最多幾份會話分析（也從 aiPerDay 扣，這是額外的第二道上限）。
+   * 一份分析的成本是一則回覆的兩倍，不另外設限的話，
+   * 把次數全拿去產分析會讓標準方案做到虧錢。
+   * 真正的上限在 functions 的 PLAN_ALLOWANCE，這裡只負責顯示，要一起改。
+   */
+  reportsPerDay: number;
+  /**
    * 每月可以朗讀的字元數（手機有快取，重播不計）。
    * 算字元不算次數，因為 Google 就是按字元收費——
    * 播一個 5 字的單字和一句 60 字的例句，成本差 12 倍。
@@ -101,7 +125,7 @@ export const plans: Plan[] = [
     id: 'free', name: '免費', kana: 'フリー', kanji: '學',
     tagline: '所有課程與讀物，永久免費',
     monthly: 0, yearly: 0,
-    aiPerDay: 10, ttsCharsPerMonth: 8_000,
+    aiPerDay: 10, reportsPerDay: 3, ttsCharsPerMonth: 8_000,
     icon: 'leaf-outline',
     perks: [
       '83 個生活主題・249 堂課',
@@ -118,27 +142,27 @@ export const plans: Plan[] = [
     id: 'plus', name: '標準', kana: 'スタンダード', kanji: '進',
     tagline: '每天練一場會話，夠用',
     monthly: 150, yearly: 1280,
-    aiPerDay: 60, ttsCharsPerMonth: 40_000, hdVoice: true,
+    aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000, hdVoice: true,
     trialDays: 7,
-    productId: { monthly: 'haogaku.plus.monthly', yearly: 'haogaku.plus.yearly' },
+    productId: { monthly: 'haogaku.japanese.plus.monthly', yearly: 'haogaku.japanese.plus.yearly' },
     icon: 'flash-outline',
     perks: [
       '每天 60 次 AI（約 4〜6 場完整會話）',
-      '每月約 1,300 句朗讀，用最自然的 HD 音色',
+      '每月約 1,330 句朗讀，用最自然的 HD 音色',
       '會話分析保留最近 20 份',
     ],
   },
   {
     id: 'pro', name: '無限', kana: 'プロ', kanji: '極',
     tagline: '整天泡在日文裡的人',
-    monthly: 320, yearly: 2680,
-    aiPerDay: 150, ttsCharsPerMonth: 100_000, hdVoice: true,
+    monthly: 350, yearly: 2930,
+    aiPerDay: 150, reportsPerDay: 20, ttsCharsPerMonth: 100_000, hdVoice: true,
     trialDays: 7,
-    productId: { monthly: 'haogaku.pro.monthly', yearly: 'haogaku.pro.yearly' },
+    productId: { monthly: 'haogaku.japanese.pro.monthly', yearly: 'haogaku.japanese.pro.yearly' },
     icon: 'infinite-outline',
     perks: [
       '每天 150 次 AI（約 12 場完整會話）',
-      '每月約 3,300 句朗讀，用最自然的 HD 音色',
+      '每月約 3,330 句朗讀，用最自然的 HD 音色',
       '會話分析保留完整歷史（200 份）',
     ],
   },
@@ -160,16 +184,51 @@ export const YEARLY_AVAILABLE = false;
 /**
  * 訂閱是否真的買得到。
  *
- * **送審前必須是 false，除非 IAP 已經接完並且在 App Store Connect 建好商品。**
- * 審查會實際點下去：有完整的訂閱介面、按下去卻只跳一個「尚未開放」的提示，
- * 會被當成未完成的功能退件（Guideline 2.1）。所以這個值是 false 的時候，
- * 方案頁只做「說明」不做「販售」——選擇鈕變成不能點的「日後推出」，
- * 購買頁也不會有可以按的付款鈕。
+ * true = 畫面會出現付款鈕，`src/lib/iap.ts` 會真的向 App Store 發起購買。
  *
- * 接完 IAP（收據送 Cloud Functions 驗證、後端寫 entitlements）之後改成 true，
- * 畫面不必再動。
+ * **要是 true，App Store Connect 裡就必須有下面那些 productId 的訂閱商品，
+ * 而且狀態要是「準備送審」以上。** 商品不存在的話 `fetchProducts` 會回空陣列，
+ * 購買頁會顯示「這個方案目前買不到」——審查員看到的就是一個壞掉的付費功能
+ * （Guideline 2.1）。所以改這個值之前先確認：
+ *
+ *   1. App Store Connect →「App 內購買」建好 `haogaku.japanese.plus.monthly`
+ *      和 `haogaku.japanese.pro.monthly`，兩個放同一個訂閱群組
+ *      （年繳那兩個等 YEARLY_AVAILABLE 打開再建）
+ *   2. 「協議、稅務與銀行業務」的付費 App 協議已經生效
+ *   3. Cloud Functions 的 `verifyPurchase` 已部署，三個 APPLE_IAP_* secret 都設好
+ *
+ * 另外 Expo Go 沒有 ExpoIap 原生模組，在 Expo Go 裡不管這個值是什麼都買不到，
+ * 畫面會說明原因。要實測購買得用 dev build 或 TestFlight ＋ 沙盒測試帳號。
  */
-export const IAP_AVAILABLE = false;
+export const IAP_AVAILABLE = true;
+
+/**
+ * 還沒綁定帳號的訪客額度（免費方案的一半）。
+ *
+ * 不列進 `plans` 是因為它不是一個「可以選的方案」，是還沒登入的暫時狀態；
+ * 混進方案比較表會多出一欄沒人需要選的東西。但規則頁必須寫出來——
+ * 訪客看到的次數和免費方案不一樣，沒講清楚就是爭議。
+ *
+ * 真正的數字在 functions/src/index.ts 的 GUEST_ALLOWANCE，這裡只負責顯示，要一起改。
+ */
+export const guestLimits = { aiPerDay: 5, reportsPerDay: 1, ttsCharsPerMonth: 3_000 };
+
+/**
+ * 一句日文的平均字數，把「字數」換算成使用者有感的「句數」。
+ * 單純寫 40,000 字元沒有人換算得出來那是多少。
+ */
+export const CHARS_PER_SENTENCE = 30;
+
+/**
+ * 朗讀字數約等於幾句。
+ *
+ * **無條件捨去到十位**，不是四捨五入：規則頁上的數字只能比實際的少，不能比實際的多。
+ * 算出 266 句卻寫 270，就是一句我們兌現不了的承諾。
+ * 捨去到百位會讓免費方案從 260 掉到 200，和方案卡上寫的對不起來——
+ * 兩頁寫不同的數字，正是使用者會拿來質疑的地方。
+ */
+export const sentencesOf = (chars: number) =>
+  Math.floor(chars / CHARS_PER_SENTENCE / 10) * 10;
 
 export const planById = (id: PlanId) => plans.find(p => p.id === id) ?? plans[0];
 

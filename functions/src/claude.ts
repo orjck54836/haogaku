@@ -96,3 +96,17 @@ export const lessonSchema = obj({
     ],
   }),
 });
+
+/**
+ * 單字例句。
+ *
+ * `ja` 是**正規化後**的詞條，不一定等於使用者打進來的字：他可能打了中文、
+ * 漏了假名、或用了不自然的寫法，由模型收斂成一個像樣的日文詞條再存進單字本。
+ * 不這樣做就得在後端判斷「這串字是不是日文」——純漢字的中文和日文漢字詞
+ * 分不開（「中文」和「勉強」長得一樣），怎麼寫都會錯一邊。
+ */
+export const exampleSchema = obj({
+  found: { type: 'boolean' },
+  ja: str, kana: str, zh: str,
+  examples: arr(obj({ ja: str, kana: str, zh: str })),
+});

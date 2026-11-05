@@ -1,0 +1,55 @@
+/* 法務頁共用樣式。
+   沿用 App 的品牌色（酒紅 #8A2432／米白 #F8F3EA／暖墨 #141012），
+   但刻意排版得比 App 樸素——條款頁要的是讀得完，不是好看。 */
+:root {
+  --wine: #8A2432;
+  --cream: #F8F3EA;
+  --ink: #141012;
+  --sub: #6F6568;
+  --line: #EDE8E2;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC",
+               "PingFang TC", "Microsoft JhengHei", sans-serif;
+  /* 中文行距給寬一點，條款是整段整段讀的 */
+  line-height: 1.85;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap {
+  max-width: 720px;
+  /* 手機上留 20px 側邊間距，條款頁常常是在 App 裡用 WebView 開的 */
+  margin: 0 auto;
+  padding: 48px 20px 80px;
+}
+header { border-bottom: 2px solid var(--wine); padding-bottom: 20px; margin-bottom: 36px; }
+.brand { color: var(--wine); font-weight: 800; letter-spacing: -0.3px; font-size: 15px; }
+h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; margin: 10px 0 8px; }
+.meta { color: var(--sub); font-size: 14px; margin: 0; }
+h2 {
+  font-size: 19px; font-weight: 800; letter-spacing: -0.3px;
+  margin: 40px 0 10px; padding-top: 4px;
+}
+h3 { font-size: 16px; font-weight: 700; margin: 24px 0 6px; }
+p, li { font-size: 16px; }
+ul { padding-left: 22px; }
+li { margin-bottom: 8px; }
+a { color: var(--wine); }
+table {
+  width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 15px;
+  /* 表格在窄螢幕會擠，讓它可以橫向滑而不是撐破版面 */
+  display: block; overflow-x: auto;
+}
+th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
+th { background: #fff; font-weight: 700; }
+.note {
+  background: #fff; border-left: 3px solid var(--wine);
+  padding: 14px 18px; margin: 20px 0; font-size: 15px;
+}
+footer {
+  margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line);
+  color: var(--sub); font-size: 14px;
+}

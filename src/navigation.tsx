@@ -30,6 +30,7 @@ import ReadingScreen from './screens/ReadingScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import RanksScreen from './screens/RanksScreen';
 import PlansScreen from './screens/PlansScreen';
+import QuotaScreen from './screens/QuotaScreen';
 import PurchaseScreen from './screens/PurchaseScreen';
 import TopicScreen from './screens/TopicScreen';
 import LessonContentScreen from './screens/LessonContentScreen';
@@ -52,6 +53,8 @@ export type RootStack = {
   Leaderboard: undefined;
   Ranks: undefined;
   Plans: undefined;
+  /** 次數規則說明。入口在方案頁和 AI 教練頁 */
+  Quota: undefined;
   Purchase: { planId: PlanId; cycle?: 'monthly' | 'yearly' };
 };
 export type Tabs = { Home: undefined; Course: undefined; Readings: undefined; AI: undefined; Words: undefined; Me: undefined };
@@ -158,6 +161,7 @@ export default function AppNavigator() {
         <Stack.Screen name="Ranks" component={RanksScreen} options={{ title: '段位' }} />
         {/* 方案頁自己有深色殼和返回鈕，不用系統 header */}
         <Stack.Screen name="Plans" component={PlansScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Quota" component={QuotaScreen} options={{ title: '次數怎麼算' }} />
         {/* 購買頁也自己畫頂欄，而且用 modal 呈現——付款是一段有始有終的流程，
             用往上推的卡片比橫向 push 更清楚它可以隨時關掉 */}
         <Stack.Screen name="Purchase" component={PurchaseScreen}

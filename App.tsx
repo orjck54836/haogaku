@@ -17,7 +17,7 @@ import { syncReminders } from './src/lib/reminders';
 
 function SetupNeeded() {
   return (
-    <View style={{ flex: 1, justifyContent: 'center', padding: 28, backgroundColor: '#FBF7F1' }}>
+    <View style={{ flex: 1, justifyContent: 'center', padding: 28, backgroundColor: '#F8F3EA' }}>
       <Text style={{ fontSize: 22, fontWeight: '800', color: '#4F1620' }}>還差一步：設定 Firebase</Text>
       <Text style={{ fontSize: 15, color: '#6B5F60', marginTop: 12, lineHeight: 24 }}>
         打開專案裡的 .env，填入 Firebase 的設定值，{'\n'}存檔後在終端機按 Ctrl+C，再執行 npm start。{'\n\n'}步驟請看 README.md 的「二、建立 Firebase 專案」。
@@ -40,7 +40,7 @@ export default function App() {
   }, []);
 
   if (!fontsLoaded) {
-    return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FBF7F1' }}><ActivityIndicator color="#8A2432" /></View>;
+    return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8F3EA' }}><ActivityIndicator color="#8A2432" /></View>;
   }
   if (!firebaseConfigured) return <SetupNeeded />;
   return (

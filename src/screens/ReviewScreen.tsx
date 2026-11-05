@@ -134,6 +134,15 @@ function Session({ mode, due, allWords, onClose, onAgain }: {
                 <T style={{ fontSize: 32, lineHeight: 48, fontFamily: fonts.serifMedium, textAlign: 'center' }} color={t.heading}>{w.ja}</T>
                 {shown ? <>
                   <T variant="heading" color={t.sub} style={{ marginTop: space.lg, textAlign: 'center' }}>{w.zh ?? '（沒有翻譯）'}</T>
+                  {/* 背面帶例句：單看中文意思記不住用法，而這句是加字時就產好的，不花錢。
+                      只取第一句——舊的快取可能存了不只一句，全部印出來會把卡片撐得比畫面還長 */}
+                  {w.examples?.[0] ? (
+                    <T style={{ fontSize: 16, lineHeight: 26, fontFamily: fonts.serifRegular, textAlign: 'center', marginTop: space.lg }}
+                      color={t.heading}>{w.examples[0].ja}</T>
+                  ) : null}
+                  {w.examples?.[0]?.zh ? (
+                    <T variant="small" color={t.sub} style={{ marginTop: 3, textAlign: 'center' }}>{w.examples[0].zh}</T>
+                  ) : null}
                   <T variant="caption" color={t.faint} style={{ marginTop: space.md }}>來自：{w.source}</T>
                 </> : <T variant="small" color={t.faint} style={{ marginTop: space.lg }}>點一下看意思</T>}
               </Card>

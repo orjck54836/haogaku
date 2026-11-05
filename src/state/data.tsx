@@ -2,6 +2,7 @@ import { createContext, ReactNode, useContext, useEffect, useRef, useState } fro
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { syncPlan } from '../lib/iap';
 import { useAuth } from './auth';
 import { LevelId } from '../content/types';
 import { today, yesterday, addDays } from '../lib/date';
@@ -62,6 +63,13 @@ export type Word = {
   ja: string; zh?: string; source: string; savedAt: number;
   box: number;            // 熟練度 0〜4
   due: string;            // 下次複習日 YYYY-MM-DD
+  /**
+   * 以下兩個是手打新增的單字才有的，選填所以舊資料不必遷移。
+   * kana 含漢字時才有意義（假名詞本身就是讀音），examples 產生失敗時是空的——
+   * 例句失敗不該讓單字存不進去，留著讓畫面給一顆重試。
+   */
+  kana?: string;
+  examples?: { ja: string; kana: string; zh: string }[];
 };
 
 /**
@@ -150,6 +158,10 @@ type DataCtx = Store & {
   removeReport: (id: string) => void;
   isSaved: (ja: string) => boolean;
   toggleWord: (w: { ja: string; zh?: string; source: string }) => void;
+  /** 手打新增。已經收藏過的回 false，讓畫面知道要說「已經在單字本裡了」 */
+  addWord: (w: Omit<Word, 'savedAt' | 'box' | 'due'>) => boolean;
+  /** 補上 AI 產生的內容（例句失敗後重試用），不動複習進度 */
+  fillWord: (ja: string, patch: Pick<Word, 'kana' | 'zh' | 'examples'>) => void;
   removeWord: (ja: string) => void;
   reviewWord: (ja: string, known: boolean) => void;
   dueWords: () => Word[];
@@ -215,6 +227,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
       } catch { /* 離線時使用快取 */ }
 
       if (!cancelled) setLoaded(true);
+
+      /**
+       * 對一次方案資格。
+       *
+       * 續訂、取消、退款**都不會通知 App**，所以不主動問就會停在上一次的狀態：
+       * 取消的人還看得到付費標記，續訂的人反而以為自己掉回免費。
+       *
+       * 這裡更新的只是畫面上的顯示值——真正的額度是後端自己讀 entitlements 決定的，
+       * 所以這一步失敗（離線）不影響任何功能，安靜吞掉就好。
+       * 放在 setLoaded 之後：它可能要跟 App Store 來回一趟，不該卡住第一次進畫面。
+       */
+      try {
+        const plan = await syncPlan(uid);
+        if (!cancelled && plan !== ref.current.profile.plan) {
+          commit(s => ({ ...s, profile: { ...s.profile, plan } }));
+        }
+      } catch { /* 離線時維持現狀 */ }
     })();
     return () => { cancelled = true; };
   }, [user?.uid]);
@@ -312,6 +341,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
     toggleWord: w => commit(s => s.words.some(x => x.ja === w.ja)
       ? { ...s, words: s.words.filter(x => x.ja !== w.ja) }
       : { ...s, words: [{ ...w, savedAt: Date.now(), box: 0, due: today() }, ...s.words] }),
+    addWord: w => {
+      if (ref.current.words.some(x => x.ja === w.ja)) return false;
+      commit(s => ({ ...s, words: [{ ...w, savedAt: Date.now(), box: 0, due: today() }, ...s.words] }));
+      return true;
+    },
+    // 重試時詞條已經在列表裡，只補內容，不要動 box／due——那會把複習進度歸零
+    fillWord: (ja, patch) => commit(s => ({
+      ...s, words: s.words.map(w => (w.ja === ja ? { ...w, ...patch } : w)),
+    })),
     removeWord: ja => commit(s => ({ ...s, words: s.words.filter(w => w.ja !== ja) })),
     reviewWord: (ja, known) => commit(s => ({
       ...s,

@@ -141,6 +141,19 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
               {'字數用完不會不能聽——會自動改用手機內建的日文語音，只是沒有雲端音色自然。'}
             </T>
           </View>
+
+          {/* 這三行只講得完「一次是什麼」。什麼時候不算、什麼時候補、升級當下會發生什麼事，
+              沒講到的那幾條正是事後會變成爭議的那幾條，所以另外開一頁寫完整 */}
+          <Pressable accessibilityRole="button" accessibilityLabel="看完整的次數規則"
+            onPress={() => navigation.navigate('Quota')}
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.sm,
+              marginTop: space.xs, opacity: pressed ? 0.6 : 1 })}>
+            <Ionicons name="document-text-outline" size={18} color={t.primary} />
+            <T variant="small" color={t.primary} style={{ flex: 1, fontWeight: '700' }}>
+              看完整規則：次數怎麼算
+            </T>
+            <Ionicons name="chevron-forward" size={16} color={t.primary} />
+          </Pressable>
         </View>
 
         <T variant="caption" color={t.faint} style={{ marginTop: space.lg, lineHeight: 18 }}>

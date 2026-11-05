@@ -74,6 +74,29 @@ export const aiChat = (
 export const aiReport = (scenario: Scenario, level: LevelId, messages: ChatMsg[]) =>
   call<ChatReport>('aiReport', { scenario: pick(scenario), level, messages });
 
+export type WordExample = { ja: string; kana: string; zh: string };
+
+export type ExampleResult = {
+  /**
+   * 查得到這個詞或用法嗎。false 時其他欄位都是空的，而且**後端已經把額度退回去**，
+   * 所以畫面要說清楚「查無此字」，不要當成一般的產生失敗叫人重試。
+   * 舊的快取沒有這個欄位，所以判斷一律用 `found === false`，不要用 `!found`
+   */
+  found?: boolean;
+  /** 正規化後的詞條，可能和送上去的字不同（打中文會回對應的日文說法） */
+  ja: string;
+  kana: string;
+  zh: string;
+  examples: WordExample[];
+  /** 命中雲端快取時沒有這個值：那一次不花錢，所以也沒扣額度 */
+  remaining?: number;
+  cached: boolean;
+};
+
+/** 手打的單字／句子交給 AI 補讀音、意思和例句 */
+export const aiExample = (word: string, level: LevelId) =>
+  call<ExampleResult>('aiExample', { word, level });
+
 // ---------- AI 主題課程 ----------
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Step, GenKind } from '../content/types';

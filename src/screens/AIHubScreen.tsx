@@ -5,7 +5,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { TopBar, WineCard } from '../ui/brand';
 import { PlanButton } from '../ui/PlanButton';
-import { Screen, Sheet, T, Card, Pill, RoundButton, SectionTitle, StationSign, IconBox } from '../ui';
+import { Screen, Sheet, T, Card, RoundButton, SectionTitle, StationSign, IconBox } from '../ui';
 import { TopicThumb } from '../ui/seal';
 import CategoryChips, { CatFilter } from '../ui/CategoryChips';
 import { useTheme, space, radius } from '../theme';
@@ -13,24 +13,20 @@ import { useData } from '../state/data';
 import { topics, categories } from '../content/topics';
 import { photoFor, uiPhotos } from '../ui/images';
 import { RootStack } from '../navigation';
-import { planById } from '../content/plans';
 import { whenLabel } from '../lib/date';
 
 export default function AIHubScreen() {
   const t = useTheme();
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
-  const { progress, profile, reports } = useData();
+  const { reports } = useData();
   const [cat, setCat] = useState<CatFilter>('all');
   const list = cat === 'all' ? topics : topics.filter(x => x.cat === cat);
-  const plan = planById(profile.plan);
 
   return (
     <Screen shell padded={false}>
       {/* 深色殼：和首頁同一套骨架——殼 → 酒紅大卡 → 白面板往上疊 */}
       <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
-        {/* TopBar 的左右欄固定 44pt，塞寬的 Pill 進去字會被擠成直排。
-            和首頁放同一顆 44pt 方案鈕，整條的高度和留白才對得上。
-            AI 額度移到卡片裡——那裡才有寬度把單位講清楚。 */}
+        {/* 和首頁放同一顆方案鈕：方案和今天剩的 AI 次數併在那一顆上 */}
         <TopBar right={<PlanButton />} />
 
         <WineCard style={{ marginTop: space.lg }}>
@@ -52,15 +48,14 @@ export default function AIHubScreen() {
             說錯不用怕，AI 會即時糾正並在結束後給你一份分析
           </T>
 
-          {/* 額度：只寫「剩幾次」看不出一次是什麼，所以把計算方式寫在旁邊。
-              整條可以點——次數見底時，使用者第一個想知道的就是怎麼拿到更多 */}
-          <Pressable accessibilityRole="button" accessibilityLabel="查看方案與用量"
-            onPress={() => nav.navigate('Plans')}
-            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.sm,
+          {/* 剩餘次數已經在右上角那顆方案鈕上（同一件事不要兩處顯示），
+              這裡只留「一次」是什麼——光看數字看不出單位。
+              整條可以點：次數見底時，使用者第一個想知道的就是怎麼拿到更多 */}
+          <Pressable accessibilityRole="button" accessibilityLabel="看次數怎麼算"
+            onPress={() => nav.navigate('Quota')}
+            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.xs,
               marginTop: space.md, opacity: pressed ? 0.7 : 1 })}>
-            <Pill icon="flash"
-              label={progress.aiRemaining !== null ? `今日還有 ${progress.aiRemaining} 次` : `${plan.name}方案`}
-              color="#FFFFFF" bg="rgba(255,255,255,0.16)" />
+            <Ionicons name="flash" size={13} color="rgba(255,255,255,0.55)" />
             <T variant="caption" color="rgba(255,255,255,0.55)" style={{ flex: 1 }}>
               每則 AI 回覆、每份分析各算一次
             </T>

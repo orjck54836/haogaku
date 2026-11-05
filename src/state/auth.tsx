@@ -9,7 +9,8 @@ import {
   GoogleAuthProvider, OAuthProvider, AuthCredential, signOut as fbSignOut, deleteUser,
 } from 'firebase/auth';
 import { deleteDoc, doc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions } from '../lib/firebase';
 import { track } from '../lib/analytics';
 
 /** 已綁定的登入方式，例如 apple.com、google.com */
@@ -194,7 +195,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await reauthenticateWithCredential(u, cred);
     }
 
-    // 排行榜那筆要一起刪。只刪 users 的話，帳號沒了名字還留在榜上
+    /**
+     * 後端那幾份只有 admin SDK 刪得動（usage、ttsUsage、entitlements、costs、
+     * users/{uid}/reports 子集合、Storage 的大頭照），所以先叫 purgeAccount。
+     *
+     * **順序不能反**：`deleteUser` 一跑完，呼叫者就不再是登入狀態，
+     * purgeAccount 會收到 unauthenticated，那幾份資料就永遠留在後端。
+     *
+     * 失敗只記 log、不中斷：刪不掉某一份統計資料，不該讓使用者刪不掉帳號。
+     * （審查看的是「App 內刪得掉」，而資料清理我們自己在主控台也補得回來。）
+     */
+    try {
+      await httpsCallable(functions, 'purgeAccount')({});
+    } catch (e) {
+      console.warn('purgeAccount 失敗，仍繼續刪除帳號', e);
+    }
+
+    // 這兩份本人刪得動，後端那支掛掉時當成保險再刪一次。
+    // 排行榜那筆一定要刪——只刪 users 的話，帳號沒了名字還留在榜上
     await Promise.all([
       deleteDoc(doc(db, 'users', u.uid)).catch(() => {}),
       deleteDoc(doc(db, 'leaderboard', u.uid)).catch(() => {}),

@@ -88,7 +88,7 @@
       </div>
       <table>
         <thead><tr>
-          <th>使用者</th><th>會話</th><th>分析</th><th>課程</th>
+          <th>使用者</th><th>會話</th><th>分析</th><th>課程</th><th>例句</th>
           <th>輸入 tok</th><th>輸出 tok</th><th>語音字元</th><th>成本</th>
         </tr></thead>
         <tbody id="users"></tbody>
@@ -191,8 +191,9 @@ function render(rows) {
     const d = byDay.get(r.date) ?? { ai: 0, tts: 0 };
     d.ai += c.ai; d.tts += c.tts; byDay.set(r.date, d);
 
-    const u = byUser.get(r.uid) ?? { uid: r.uid, chat: 0, report: 0, lesson: 0, in: 0, out: 0, chars: 0, cost: 0 };
+    const u = byUser.get(r.uid) ?? { uid: r.uid, chat: 0, report: 0, lesson: 0, example: 0, in: 0, out: 0, chars: 0, cost: 0 };
     u.chat += r.calls?.chat ?? 0; u.report += r.calls?.report ?? 0; u.lesson += r.calls?.lesson ?? 0;
+    u.example += r.calls?.example ?? 0;
     for (const t of Object.values(r.tokens ?? {})) { u.in += t.in ?? 0; u.out += t.out ?? 0; }
     u.chars += (r.tts?.hd ?? 0) + (r.tts?.std ?? 0);
     u.cost += c.ai + c.tts;
@@ -227,10 +228,10 @@ function render(rows) {
   $('userCount').textContent = `${users.length} 人`;
   $('users').innerHTML = users.length ? users.map(u => `<tr>
     <td class="uid">${u.uid ?? '(未知)'}</td>
-    <td>${u.chat}</td><td>${u.report}</td><td>${u.lesson}</td>
+    <td>${u.chat}</td><td>${u.report}</td><td>${u.lesson}</td><td>${u.example}</td>
     <td>${num(u.in)}</td><td>${num(u.out)}</td><td>${num(u.chars)}</td>
     <td><strong>${nt(u.cost)}</strong></td>
-  </tr>`).join('') : '<tr><td colspan="8" class="faint">這段期間還沒有任何用量</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="9" class="faint">這段期間還沒有任何用量</td></tr>';
 }
 </script>
 </body>

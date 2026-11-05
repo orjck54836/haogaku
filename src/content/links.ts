@@ -49,15 +49,22 @@ export const officialLinks: OfficialLink[] = [
 /**
  * 法務連結。
  *
- * **上架前一定要換成真正的條款頁。** App Store 審查（Guideline 3.1.2）要求
- * 訂閱頁面必須有「可以點、而且真的打得開」的服務條款與隱私權政策連結，
- * 指向首頁會被退件。目前先指到官網，等頁面做好再換網址。
+ * 兩頁都是靜態頁，放在 `public/`，跟著 Firebase Hosting 一起部署：
  *
- * 隱私權政策另外也是 App Store Connect 送審表單的必填欄位。
+ * ```bash
+ * firebase deploy --only hosting
+ * ```
+ *
+ * 網址沒有 `.html` 是因為 firebase.json 開了 `cleanUrls`。
+ * App Store 審查（Guideline 3.1.2）要求訂閱頁的條款與隱私權連結「點得開、
+ * 而且真的是那份文件」，指向官網首頁會被退件——所以不要為了省事改回首頁。
+ * 隱私權政策網址同時也是 App Store Connect 送審表單的必填欄位，填同一個。
+ *
+ * 之後若把文件搬到 forma-global.com 自己的網域，改這裡就好，畫面不用動。
  */
 export const legalLinks = {
-  terms: 'https://www.forma-global.com/study',
-  privacy: 'https://www.forma-global.com/study',
+  terms: 'https://haogaku-60c56.web.app/terms',
+  privacy: 'https://haogaku-60c56.web.app/privacy',
 };
 
 export const linkById = (id: string) => officialLinks.find(l => l.id === id);
