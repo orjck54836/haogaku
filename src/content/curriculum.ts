@@ -1,6 +1,8 @@
 import { Lesson, LevelId, Unit } from './types';
 import { hiraganaLessons, katakanaLessons, travelKatakana, signsLesson } from './kana';
 import { subwayLesson, konbiniLesson, restaurantLesson, hotelLesson } from './scenes';
+import { grammarUnits, GRAMMAR_ID } from './grammar';
+import { onomatoUnits, ONOMATO_ID } from './onomatopoeia';
 import { topics, Topic, CategoryId, categories } from './topics';
 import type { Goal } from '../state/data';
 
@@ -30,6 +32,32 @@ export const BASICS_ID = 'basics';
  */
 export const KEIGO_ID = 'keigo';
 export const keigoTopics = topics.filter(t => t.cat === 'keigo');
+
+export { GRAMMAR_ID, grammarUnits } from './grammar';
+export { ONOMATO_ID, onomatoUnits } from './onomatopoeia';
+
+/**
+ * 主題頁最上面那排「語言基礎」卡，依程度換成不同兩張。
+ *
+ * 四張卡不是同時出現：初級看五十音＋基本文法，進階看擬聲擬態語＋敬語。
+ * 理由是**這四件事有先後**——初級的人需要的是把句子拆開來看懂，
+ * 擬聲擬態語和敬語對他太早（擬聲擬態語沒有中文對應，敬語要先有敬體才有得比）；
+ * 而進階的人再看一次五十音只是佔位置。
+ *
+ * 四張卡的內容全部都還在、沒有被鎖住：切換程度就看得到另外兩張，
+ * 直接用網址或既有進度進去也讀得到。這裡決定的只是「現在推薦你看哪兩張」。
+ */
+export const foundationIds: Record<LevelId, string[]> = {
+  L2: [BASICS_ID, GRAMMAR_ID],
+  L3: [ONOMATO_ID, KEIGO_ID],
+};
+
+/** 四個集合各自的單元。敬語不在這裡：它底下掛的是主題，不是單元 */
+export const unitsOf: Record<string, Unit[]> = {
+  [BASICS_ID]: basics,
+  [GRAMMAR_ID]: grammarUnits,
+  [ONOMATO_ID]: onomatoUnits,
+};
 
 /** 生活主題網格用的分類：敬語已獨立，不在這裡重複出現 */
 export const gridCategories = categories.filter(c => c.id !== 'keigo');
@@ -66,6 +94,10 @@ export type LessonRef = { lesson: Lesson; topic?: Topic; group: string; index: n
 
 export const allLessons: LessonRef[] = [
   ...basics.flatMap(u => u.lessons.map(lesson => ({ lesson, group: u.title }))),
+  // 文法和擬聲擬態語排在五十音後面、主題前面：nextLesson 的「零基礎先推五十音」
+  // 靠的是 allLessons 的順序，basics 必須保持在最前面
+  ...grammarUnits.flatMap(u => u.lessons.map(lesson => ({ lesson, group: u.title }))),
+  ...onomatoUnits.flatMap(u => u.lessons.map(lesson => ({ lesson, group: u.title }))),
   ...topics.flatMap(topic => topicLessons(topic).map(lesson => ({ lesson, topic, group: topic.title }))),
 ].map((r, index) => ({ ...r, index }));
 
@@ -87,7 +119,8 @@ export function topicNumber(topicId: string): string {
 
 /** 單一主題，或 BASICS_ID／KEIGO_ID 這兩個集合的進度 */
 export function topicProgress(topicId: string, completed: string[]) {
-  const ls = topicId === BASICS_ID ? basics.flatMap(u => u.lessons)
+  const units = unitsOf[topicId];
+  const ls = units ? units.flatMap(u => u.lessons)
     : topicId === KEIGO_ID ? keigoTopics.flatMap(topicLessons)
     : topicLessons(topics.find(t => t.id === topicId)!);
   return { done: ls.filter(l => completed.includes(l.id)).length, total: ls.length };
