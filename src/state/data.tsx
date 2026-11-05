@@ -1,4 +1,5 @@
 import { createContext, ReactNode, useContext, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -147,6 +148,8 @@ function publishLeader(uid: string, s: Store) {
 type DataCtx = Store & {
   loaded: boolean;
   setProfile: (p: Partial<Profile>) => void;
+  /** 重新跟後端對一次方案資格。購買完、或 App 回到前景時呼叫 */
+  refreshPlan: () => Promise<PlanId>;
   addXp: (n: number) => void;
   completeLesson: (id: string) => void;
   setResume: (lessonId: string, step: number) => void;
@@ -238,14 +241,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
        * 所以這一步失敗（離線）不影響任何功能，安靜吞掉就好。
        * 放在 setLoaded 之後：它可能要跟 App Store 來回一趟，不該卡住第一次進畫面。
        */
-      try {
-        const plan = await syncPlan(uid);
-        if (!cancelled && plan !== ref.current.profile.plan) {
-          commit(s => ({ ...s, profile: { ...s.profile, plan } }));
-        }
-      } catch { /* 離線時維持現狀 */ }
+      if (!cancelled) refreshPlanRef.current();
     })();
     return () => { cancelled = true; };
+  }, [user?.uid]);
+
+  /**
+   * App 從背景回來時再對一次方案。
+   *
+   * 購買、取消、退款**有可能發生在 App 外面**：使用者去「設定 → 訂閱」取消，
+   * 或是在 App Store 的付款表單上完成付款、我們的監聽卻沒收到（網路斷在那一刻）。
+   * 只在冷啟動對一次的話，這些人會一直看到錯的方案標記，而且重開 App 才會好。
+   */
+  useEffect(() => {
+    if (!user?.uid) return;
+    const sub = AppState.addEventListener('change', st => {
+      if (st === 'active') refreshPlanRef.current();
+    });
+    return () => sub.remove();
   }, [user?.uid]);
 
   function commit(fn: (s: Store) => Store) {
@@ -284,12 +297,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
     publishLeader(uid, ref.current);
   }, [loaded]);
 
+  /**
+   * 跟後端對一次方案資格，回傳對完之後的方案。
+   *
+   * **`profile.plan` 只是顯示值，權威在 `entitlements/{uid}`。** 所以這裡一律用
+   * 後端的答案覆蓋本地，包含「降回免費」——取消或退款的人不該留著付費標記。
+   *
+   * 用 ref 包起來是因為 effect（冷啟動、回前景）要呼叫它，
+   * 而它依賴 commit；放進 deps 會讓那兩個 effect 每次 render 都重跑。
+   */
+  async function refreshPlan(): Promise<PlanId> {
+    const uid = uidRef.current;
+    if (!uid) return ref.current.profile.plan;
+    try {
+      const plan = await syncPlan(uid);
+      if (plan !== ref.current.profile.plan) {
+        commit(s => ({ ...s, profile: { ...s.profile, plan }, reports: trimReports(s.reports, plan) }));
+      }
+      return plan;
+    } catch {
+      // 離線時維持現狀：顯示值舊一點沒關係，額度本來就是後端說了算
+      return ref.current.profile.plan;
+    }
+  }
+  const refreshPlanRef = useRef(refreshPlan);
+  refreshPlanRef.current = refreshPlan;
+
   const withProgress = (fn: (p: Progress) => Progress) => commit(s => ({ ...s, progress: fn(s.progress) }));
 
   const value: DataCtx = {
     ...store,
     loaded,
     // 方案變動時順手砍一次：降級後畫面不該還看得到超出額度的分析
+    refreshPlan,
     setProfile: p => {
       commit(s => {
         const profile = { ...s.profile, ...p };

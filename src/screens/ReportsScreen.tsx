@@ -48,7 +48,7 @@ export default function ReportsScreen({ navigation }: StackProps<'Reports'>) {
             {'練完一場 AI 會話並看完分析後，就會留在這裡。'}
           </T>
           <T variant="small" color={t.faint} style={{ textAlign: 'center' }}>
-            {`${plan.name}方案保留最近 ${keep} 份`}
+            {`${plan.name}保留最近 ${keep} 份`}
           </T>
         </Card>
       </Screen>
@@ -111,7 +111,7 @@ export default function ReportsScreen({ navigation }: StackProps<'Reports'>) {
 
       {/* 存滿時上面那張卡已經講了份數，這裡再印一次就是同一個數字講兩遍 */}
       <View style={{ marginTop: space.lg, alignItems: 'center', gap: space.xs }}>
-        {full ? null : <Pill icon="archive-outline" label={`${plan.name}方案保留最近 ${keep} 份`} color={t.sub} bg={t.surface2} />}
+        {full ? null : <Pill icon="archive-outline" label={`${plan.name}保留最近 ${keep} 份`} color={t.sub} bg={t.surface2} />}
         <T variant="small" color={t.faint}>長按一筆可以刪除</T>
       </View>
     </Screen>

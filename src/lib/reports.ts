@@ -39,7 +39,7 @@ export type SavedReport = {
 /**
  * 每個方案留幾份。
  *
- * 無限方案的「完整歷史」給 200 份：一份約 1〜2KB，200 份約 300KB，
+ * 高級版的「完整歷史」給 200 份：一份約 1〜2KB，200 份約 300KB，
  * 離 Firestore 單一文件 1MB 的上限還有單字本和進度的空間。
  * 真的無上限的話，重度使用者一年就會把文件寫爆——那時連進度都存不進去。
  *
@@ -56,7 +56,7 @@ export function addReport(list: SavedReport[], entry: SavedReport, plan: PlanId)
 }
 
 /**
- * 降級後要把超出的砍掉，否則無限方案留下的 200 份會一直跟著免費使用者，
+ * 降級後要把超出的砍掉，否則高級版留下的 200 份會一直跟著免費使用者，
  * 畫面上也會看到比方案說明更多的紀錄。
  */
 export function trimReports(list: SavedReport[], plan: PlanId): SavedReport[] {

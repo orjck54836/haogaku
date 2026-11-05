@@ -35,8 +35,8 @@ export function PlanButton({ size = 44 }: { size?: number }) {
   return (
     <Pressable accessibilityRole="button"
       accessibilityLabel={left !== null
-        ? `方案，目前是${plan.name}方案，今天還有 ${left} 次 AI`
-        : `方案，目前是${plan.name}方案`}
+        ? `方案，目前是${plan.name}，今天還有 ${left} 次 AI`
+        : `方案，目前是${plan.name}`}
       onPress={() => nav.navigate('Plans')} hitSlop={10}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: 7,

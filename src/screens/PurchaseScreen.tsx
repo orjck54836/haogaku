@@ -11,7 +11,7 @@ import { planById, yearlySaving, yearlyPerMonth, YEARLY_AVAILABLE, IAP_AVAILABLE
 import { topicPhotos } from '../ui/images';
 import { legalLinks } from '../content/links';
 import { track } from '../lib/analytics';
-import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription } from '../lib/iap';
+import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription, recoverPurchase } from '../lib/iap';
 import { useAuth } from '../state/auth';
 import { StackProps } from '../navigation';
 
@@ -70,6 +70,8 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
   const [storePrice, setStorePrice] = useState<string | null>(null);
   const [canBuy, setCanBuy] = useState<boolean | null>(null);
 
+  /** 已經在用這個方案：按鈕要鎖住，不是讓他按了被 StoreKit 擋 */
+  const owned = d.profile.plan === plan.id && plan.monthly > 0;
   const yearly = YEARLY_AVAILABLE && cycle === 'yearly';
   const total = yearly ? plan.yearly : plan.monthly;
   const periodLabel = yearly ? '年' : '月';
@@ -99,8 +101,24 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
     return () => { alive = false; };
   }, [sku]);
 
+  /**
+   * 開通成功之後的收尾。
+   *
+   * `setProfile` 只是先把畫面跟上，**再 `refreshPlan()` 重讀一次 entitlements**：
+   * 權威在後端，而且這樣才蓋得掉「本地顯示值和後端不一致」的情況——
+   * 之前只做 setProfile，一旦那一步沒跑到（例如走了錯誤分支），
+   * 首頁右上角就會一直停在免費版，重開 App 才會好。
+   */
+  async function done(nextPlan: PlanId) {
+    d.setProfile({ plan: nextPlan });
+    track('purchase_done', { plan: nextPlan, cycle });
+    await d.refreshPlan();
+    Alert.alert('訂閱完成', `${planById(nextPlan).name}已經開通，AI 和語音額度立刻生效。`,
+      [{ text: '開始用', onPress: () => navigation.goBack() }]);
+  }
+
   async function purchase() {
-    if (!sku) return;
+    if (!sku || owned) return;
     // 訪客帳號換一台手機就沒了，訂閱綁在上面等於買了會不見。後端也會再擋一次
     if (a.isGuest) {
       Alert.alert('請先綁定帳號',
@@ -114,16 +132,24 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
     try {
       const res = await purchaseSubscription(sku);
       if (!res.active) throw new Error('verify-inactive');
-      // 後端已經寫好 entitlements，這裡只是把畫面的顯示值跟上
-      d.setProfile({ plan: res.plan });
-      track('purchase_done', { plan: res.plan, cycle });
-      Alert.alert('訂閱完成', `${plan.name}方案已經開通，AI 和語音額度立刻生效。`,
-        [{ text: '開始用', onPress: () => navigation.goBack() }]);
+      await done(res.plan);
     } catch (e: any) {
       // 在 Apple 的付款表單上按取消不是錯誤，不要跳視窗罵他
       const code = String(e?.code ?? e?.message ?? '');
       if (/cancel/i.test(code)) return;
       console.warn('purchase failed', e);
+      /**
+       * 失敗不代表沒成交。
+       *
+       * 監聽逾時、驗證時斷線、交易被延後——這幾種情況 Apple 那邊都可能已經扣了款。
+       * 先問一次 StoreKit 名下有沒有有效訂閱，有就當成買到了，
+       * 不然使用者會看到 Apple 說成功、我們說失敗，而且方案標記一直是免費版。
+       */
+      const saved = await recoverPurchase();
+      if (saved?.active) {
+        await done(saved.plan);
+        return;
+      }
       Alert.alert('購買沒有完成',
         '沒有扣款。如果你確定已經付過，請按「還原購買」，或稍後再試一次。',
         [{ text: '知道了' }]);
@@ -138,7 +164,8 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       const res = await restoreSubscription();
       if (res) {
         d.setProfile({ plan: res.plan });
-        Alert.alert('已還原', `找回了${planById(res.plan).name}方案。`,
+        await d.refreshPlan();
+        Alert.alert('已還原', `找回了${planById(res.plan).name}。`,
           [{ text: '好', onPress: () => navigation.goBack() }]);
       } else {
         Alert.alert('沒有可以還原的訂閱',
@@ -166,7 +193,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, height: 44 }}>
           <RoundButton icon="close" size={36} bg="rgba(255,255,255,0.14)" fg="#FFFFFF"
             accessibilityLabel="關閉" onPress={() => navigation.goBack()} />
-          <T variant="heading" color="#FFFFFF" style={{ flex: 1 }}>訂閱{plan.name}方案</T>
+          <T variant="heading" color="#FFFFFF" style={{ flex: 1 }}>訂閱{plan.name}</T>
         </View>
       </View>
 
@@ -182,7 +209,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
               <Seal kanji={plan.kanji} size={54} tone={plan.id === 'pro' ? 'gold' : 'soft'} />
               <View style={{ flex: 1 }}>
-                <T variant="title" style={{ fontSize: 23 }} color="#FFFFFF">{plan.name}方案</T>
+                <T variant="title" style={{ fontSize: 23 }} color="#FFFFFF">{plan.name}</T>
                 <T style={{ fontSize: 12, fontFamily: fonts.serifRegular, letterSpacing: 1, marginTop: 1 }} color="rgba(255,255,255,0.7)">
                   {plan.kana}
                 </T>
@@ -262,7 +289,11 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
           按下去卻跳一個錯誤，審查會當成未完成的功能退件（Guideline 2.1）。
           「還原購買」跟著一起收起來——沒有東西可買就沒有東西可還原。
         */}
-        {canBuy === null ? (
+        {owned ? (
+          /* 從別處（例如還原購買完）繞回這一頁時，方案可能已經是這個了。
+             再讓他按下去只會被 StoreKit 當重複訂閱擋掉 */
+          <Button label="使用中" variant="secondary" size="lg" disabled onPress={() => {}} />
+        ) : canBuy === null ? (
           <View style={{ alignItems: 'center', paddingVertical: space.xl, marginTop: space.md }}>
             <ActivityIndicator color={t.primary} />
           </View>

@@ -110,13 +110,32 @@ export async function purchaseSubscription(productId: string): Promise<VerifyRes
 
   const purchase = await new Promise<any>((resolve, reject) => {
     let done = false;
-    const finish = (fn: () => void) => { if (done) return; done = true; ok.remove(); bad.remove(); fn(); };
+    const finish = (fn: () => void) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      ok.remove(); bad.remove();
+      fn();
+    };
 
     const ok = m.purchaseUpdatedListener(p => {
       if (p.productId !== productId) return;   // 其他商品的補送交易，不是這次要等的
       finish(() => resolve(p));
     });
     const bad = m.purchaseErrorListener(e => finish(() => reject(e)));
+
+    /**
+     * 監聽沒回來的保險。
+     *
+     * Apple 的付款表單是另一個行程，它顯示「已完成」之後我們的監聽**有可能收不到**
+     * （那一刻斷網、App 被系統凍結、或者交易被延後成 pending）。沒有這個 timeout 的話
+     * Promise 永遠不 resolve：使用者看到 Apple 說成功、我們的畫面卻什麼都沒發生，
+     * 而且 busy 卡在 true，連再按一次都不行。
+     *
+     * 逾時不等於沒買到——所以丟一個認得出來的錯，讓上層去走還原購買把它救回來。
+     * 3 分鐘是給「要輸 Apple ID 密碼 ＋ 雙重驗證」的人留的餘裕。
+     */
+    const timer = setTimeout(() => finish(() => reject(new Error('purchase-timeout'))), 180_000);
 
     m.requestPurchase({ request: { apple: { sku: productId } }, type: 'subs' })
       .catch((e: unknown) => finish(() => reject(e)));
@@ -126,6 +145,26 @@ export async function purchaseSubscription(productId: string): Promise<VerifyRes
   // 訂閱不是消耗型，isConsumable 要 false，否則 StoreKit 會當成可以再買一次
   await m.finishTransaction({ purchase, isConsumable: false }).catch(() => {});
   return result;
+}
+
+/**
+ * 錢可能已經付了，只是我們沒接到。
+ *
+ * 購買失敗的處理不能只跳「購買沒有完成」就結束——除了使用者自己按取消，
+ * 其他每一種失敗（監聽逾時、驗證那一步斷線、App 被殺掉）都有可能
+ * **Apple 那邊已經成交**。這時候去問一次 StoreKit 名下有沒有有效訂閱，
+ * 有就補驗、補開通，使用者不會看到一個「付了錢卻沒方案」的畫面。
+ *
+ * 回 null 代表真的沒買到，這時候才該跳失敗。
+ */
+export async function recoverPurchase(): Promise<VerifyResult | null> {
+  try {
+    const m = await connect();
+    if (!(await m.hasActiveSubscriptions())) return null;
+    return await restoreSubscription();
+  } catch {
+    return null;
+  }
 }
 
 /**

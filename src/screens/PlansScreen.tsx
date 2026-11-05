@@ -13,7 +13,7 @@ import { StackProps } from '../navigation';
 /**
  * 每個方案一張照片。
  * 三張淺灰卡疊在一起全是字，分不出哪個是哪個；照片一鋪，
- * 免費／標準／無限在捲動時各自有一個記得住的樣子。
+ * 免費版／標準版／高級版在捲動時各自有一個記得住的樣子。
  */
 const planPhoto: Record<PlanId, number> = {
   free: topicPhotos.hanami!, plus: topicPhotos.shinkansen!, pro: topicPhotos.matsuri!,
@@ -69,7 +69,7 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
             付費買的只有一樣東西：AI 和語音的每日用量。
           </T>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.lg }}>
-            <Pill icon="checkmark-circle" label={`目前：${current.name}方案`} color="#FFFFFF" bg="rgba(255,255,255,0.16)" />
+            <Pill icon="checkmark-circle" label={`目前：${current.name}`} color="#FFFFFF" bg="rgba(255,255,255,0.16)" />
           </View>
         </WineCard>
       </View>
@@ -117,7 +117,9 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
         <View style={{ gap: space.lg, marginTop: space.xl }}>
           {plans.map(p => (
             <PlanCard key={p.id} plan={p} current={p.id === d.profile.plan}
-              onPress={p.monthly && IAP_AVAILABLE ? () => subscribe(p) : undefined} />
+              /* 已經在用的方案不給再買一次：StoreKit 會把它當重複訂閱擋下來，
+                 而使用者看到的只是一顆按了沒反應的按鈕 */
+              onPress={p.monthly && IAP_AVAILABLE && p.id !== d.profile.plan ? () => subscribe(p) : undefined} />
           ))}
         </View>
 
@@ -169,7 +171,7 @@ function PlanCard({ plan, current, onPress }: {
 }) {
   const t = useTheme();
   const free = plan.monthly === 0;
-  // 「無限」是最貴的那階，給它金色邊框當視覺重心
+  // 「高級版」是最貴的那階，給它金色邊框當視覺重心
   const featured = plan.id === 'pro';
 
   return (
@@ -227,6 +229,11 @@ function PlanCard({ plan, current, onPress }: {
       {onPress ? (
         <Button label={`選擇${plan.name}`} variant={featured ? 'gold' : 'primary'} size="md"
           style={{ marginTop: space.lg }} onPress={onPress} />
+      ) : current && plan.monthly ? (
+        /* 使用中：按鈕要鎖起來，而且要說得出為什麼不能按。
+           只拿掉 onPress 的話會變成一顆看起來能按、按了沒反應的按鈕 */
+        <Button label="使用中" variant="secondary" size="md" disabled
+          style={{ marginTop: space.lg }} onPress={() => {}} />
       ) : plan.monthly ? (
         <Button label="日後推出" variant="secondary" size="md" disabled
           style={{ marginTop: space.lg }} onPress={() => {}} />

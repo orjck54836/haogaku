@@ -263,7 +263,7 @@ export default function ProfileScreen() {
       <SectionTitle title="方案" ja="プラン"
         right={<T variant="caption" color={t.faint}>課程永遠免費</T>} />
       <View style={{ borderRadius: radius.xl, ...shadows.lg }}>
-      <Pressable accessibilityRole="button" accessibilityLabel={`方案，目前是${plan.name}方案`}
+      <Pressable accessibilityRole="button" accessibilityLabel={`方案，目前是${plan.name}`}
         onPress={() => nav.navigate('Plans')}
         style={({ pressed }) => ({
           borderRadius: radius.xl, overflow: 'hidden', backgroundColor: t.shell,
@@ -277,7 +277,7 @@ export default function ProfileScreen() {
           <Seal kanji={plan.kanji} size={48} tone={plan.id === 'free' ? 'soft' : 'gold'} />
           <View style={{ flex: 1 }}>
             <T variant="caption" color={t.gold} style={{ fontWeight: '700', letterSpacing: 0.5 }}>
-              {`目前：${plan.name}方案`}
+              {`目前：${plan.name}`}
             </T>
             <T variant="heading" color="#FFFFFF" style={{ fontSize: 18, marginTop: 2 }}>
               {plan.id === 'free' ? '想要更多 AI 次數？' : '查看或更換方案'}

@@ -35,7 +35,7 @@ import type { IconName } from '../ui';
  *   訪客   3.1      3k 字 Neural2     4.6     0       -4.6
  *   免費   6.1      8k 字 Neural2     10.2    0       -10.2
  *   標準   36.9     40k 字 HD         74.7    100     +25.3
- *   無限   92.1     100k 字 HD        186.6   233.3   +46.7
+ *   高級版   92.1     100k 字 HD        186.6   233.3   +46.7
  *
  * 付費方案用好用滿還是賺，但毛利是 **25%／20%**，不是原本寫的 65%。
  * 免費和訪客用滿一定虧——這是獲客成本，不是錯誤，但要知道它多少：
@@ -47,9 +47,9 @@ import type { IconName } from '../ui';
  * ## 會話分析為什麼要另外限次
  *
  * 分析和會話共用同一個 aiPerDay 的桶，但成本是兩倍。
- * 把次數全部拿去產分析的話，標準方案一個月的成本是 NT$114（虧 14），無限是 NT$286（虧 53）——
+ * 把次數全部拿去產分析的話，標準方案一個月的成本是 NT$114（虧 14），高級版是 NT$286（虧 53）——
  * 而且不需要惡意，一個很認真複盤的人就做得到。
- * 所以 reportsPerDay 另外加一道上限（免費 3／標準 10／無限 20），會話本身完全不受影響。
+ * 所以 reportsPerDay 另外加一道上限（免費 3／標準版 10／高級版 20），會話本身完全不受影響。
  *
  * 上面都是**依單價推的估算**，不是實際帳單。上架後拿真實的
  * Firebase 和 Google Cloud 帳單回來校正一次，特別是語音那一欄。
@@ -122,7 +122,7 @@ export type Plan = {
 
 export const plans: Plan[] = [
   {
-    id: 'free', name: '免費', kana: 'フリー', kanji: '學',
+    id: 'free', name: '免費版', kana: 'フリー', kanji: '學',
     tagline: '所有課程與讀物，永久免費',
     monthly: 0, yearly: 0,
     aiPerDay: 10, reportsPerDay: 3, ttsCharsPerMonth: 8_000,
@@ -139,7 +139,7 @@ export const plans: Plan[] = [
     ],
   },
   {
-    id: 'plus', name: '標準', kana: 'スタンダード', kanji: '進',
+    id: 'plus', name: '標準版', kana: 'スタンダード', kanji: '進',
     tagline: '每天練一場會話，夠用',
     monthly: 150, yearly: 1280,
     aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000, hdVoice: true,
@@ -153,7 +153,7 @@ export const plans: Plan[] = [
     ],
   },
   {
-    id: 'pro', name: '無限', kana: 'プロ', kanji: '極',
+    id: 'pro', name: '高級版', kana: 'プロ', kanji: '極',
     tagline: '整天泡在日文裡的人',
     monthly: 350, yearly: 2930,
     aiPerDay: 150, reportsPerDay: 20, ttsCharsPerMonth: 100_000, hdVoice: true,
