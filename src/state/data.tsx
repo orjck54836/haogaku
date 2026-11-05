@@ -309,6 +309,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   async function refreshPlan(): Promise<PlanId> {
     const uid = uidRef.current;
     if (!uid) return ref.current.profile.plan;
+    // 同時只跑一趟：這個函式掛在「回前景」上，而購買流程本身會讓 App 離開再回到前景
+    // （Apple 的付款表單、雙重驗證都是另一個行程），事件會連著來好幾次。
+    // 不擋的話每一次都各自跟 StoreKit 和後端來回一趟，疊起來把購買流程卡住
+    if (planInFlight.current) return planInFlight.current;
+    planInFlight.current = (async () => {
     try {
       const plan = await syncPlan(uid);
       if (plan !== ref.current.profile.plan) {
@@ -319,7 +324,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // 離線時維持現狀：顯示值舊一點沒關係，額度本來就是後端說了算
       return ref.current.profile.plan;
     }
+    })();
+    try { return await planInFlight.current; } finally { planInFlight.current = null; }
   }
+  const planInFlight = useRef<Promise<PlanId> | null>(null);
   const refreshPlanRef = useRef(refreshPlan);
   refreshPlanRef.current = refreshPlan;
 

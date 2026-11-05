@@ -137,6 +137,19 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       // 在 Apple 的付款表單上按取消不是錯誤，不要跳視窗罵他
       const code = String(e?.code ?? e?.message ?? '');
       if (/cancel/i.test(code)) return;
+      /**
+       * 等核准不是失敗。
+       *
+       * Ask to Buy（兒童帳號）和銀行二次驗證會讓交易停在 pending：表單關了、
+       * 錢還沒扣、訂閱還沒生效。原本會落到下面那句「沒有扣款」——對一個
+       * 正在等家長按同意的人，那句話會讓他以為要重買一次，於是排出第二筆交易。
+       */
+      if (/pending|deferred/i.test(code)) {
+        Alert.alert('等待核准',
+          '這筆訂閱需要核准（例如家長同意或銀行驗證）。核准完成後方案會自動開通，不用重新購買。',
+          [{ text: '知道了' }]);
+        return;
+      }
       console.warn('purchase failed', e);
       /**
        * 失敗不代表沒成交。

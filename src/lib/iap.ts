@@ -51,23 +51,30 @@ export function iapSupported(): boolean {
   return Platform.OS === 'ios' && !!loadIap();
 }
 
-let connected = false;
+/**
+ * 連線是 **Promise 快取**，不是布林旗標。
+ *
+ * 用 `let connected = false` 擋不住同時進來的兩個呼叫者：兩邊都看到 false，
+ * 於是 `initConnection()` 被呼叫兩次。購買頁一打開就會發生——查價和
+ * 「回前景時對方案」會同時觸發。重複 init 在 StoreKit 上是多掛一組監聽，
+ * 交易事件會被收到兩次。把 Promise 本身存起來，後來的人等同一趟。
+ */
+let conn: Promise<IapModule> | null = null;
 
 async function connect(): Promise<IapModule> {
   const m = loadIap();
   if (!m) throw new Error('這個版本不支援 App 內購買');
-  if (!connected) {
-    await m.initConnection();
-    connected = true;
+  if (!conn) {
+    conn = m.initConnection().then(() => m).catch(e => { conn = null; throw e; });
   }
-  return m;
+  return conn;
 }
 
 /** App 要結束或登出時收掉連線。沒收也不會壞，只是留著一個原生的監聽 */
 export async function endIap() {
   const m = loadIap();
-  if (!m || !connected) return;
-  try { await m.endConnection(); } finally { connected = false; }
+  if (!m || !conn) return;
+  try { await m.endConnection(); } finally { conn = null; }
 }
 
 export type StorePrice = { productId: string; price: string };
@@ -85,6 +92,44 @@ export async function fetchPrices(productIds: string[]): Promise<StorePrice[]> {
   const list = Array.isArray(res) ? res : [];
   return list.map((p: any) => ({ productId: String(p.id ?? p.productId), price: String(p.displayPrice ?? '') }))
     .filter(p => p.productId && p.price);
+}
+
+/**
+ * 一筆交易的 id。
+ *
+ * **欄位叫 `id`，不叫 `transactionId`。** expo-iap 6 的 `PurchaseCommon` 只有 `id`
+ * （iOS 是 StoreKit 的 transaction id），寫成 `p.transactionId` 會拿到 undefined，
+ * `String()` 之後變成字串 "undefined" 送上後端——Apple 兩個環境都查無此交易，
+ * 於是**每一次購買都驗不過**，而且錯誤訊息長得像網路問題，很難看出是欄位名寫錯。
+ * 留著舊名當備案是為了日後升級改回去也不會壞。
+ */
+function txId(p: any): string {
+  const id = p?.id ?? p?.transactionId ?? p?.originalTransactionIdIOS;
+  const s = id == null ? '' : String(id);
+  if (!s || s === 'undefined') throw new Error('no-transaction-id');
+  return s;
+}
+
+/**
+ * 問 StoreKit 名下現有的交易，**不觸發 AppStore.sync()**。
+ *
+ * 這是和 `restorePurchases()` 的關鍵差別：sync 一定會跳 Apple ID 密碼框，
+ * 只能掛在使用者自己按的「還原購買」上。自動對帳（冷啟動、回前景、購買失敗補救）
+ * 一律走這一個，不然使用者會被密碼框追著跑（見 syncPlan 的註解）。
+ */
+async function availablePurchases(): Promise<any[]> {
+  const m = await connect();
+  const res = await m.getAvailablePurchases({ onlyIncludeActiveItemsIOS: true });
+  const list = Array.isArray(res) ? res : [];
+  // pending 的交易（Ask to Buy 等家長核准、或銀行要二次驗證）還沒成交，拿去驗一定
+  // 查無有效訂閱。濾掉是為了不要每次回前景都為同一筆 pending 白打一次後端
+  return list.filter((p: any) => p?.purchaseState !== 'pending');
+}
+
+/** 好幾筆歷史交易時挑最新的：後端本來就會查整個訂閱群組的現況，給誰都一樣，給最新的最保險 */
+function latestOf(list: any[]): any | null {
+  if (!list.length) return null;
+  return list.reduce((a, b) => (Number(b?.transactionDate ?? 0) > Number(a?.transactionDate ?? 0) ? b : a));
 }
 
 /** 後端驗證的結果 */
@@ -141,7 +186,19 @@ export async function purchaseSubscription(productId: string): Promise<VerifyRes
       .catch((e: unknown) => finish(() => reject(e)));
   });
 
-  const result = await verifyOnServer(String(purchase.transactionId));
+  /**
+   * 還沒成交的交易不能當成買到了。
+   *
+   * Ask to Buy（兒童帳號要家長核准）和銀行二次驗證會回 `purchaseState: 'pending'`：
+   * Apple 的表單已經關掉，但錢還沒扣、訂閱還沒生效，拿去驗一定查無有效訂閱。
+   * 原本會落到「購買沒有完成，沒有扣款」——對一個正在等核准的人這句話是錯的。
+   *
+   * 而且 **pending 不能 finishTransaction**：結束掉的話核准通過之後那筆交易
+   * 不會再回來，使用者等到核准卻永遠拿不到方案。留著它，核准後 StoreKit 會重送。
+   */
+  if (purchase.purchaseState === 'pending') throw new Error('purchase-pending');
+
+  const result = await verifyOnServer(txId(purchase));
   // 訂閱不是消耗型，isConsumable 要 false，否則 StoreKit 會當成可以再買一次
   await m.finishTransaction({ purchase, isConsumable: false }).catch(() => {});
   return result;
@@ -160,8 +217,13 @@ export async function purchaseSubscription(productId: string): Promise<VerifyRes
 export async function recoverPurchase(): Promise<VerifyResult | null> {
   try {
     const m = await connect();
-    if (!(await m.hasActiveSubscriptions())) return null;
-    return await restoreSubscription();
+    // 這裡**不能**叫 restoreSubscription()：它內含 AppStore.sync()，會跳 Apple ID 密碼框。
+    // 購買失敗的補救是自動發生的，使用者沒有按任何「還原」，突然跳密碼框只會像當機
+    const latest = latestOf(await availablePurchases());
+    if (!latest) return null;
+    const result = await verifyOnServer(txId(latest));
+    if (result.active) await m.finishTransaction({ purchase: latest, isConsumable: false }).catch(() => {});
+    return result.active ? result : null;
   } catch {
     return null;
   }
@@ -181,8 +243,8 @@ export async function restoreSubscription(): Promise<VerifyResult | null> {
   if (!list.length) return null;
 
   // 可能有好幾筆歷史交易，挑最新的那筆去問後端；後端本來就會查整個訂閱群組的現況
-  const latest = list.reduce((a, b) => (Number(b.transactionDate ?? 0) > Number(a.transactionDate ?? 0) ? b : a));
-  const result = await verifyOnServer(String(latest.transactionId));
+  const latest = latestOf(list);
+  const result = await verifyOnServer(txId(latest));
   for (const p of list) {
     await m.finishTransaction({ purchase: p, isConsumable: false }).catch(() => {});
   }
@@ -221,13 +283,17 @@ export async function syncPlan(uid: string): Promise<PlanId> {
   if (plan !== 'free' || !iapSupported()) return plan;
 
   // 到這裡代表後端認為沒有有效訂閱。可能真的沒買過，也可能是續訂了但我們還不知道。
-  // 問 StoreKit 一句「這台手機有沒有有效訂閱」，有才值得去打後端
+  //
+  // **這一段絕對不能呼叫 restorePurchases()。** 它在 iOS 就是 AppStore.sync()，
+  // 一定會跳 Apple ID 密碼框；而這個函式掛在冷啟動和「回前景」上，密碼框自己
+  // 就會讓 App 離開再回到前景，於是跳完一次又觸發一次——實測是密碼框跳不完，
+  // 而且會把購買流程的 busy 一起卡住（TestFlight 上就是這樣炸的）。
+  // getAvailablePurchases 讀的是本機已有的 entitlement，不會跳任何視窗。
   try {
-    const m = await connect();
-    const has = await m.hasActiveSubscriptions();
-    if (!has) return 'free';
-    const restored = await restoreSubscription();
-    return restored?.plan ?? 'free';
+    const latest = latestOf(await availablePurchases());
+    if (!latest) return 'free';
+    const result = await verifyOnServer(txId(latest));
+    return result.active ? result.plan : 'free';
   } catch {
     return 'free';
   }
