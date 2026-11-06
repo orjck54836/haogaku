@@ -83,9 +83,9 @@ export const collectionMeta: Record<string, {
     focus: '看懂一個日文句子最少需要的四件事：句尾、助詞、動詞變化、形容詞。學完就拆得開主題課裡的句子。',
   },
   [ONOMATO_ID]: {
-    title: 'オノマトペ', caption: 'ぎおんご・ぎたいご', photoKey: 'onomatopoeia',
+    title: '擬聲擬態語', caption: 'ぎおんご・ぎたいご', photoKey: 'onomatopoeia',
     desc: '擬聲擬態語・心情、表情、口感、天氣・8 堂',
-    focus: '日本人形容痛、形容口感、形容心情幾乎都靠這套詞。它沒有中文對應，要連「後面接什麼」一起記。',
+    focus: '日本人形容痛、形容口感、形容心情幾乎都靠擬聲擬態語。它沒有中文對應，要連「後面接什麼」一起記。',
   },
   [KEIGO_ID]: {
     title: '敬語', caption: 'けいご', photoKey: 'service-keigo',

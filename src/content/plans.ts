@@ -123,7 +123,7 @@ export type Plan = {
 export const plans: Plan[] = [
   {
     id: 'free', name: '免費版', kana: 'フリー', kanji: '學',
-    tagline: '所有課程與讀物，永久免費',
+    tagline: '所有課程與讀物完全免費',
     monthly: 0, yearly: 0,
     aiPerDay: 10, reportsPerDay: 3, ttsCharsPerMonth: 8_000,
     icon: 'leaf-outline',
@@ -140,7 +140,7 @@ export const plans: Plan[] = [
   },
   {
     id: 'plus', name: '標準版', kana: 'スタンダード', kanji: '進',
-    tagline: '每天練一場會話，夠用',
+    tagline: '適合每天輕鬆練習對話的人來增加語感',
     monthly: 150, yearly: 1280,
     aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000, hdVoice: true,
     trialDays: 7,
@@ -154,7 +154,7 @@ export const plans: Plan[] = [
   },
   {
     id: 'pro', name: '高級版', kana: 'プロ', kanji: '極',
-    tagline: '整天泡在日文裡的人',
+    tagline: '適合想讓口說語感突飛猛進，提升自己的人',
     monthly: 350, yearly: 2930,
     aiPerDay: 150, reportsPerDay: 20, ttsCharsPerMonth: 100_000, hdVoice: true,
     trialDays: 7,

@@ -49,9 +49,9 @@ export default function LoginScreen() {
         )}
 
         <View>
-          <Text style={[type.display, { color: '#FFFFFF', fontSize: 40, lineHeight: 46 }]}>日本人{'\n'}真正會說的話。</Text>
+          <Text style={[type.display, { color: '#FFFFFF', fontSize: 40, lineHeight: 46 }]}>從日本生活的角度{'\n'}真正學好日文</Text>
           <Text style={[type.body, { color: 'rgba(255,255,255,0.78)', marginTop: space.md }]}>
-            通勤 3 分鐘。從五十音、生活大小事，到職場敬語。
+            從五十音、生活大小事，到職場敬語。
           </Text>
         </View>
       </View>
@@ -70,7 +70,7 @@ export default function LoginScreen() {
           <Button label="使用 Apple 繼續" icon="logo-apple" variant="dark" loading={busy === 'apple'} onPress={() => run('apple', signInApple)} />
         ))}
         <Button label="使用 Google 繼續" icon="logo-google" variant="secondary" loading={busy === 'google'} onPress={() => run('google', signInGoogle)} />
-        <Button label="先試用" variant="ghost" loading={busy === 'guest'} onPress={() => run('guest', signInGuest)} />
+        <Button label="試用體驗" variant="ghost" loading={busy === 'guest'} onPress={() => run('guest', signInGuest)} />
         <T variant="caption" color={t.faint} style={{ textAlign: 'center' }}>
           試用的學習紀錄之後可以綁定帳號保存
         </T>

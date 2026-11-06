@@ -59,14 +59,11 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
           <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: t.primary, opacity: 0.86 }} />
           <T variant="small" color="rgba(255,255,255,0.72)">りょうきん</T>
-          <T variant="title" color="#FFFFFF" style={{ marginTop: 2 }}>課程永遠免費</T>
+          <T variant="title" color="#FFFFFF" style={{ marginTop: 2 }}>訂閱方案</T>
           {/* JSX 裡的換行會被當成一個半形空格，接在全形句號後面會留下一個缺口，
               所以一句話一個 T，不要靠原始碼換行排版 */}
           <T variant="small" color="rgba(255,255,255,0.82)" style={{ marginTop: space.md, lineHeight: 21 }}>
-            83 個主題、249 堂課、30 篇讀物、五十音、單字複習、排行榜——全部不用付錢。
-          </T>
-          <T variant="small" color="rgba(255,255,255,0.82)" style={{ marginTop: 4, lineHeight: 21 }}>
-            付費買的只有一樣東西：AI 和語音的每日用量。
+            所有課程包括50音/生活主題/文法/文章等一率免費並享有未來所有課堂更新。
           </T>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.lg }}>
             <Pill icon="checkmark-circle" label={`目前：${current.name}`} color="#FFFFFF" bg="rgba(255,255,255,0.16)" />
@@ -76,9 +73,9 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
 
       <Sheet>
         {/* 先把免費的攤開。付費頁藏免費功能是常見做法，但這個 app 不需要 */}
-        <T variant="heading" style={{ fontSize: 19 }}>免費就有的</T>
+        <T variant="heading" style={{ fontSize: 19 }}>免費版</T>
         <T variant="caption" color={t.sub} style={{ marginTop: 2, marginBottom: space.lg }}>
-          不用付錢，也不會過期
+          登入即獲得以下服務
         </T>
         <View style={{ gap: space.sm }}>
           {freeForever.map(f => (
@@ -240,7 +237,7 @@ function PlanCard({ plan, current, onPress }: {
       ) : (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: space.lg }}>
           <Ionicons name="checkmark-circle" size={15} color={t.success} />
-          <T variant="caption" color={t.success} style={{ fontWeight: '700' }}>不用做任何事，已經是你的</T>
+          <T variant="caption" color={t.success} style={{ fontWeight: '700' }}>已獲得</T>
         </View>
       )}
       </View>

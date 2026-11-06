@@ -248,7 +248,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
 
         {/* 這個方案買到什麼 */}
         <Card tone="soft" style={{ marginTop: space.xl }}>
-          <T variant="caption" color={t.faint}>這個方案包含</T>
+          <T variant="caption" color={t.faint}>方案包含</T>
           <View style={{ gap: 7, marginTop: space.md }}>
             {plan.perks.map(x => (
               <View key={x} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.sm }}>
@@ -257,10 +257,6 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
               </View>
             ))}
           </View>
-          <View style={{ marginVertical: space.md }}><Rule /></View>
-          <T variant="caption" color={t.sub} style={{ lineHeight: 18 }}>
-            {'課程、讀物、五十音、單字複習、排行榜本來就免費，訂閱不影響這些。'}
-          </T>
         </Card>
 
         {/* 總計：付款當下最重要的一行，獨立出來放大 */}
@@ -283,9 +279,9 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
         {trial ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md,
             backgroundColor: t.goldSoft, borderRadius: radius.lg, padding: space.md }}>
-            <Ionicons name="gift-outline" size={18} color={t.warning} />
+            <Ionicons size={18} color={t.warning} />
             <T variant="small" color={t.warning} style={{ flex: 1, lineHeight: 20 }}>
-              {`前 ${trial} 天免費。試用期間隨時取消就不會收費。`}
+              {`前 ${trial} 天免費。試用期間可隨時取消。`}
             </T>
           </View>
         ) : null}

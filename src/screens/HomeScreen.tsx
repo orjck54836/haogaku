@@ -74,7 +74,7 @@ export default function HomeScreen() {
                 {greeting()}{name ? `，${name}` : ''}
               </T>
               <T variant="title" color="#FFFFFF" style={{ marginTop: 2 }} numberOfLines={1}>
-                {resumeRef ? '接著上次的地方' : '下一站'}
+                {resumeRef ? '上次的課程' : '下一站'}
               </T>
             </View>
             <RoundButton icon="arrow-forward" accessibilityLabel={resumeRef ? '繼續學習' : '開始這一課'} onPress={open} />
