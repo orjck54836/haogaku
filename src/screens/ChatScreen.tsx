@@ -40,7 +40,6 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   const list = useRef<FlatList<Bubble>>(null);
   const [listening, setListening] = useState(false);
   const stopRef = useRef<(() => void) | null>(null);
-  const sendRef = useRef<(t: string) => void>(() => {});
   const [loadingVoice, setLoadingVoice] = useState<string | null>(null);
   const voice = scenario.voice ?? 'female';
   /**
@@ -199,8 +198,6 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     }
   }
 
-  sendRef.current = send;
-
   async function toggleMic() {
     if (listening) { stopRef.current?.(); return; }
     if (busy) return;
@@ -209,7 +206,16 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
       setListening(true);
       stopRef.current = await startListening({
         onPartial: text => setInput(text),
-        onFinal: text => { setInput(text); if (text.trim()) sendRef.current(text); },
+        /**
+         * 辨識完**只填進輸入框，不自動送出**。
+         *
+         * 原本說完就直接送，於是辨識聽錯一個字（日文的同音字特別常錯）、
+         * 或是自己講到一半改口，都只能把錯的那句送給教練，再被糾正一次
+         * 「你這句不自然」——錯的不是他的日文，是辨識結果。
+         * 口說練習本來就會重講，所以收音結束後把游標留在輸入框，
+         * 要改就改、要重錄就再按一次麥克風，確定了才按送出。
+         */
+        onFinal: text => setInput(text),
         onEnd: () => { setListening(false); stopRef.current = null; },
         onError: message => { setListening(false); Alert.alert('語音輸入', message); },
       });
@@ -343,7 +349,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginHorizontal: space.lg, marginBottom: space.sm,
             backgroundColor: t.primarySoft, borderRadius: radius.md, padding: space.md }}>
             <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: t.primary }} />
-            <T variant="small" color={t.primary} style={{ flex: 1, fontWeight: '700' }}>正在聽…用日文說說看，說完會自動送出</T>
+            <T variant="small" color={t.primary} style={{ flex: 1, fontWeight: '700' }}>正在聽…用日文說說看，說完可以先改再送出</T>
           </View>
         ) : null}
 

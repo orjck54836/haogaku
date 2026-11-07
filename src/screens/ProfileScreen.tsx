@@ -261,7 +261,7 @@ export default function ProfileScreen() {
       </View>
 
       <SectionTitle title="方案" ja="プラン"
-        right={<T variant="caption" color={t.faint}>課程永遠免費</T>} />
+        />
       <View style={{ borderRadius: radius.xl, ...shadows.lg }}>
       <Pressable accessibilityRole="button" accessibilityLabel={`方案，目前是${plan.name}`}
         onPress={() => nav.navigate('Plans')}
@@ -274,8 +274,7 @@ export default function ProfileScreen() {
           style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }} />
         <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: t.shell, opacity: 0.82 }} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.lg }}>
-          <Seal kanji={plan.kanji} size={48} tone={plan.id === 'free' ? 'soft' : 'gold'} />
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 2 }}>
             <T variant="caption" color={t.gold} style={{ fontWeight: '700', letterSpacing: 0.5 }}>
               {`目前：${plan.name}`}
             </T>
@@ -284,7 +283,7 @@ export default function ProfileScreen() {
             </T>
             <T variant="caption" color="rgba(255,255,255,0.7)" style={{ marginTop: 3, lineHeight: 18 }}>
               {plan.id === 'free'
-                ? '課程與讀物永遠免費，付費只買 AI 和語音的每日用量'
+                ? '所有課程都免費，付費只買AI和語音用量'
                 : plan.tagline}
             </T>
           </View>

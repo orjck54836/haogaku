@@ -113,6 +113,9 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
     d.setProfile({ plan: nextPlan });
     track('purchase_done', { plan: nextPlan, cycle });
     await d.refreshPlan();
+    // 升級當下後端會把今天用掉的 AI 次數歸零（resetQuotaOnUpgrade），
+    // 不重讀一次的話右上角那顆鈕會停在免費版剩下的數字
+    await d.refreshQuota();
     Alert.alert('訂閱完成', `${planById(nextPlan).name}已經開通，AI 和語音額度立刻生效。`,
       [{ text: '開始用', onPress: () => navigation.goBack() }]);
   }
@@ -178,6 +181,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       if (res) {
         d.setProfile({ plan: res.plan });
         await d.refreshPlan();
+        await d.refreshQuota();
         Alert.alert('已還原', `找回了${planById(res.plan).name}。`,
           [{ text: '好', onPress: () => navigation.goBack() }]);
       } else {
@@ -220,7 +224,6 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
           <View style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: t.shell, opacity: 0.8 }} />
           <View style={{ flex: 1, justifyContent: 'center', gap: space.md, paddingHorizontal: space.lg }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-              <Seal kanji={plan.kanji} size={54} tone={plan.id === 'pro' ? 'gold' : 'soft'} />
               <View style={{ flex: 1 }}>
                 <T variant="title" style={{ fontSize: 23 }} color="#FFFFFF">{plan.name}</T>
                 <T style={{ fontSize: 12, fontFamily: fonts.serifRegular, letterSpacing: 1, marginTop: 1 }} color="rgba(255,255,255,0.7)">

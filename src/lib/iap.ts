@@ -143,8 +143,22 @@ async function verifyOnServer(transactionId: string): Promise<VerifyResult> {
 /**
  * 發起購買，等它走完，驗證，然後結束交易。
  *
- * `requestPurchase` 的回傳值**不是**購買結果（Apple 的付款表單是非同步的），
- * 結果會從 `purchaseUpdatedListener` 進來，所以這裡把兩個監聽包成一個 Promise。
+ * ## 不要只等 `purchaseUpdatedListener`
+ *
+ * 原本整個流程押在那個監聽上，結果是 Apple 的付款表單顯示成功、我們的畫面
+ * 什麼都沒發生、按鈕一直轉——因為那一則事件**有可能不會進到我們的監聽**：
+ *
+ * - expo-iap 6 在 iOS 上做了交易**去重**，而那份歷史是 module 層的全域變數：
+ *   同一筆 transaction id 只要在這次連線裡被發出過一次（冷啟動補送、
+ *   上一次購買嘗試、回前景對帳），後面新掛的監聽就收不到了。
+ *   這裡對自己掛的監聽關掉去重（`dedupeTransactionIOS: false`）。
+ * - iOS 的 `requestPurchase` 本身就會 resolve 成那筆 Purchase（文件說不要「只」靠它，
+ *   但它是最直接的那一手），所以兩邊誰先到就用誰。
+ * - 兩邊都沒到時，隔幾秒去問一次 StoreKit 名下現有的交易。付款已經成交的話
+ *   那筆一定在裡面，不必等到逾時。
+ *
+ * 逾時從 3 分鐘縮到 75 秒：逾時不是結論，上層會接著走 recoverPurchase() 補救，
+ * 讓人盯著一顆轉三分鐘的按鈕才是最糟的那個選擇。
  *
  * `finishTransaction` 一定要在驗證成功之後才呼叫：先結束交易、驗證卻失敗的話，
  * 這筆交易就從佇列裡消失了，使用者付了錢卻拿不到方案，只能靠還原購買救回來。
@@ -155,34 +169,51 @@ export async function purchaseSubscription(productId: string): Promise<VerifyRes
 
   const purchase = await new Promise<any>((resolve, reject) => {
     let done = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
     const finish = (fn: () => void) => {
       if (done) return;
       done = true;
-      clearTimeout(timer);
+      timers.forEach(clearTimeout);
       ok.remove(); bad.remove();
       fn();
     };
-
-    const ok = m.purchaseUpdatedListener(p => {
-      if (p.productId !== productId) return;   // 其他商品的補送交易，不是這次要等的
+    /** 只認這次要買的商品；其他商品的補送交易交給冷啟動對帳去處理 */
+    const take = (p: any) => {
+      if (!p || p.productId !== productId) return false;
       finish(() => resolve(p));
-    });
+      return true;
+    };
+
+    // dedupeTransactionIOS: false —— 見上面，去重歷史是全域的，用預設值會漏掉補送的那一則
+    const ok = m.purchaseUpdatedListener(p => { take(p); }, { dedupeTransactionIOS: false });
     const bad = m.purchaseErrorListener(e => finish(() => reject(e)));
 
     /**
      * 監聽沒回來的保險。
      *
      * Apple 的付款表單是另一個行程，它顯示「已完成」之後我們的監聽**有可能收不到**
-     * （那一刻斷網、App 被系統凍結、或者交易被延後成 pending）。沒有這個 timeout 的話
-     * Promise 永遠不 resolve：使用者看到 Apple 說成功、我們的畫面卻什麼都沒發生，
-     * 而且 busy 卡在 true，連再按一次都不行。
+     * （那一刻斷網、App 被系統凍結、交易被去重掉，或者被延後成 pending）。
+     * 沒有這個 timeout 的話 Promise 永遠不 resolve：使用者看到 Apple 說成功、
+     * 我們的畫面卻什麼都沒發生，而且 busy 卡在 true，連再按一次都不行。
      *
      * 逾時不等於沒買到——所以丟一個認得出來的錯，讓上層去走還原購買把它救回來。
-     * 3 分鐘是給「要輸 Apple ID 密碼 ＋ 雙重驗證」的人留的餘裕。
      */
-    const timer = setTimeout(() => finish(() => reject(new Error('purchase-timeout'))), 180_000);
+    timers.push(setTimeout(() => finish(() => reject(new Error('purchase-timeout'))), 75_000));
+
+    /** 監聽和回傳值都沒給答案時，自己去問 StoreKit。成交了的話那筆一定在名下 */
+    const poll = (delay: number) => timers.push(setTimeout(async () => {
+      if (done) return;
+      try {
+        const hit = (await availablePurchases()).filter((p: any) => p?.productId === productId);
+        if (!done) take(latestOf(hit));
+      } catch { /* 問不到就等下一輪或逾時 */ }
+      if (!done && delay < 40_000) poll(delay + 8_000);
+    }, delay));
+    poll(6_000);
 
     m.requestPurchase({ request: { apple: { sku: productId } }, type: 'subs' })
+      // iOS 會 resolve 成這筆 Purchase（subs 有可能回陣列）。監聽先到就以監聽為準
+      .then((r: any) => { take(Array.isArray(r) ? latestOf(r.filter(Boolean)) : r); })
       .catch((e: unknown) => finish(() => reject(e)));
   });
 

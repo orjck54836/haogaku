@@ -12,7 +12,7 @@ import { rankOf } from '../lib/rank';
 import { ReviewState, emptyReview } from '../lib/review';
 import { isReadingLesson } from '../content/readings';
 import { track } from '../lib/analytics';
-import { PlanId } from '../content/plans';
+import { PlanId, planById, guestLimits } from '../content/plans';
 import { SavedReport, addReport, trimReports, makeReport, retentionOf, fetchReports, pushReport, dropReport, pruneReports } from '../lib/reports';
 import type { ChatReport } from '../lib/ai';
 
@@ -139,6 +139,13 @@ function leaderRow(uid: string, s: Store): Omit<LeaderRow, 'uid'> {
   };
 }
 
+/**
+ * usage/{uid} 的日期界線。
+ * 後端用 UTC+8 算（functions 的 `taipeiDate()`），這裡要用同一條公式——
+ * 拿手機本機日期去比，出國的人會跨錯一天，看到的剩餘次數跟實際能用的不一樣。
+ */
+const taipeiDay = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+
 /** 推上排行榜；不該上榜的人要主動把舊那筆刪掉，否則會永遠停在最後一次的分數 */
 function publishLeader(uid: string, s: Store) {
   if (shouldPublish(s)) setDoc(doc(db, 'leaderboard', uid), leaderRow(uid, s)).catch(() => {});
@@ -150,6 +157,8 @@ type DataCtx = Store & {
   setProfile: (p: Partial<Profile>) => void;
   /** 重新跟後端對一次方案資格。購買完、或 App 回到前景時呼叫 */
   refreshPlan: () => Promise<PlanId>;
+  /** 重新讀一次今天還剩幾次 AI。冷啟動、回前景、方案變動後呼叫 */
+  refreshQuota: () => Promise<void>;
   addXp: (n: number) => void;
   completeLesson: (id: string) => void;
   setResume: (lessonId: string, step: number) => void;
@@ -241,7 +250,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
        * 所以這一步失敗（離線）不影響任何功能，安靜吞掉就好。
        * 放在 setLoaded 之後：它可能要跟 App Store 來回一趟，不該卡住第一次進畫面。
        */
-      if (!cancelled) refreshPlanRef.current();
+      if (!cancelled) syncAllRef.current();
     })();
     return () => { cancelled = true; };
   }, [user?.uid]);
@@ -256,7 +265,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user?.uid) return;
     const sub = AppState.addEventListener('change', st => {
-      if (st === 'active') refreshPlanRef.current();
+      if (st === 'active') syncAllRef.current();
     });
     return () => sub.remove();
   }, [user?.uid]);
@@ -331,6 +340,47 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const refreshPlanRef = useRef(refreshPlan);
   refreshPlanRef.current = refreshPlan;
 
+  /**
+   * 重新讀一次「今天還剩幾次 AI」。
+   *
+   * `aiRemaining` 原本只在呼叫 AI 回來那一刻被更新，而它又跟著 progress 存進手機和雲端，
+   * 於是右上角那顆鈕會停在**上一次呼叫 AI 時**的數字：跨過午夜沒有歸零、
+   * 在另一台手機用掉的次數看不到、剛升級完額度變大也不會變。
+   *
+   * 直接讀 `usage/{uid}`（firestore.rules 開了本人唯讀），不另外打一支 Cloud Function：
+   * 一次 Firestore 讀取約 NT$0.00002，比為了一個數字喚醒一個實例便宜太多。
+   * 上限用 plans.ts 的 aiPerDay——它和後端的 PLAN_ALLOWANCE 是同一組數字（兩邊要一起改）。
+   */
+  async function refreshQuota(planOverride?: PlanId) {
+    const uid = uidRef.current;
+    if (!uid) return;
+    try {
+      const snap = await getDoc(doc(db, 'usage', uid));
+      const data = snap.data();
+      // 日期界線要和後端的 taipeiDate() 一致：用本機時區算，出國的人會跨錯一天
+      const used = data && data.date === taipeiDay() ? Number(data.count) || 0 : 0;
+      const plan = planOverride ?? ref.current.profile.plan;
+      const limit = userRef.current?.isAnonymous ? guestLimits.aiPerDay : planById(plan).aiPerDay;
+      const left = Math.max(0, limit - used);
+      if (left !== ref.current.progress.aiRemaining) {
+        commit(s => ({ ...s, progress: { ...s.progress, aiRemaining: left } }));
+      }
+    } catch { /* 離線時維持現狀：這只是顯示值，擋不擋得住一律由後端決定 */ }
+  }
+  const refreshQuotaRef = useRef(refreshQuota);
+  refreshQuotaRef.current = refreshQuota;
+  const userRef = useRef(user);
+  userRef.current = user;
+
+  /** 方案對完順手把次數也對一次：升級當下後端會重置當天用量，不重讀會看到舊數字 */
+  async function syncPlanAndQuota() {
+    const plan = await refreshPlanRef.current();
+    await refreshQuotaRef.current(plan);
+    return plan;
+  }
+  const syncAllRef = useRef(syncPlanAndQuota);
+  syncAllRef.current = syncPlanAndQuota;
+
   const withProgress = (fn: (p: Progress) => Progress) => commit(s => ({ ...s, progress: fn(s.progress) }));
 
   const value: DataCtx = {
@@ -338,6 +388,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     loaded,
     // 方案變動時順手砍一次：降級後畫面不該還看得到超出額度的分析
     refreshPlan,
+    refreshQuota: () => refreshQuotaRef.current(),
     setProfile: p => {
       commit(s => {
         const profile = { ...s.profile, ...p };
@@ -433,8 +484,15 @@ function migrateLevel(p: Profile): Profile {
 function merge(d: Partial<Store>): Store {
   return {
     profile: migrateLevel({ ...emptyStore.profile, ...(d.profile ?? {}) }),
-    // review 是後來才加的欄位，雲端舊資料沒有，要再補一層預設
-    progress: { ...emptyStore.progress, ...(d.progress ?? {}), review: { ...emptyReview, ...(d.progress?.review ?? {}) } },
+    progress: {
+      ...emptyStore.progress, ...(d.progress ?? {}),
+      // review 是後來才加的欄位，雲端舊資料沒有，要再補一層預設
+      review: { ...emptyReview, ...(d.progress?.review ?? {}) },
+      // 存下來的剩餘次數是「上次呼叫 AI 當下」的，跨日或換手機就是錯的數字。
+      // 一律當成還不知道，由 refreshQuota() 讀 usage/{uid} 補上——
+      // 寧願先不顯示次數，也不要顯示一個錯的
+      aiRemaining: null,
+    },
     words: Array.isArray(d.words) ? d.words : [],
     // 降級的人要在載入時就砍到方案額度，不然舊紀錄會比方案說明多
     reports: trimReports(Array.isArray(d.reports) ? d.reports : [], d.profile?.plan ?? 'free'),

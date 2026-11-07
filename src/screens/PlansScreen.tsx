@@ -63,7 +63,7 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
           {/* JSX 裡的換行會被當成一個半形空格，接在全形句號後面會留下一個缺口，
               所以一句話一個 T，不要靠原始碼換行排版 */}
           <T variant="small" color="rgba(255,255,255,0.82)" style={{ marginTop: space.md, lineHeight: 21 }}>
-            所有課程包括50音/生活主題/文法/文章等一率免費並享有未來所有課堂更新。
+            所有課程包括50音/生活主題/文法/文章等一率免費，並享有未來所有課堂更新。
           </T>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.lg }}>
             <Pill icon="checkmark-circle" label={`目前：${current.name}`} color="#FFFFFF" bg="rgba(255,255,255,0.16)" />

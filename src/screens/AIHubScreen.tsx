@@ -9,7 +9,7 @@ import { Screen, Sheet, T, Card, RoundButton, SectionTitle, StationSign, IconBox
 import { TopicThumb } from '../ui/seal';
 import CategoryChips, { CatFilter } from '../ui/CategoryChips';
 import { useTheme, space, radius } from '../theme';
-import { useData } from '../state/data';
+import { useData, goalLabel } from '../state/data';
 import { topics, categories } from '../content/topics';
 import { photoFor, uiPhotos } from '../ui/images';
 import { RootStack } from '../navigation';
@@ -18,7 +18,23 @@ import { whenLabel } from '../lib/date';
 export default function AIHubScreen() {
   const t = useTheme();
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
-  const { reports } = useData();
+  const d = useData();
+  const { reports } = d;
+
+  /**
+   * 和「自己去跟別的 AI 聊天」最大的差別就是這塊：那邊每開一個新對話都是初次見面，
+   * 這裡的教練手上有你的名字、目的、前幾場聊過什麼和反覆出錯的地方
+   * （實際送進 prompt 的內容見 ChatScreen 的 learner）。
+   * 文案一律落在具體的東西上——寫「個人化學習」沒人會信，說得出「叫你ケン」才有感。
+   */
+  const jaName = d.profile.jaName || d.profile.nickname;
+  const memory = [
+    jaName ? `叫你「${jaName}」` : null,
+    goalLabel[d.profile.goal],
+    reports.length ? `前 ${Math.min(reports.length, 3)} 場對話` : null,
+    d.profile.intro ? '你的自我介紹' : null,
+  ].filter(Boolean).slice(0, 3) as string[];
+  const missing = !d.profile.intro || !d.profile.jaName;
   const [cat, setCat] = useState<CatFilter>('all');
   const list = cat === 'all' ? topics : topics.filter(x => x.cat === cat);
 
@@ -44,9 +60,24 @@ export default function AIHubScreen() {
               barColor={t.shell} photo={uiPhotos.coach} />
           </View>
 
-          <T variant="caption" color="rgba(255,255,255,0.72)" style={{ marginTop: space.lg }}>
-            說錯不用怕，AI 會即時糾正並在結束後給你一份分析
-          </T>
+          {/* 整塊可以點：缺資料時去補，補齊了就去看他到底記得什麼（分析紀錄就是記憶的來源） */}
+          <Pressable accessibilityRole="button"
+            accessibilityLabel={missing ? '補上個人資料，讓教練更認識你' : '教練記得你的哪些事'}
+            onPress={() => nav.navigate(missing ? 'EditProfile' : 'Reports')}
+            style={({ pressed }) => ({
+              marginTop: space.lg, paddingVertical: space.sm, paddingHorizontal: space.md,
+              borderRadius: radius.lg, backgroundColor: 'rgba(255,255,255,0.12)',
+              opacity: pressed ? 0.75 : 1,
+            })}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
+              <Ionicons name="bookmark" size={13} color="#FFFFFF" />
+              <T variant="small" color="#FFFFFF" style={{ flex: 1 }}>他記得你，不用從頭講起</T>
+              <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.6)" />
+            </View>
+            <T variant="caption" color="rgba(255,255,255,0.7)" style={{ marginTop: 4 }} numberOfLines={1}>
+              {memory.join('・')}
+            </T>
+          </Pressable>
 
           {/* 剩餘次數已經在右上角那顆方案鈕上（同一件事不要兩處顯示），
               這裡只留「一次」是什麼——光看數字看不出單位。

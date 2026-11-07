@@ -139,7 +139,7 @@ export const plans: Plan[] = [
     ],
   },
   {
-    id: 'plus', name: '標準版', kana: 'スタンダード', kanji: '進',
+    id: 'plus', name: '標準版', kana: 'スタンダード', kanji: '標準',
     tagline: '適合每天輕鬆練習對話的人來增加語感',
     monthly: 150, yearly: 1280,
     aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000, hdVoice: true,
