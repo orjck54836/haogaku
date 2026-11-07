@@ -70,8 +70,24 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
   const [storePrice, setStorePrice] = useState<string | null>(null);
   const [canBuy, setCanBuy] = useState<boolean | null>(null);
 
-  /** 已經在用這個方案：按鈕要鎖住，不是讓他按了被 StoreKit 擋 */
-  const owned = d.profile.plan === plan.id && plan.monthly > 0;
+  /**
+   * 已經在用這個方案：按鈕要鎖住，不是讓他按了被 StoreKit 擋。
+   *
+   * **用後端的 entitlement，不要用 `profile.plan`。** 同一個訂閱群組裡降級是排程的：
+   * 按下標準版之後這一期結束前 Apple 仍然認為他是高級版，兩個值會不一樣，
+   * 拿本機那個去判斷就會放他按下去，然後被 StoreKit 回「你已經訂閱這個項目」。
+   */
+  const owned = d.entitlement.plan === plan.id && plan.monthly > 0;
+  /**
+   * 已經排好、還沒生效的方案變更。
+   *
+   * 降級（高級→標準）和取消都只會改 `nextPlan`，`plan` 要到這一期結束才跟著變。
+   * 這件事一定要寫在畫面上：使用者記得自己按過標準版，畫面卻一直說他是高級版，
+   * 再按一次高級版還會被擋——不解釋的話就是「這個 App 壞了」。
+   */
+  const ent = d.entitlement;
+  const pending = ent.plan !== 'free' && ent.nextPlan !== ent.plan ? ent.nextPlan : null;
+  const pendingDate = ent.expiresAt ? new Date(ent.expiresAt).toLocaleDateString('zh-TW') : '';
   const yearly = YEARLY_AVAILABLE && cycle === 'yearly';
   const total = yearly ? plan.yearly : plan.monthly;
   const periodLabel = yearly ? '年' : '月';
@@ -147,6 +163,20 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
        * 錢還沒扣、訂閱還沒生效。原本會落到下面那句「沒有扣款」——對一個
        * 正在等家長按同意的人，那句話會讓他以為要重買一次，於是排出第二筆交易。
        */
+      /**
+       * StoreKit 說「你已經訂閱這個項目」。
+       *
+       * 多半是排程中的降級還沒生效：他按過標準版，但這一期還是高級版，
+       * 所以再買高級版會被擋。這不是失敗，而且**他要的東西已經在手上了**——
+       * 重讀一次資格再把實際狀況講給他聽，不要丟一句「購買沒有完成」。
+       */
+      if (/already[-\s]?owned|already.*subscri/i.test(code)) {
+        const now = await d.refreshPlan();
+        Alert.alert('你已經有這個訂閱了',
+          `這組 Apple ID 目前是${planById(now).name}。如果你剛改過方案，變更會在這一期結束後生效，不用重新購買。`,
+          [{ text: '知道了', onPress: () => navigation.goBack() }]);
+        return;
+      }
       if (/pending|deferred/i.test(code)) {
         Alert.alert('等待核准',
           '這筆訂閱需要核准（例如家長同意或銀行驗證）。核准完成後方案會自動開通，不用重新購買。',
@@ -317,10 +347,24 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
           按下去卻跳一個錯誤，審查會當成未完成的功能退件（Guideline 2.1）。
           「還原購買」跟著一起收起來——沒有東西可買就沒有東西可還原。
         */}
+        {/* 排程中的變更：講清楚現在是什麼、什麼時候換、以及「再按一次沒有用」 */}
+        {pending ? (
+          <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start',
+            backgroundColor: t.goldSoft, borderRadius: radius.lg, padding: space.lg, marginTop: space.xl }}>
+            <Ionicons name="time-outline" size={18} color={t.warning} style={{ marginTop: 1 }} />
+            <T variant="small" color={t.warning} style={{ flex: 1, lineHeight: 20 }}>
+              {pending === 'free'
+                ? `已經取消自動續訂。${planById(ent.plan).name}可以用到 ${pendingDate}。`
+                : `已經排定改成${planById(pending).name}，${pendingDate} 生效。在那之前你還是${planById(ent.plan).name}，不用重新購買。`}
+            </T>
+          </View>
+        ) : null}
+
         {owned ? (
           /* 從別處（例如還原購買完）繞回這一頁時，方案可能已經是這個了。
              再讓他按下去只會被 StoreKit 當重複訂閱擋掉 */
-          <Button label="使用中" variant="secondary" size="lg" disabled onPress={() => {}} />
+          <Button label={pending && pending !== ent.plan ? '使用中（已排定變更）' : '使用中'}
+            variant="secondary" size="lg" disabled onPress={() => {}} />
         ) : canBuy === null ? (
           <View style={{ alignItems: 'center', paddingVertical: space.xl, marginTop: space.md }}>
             <ActivityIndicator color={t.primary} />

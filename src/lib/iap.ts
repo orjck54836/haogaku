@@ -133,7 +133,19 @@ function latestOf(list: any[]): any | null {
 }
 
 /** 後端驗證的結果 */
-export type VerifyResult = { plan: PlanId; expiresAt: number; active: boolean };
+export type VerifyResult = { plan: PlanId; expiresAt: number; nextPlan?: PlanId; active: boolean };
+
+/**
+ * 目前的方案資格，含「下一期會變成什麼」。
+ *
+ * `nextPlan` 和 `plan` 不一樣時代表有一筆**排程中的變更**：同一個訂閱群組裡
+ * 降級不是立刻生效的，按下標準版之後這一期結束前他仍然是高級版。
+ * 畫面要講得出這件事，不然使用者會覺得自己按的那一下沒有作用。
+ * `nextPlan: 'free'` 是已經取消自動續訂。
+ */
+export type Entitlement = { plan: PlanId; expiresAt: number; nextPlan: PlanId };
+
+export const freeEntitlement: Entitlement = { plan: 'free', expiresAt: 0, nextPlan: 'free' };
 
 /** 驗證那一步失敗時認得出來的錯：Apple 已經成交，卡在我們這邊 */
 export class VerifyFailed extends Error {
@@ -309,17 +321,24 @@ export async function restoreSubscription(): Promise<VerifyResult | null> {
  * 這裡讀它只是為了讓畫面顯示正確的方案名稱——額度還是後端自己讀自己的。
  * 讀不到（離線、還沒買過）一律當免費，這是安全的預設。
  */
-export async function cloudPlan(uid: string): Promise<PlanId> {
+export async function cloudEntitlement(uid: string): Promise<Entitlement> {
   try {
     const snap = await getDoc(doc(db, 'entitlements', uid));
     const d = snap.data();
-    if (!d) return 'free';
+    if (!d) return freeEntitlement;
     const live = !d.expiresAt || Number(d.expiresAt) > Date.now();
-    const plan = d.plan;
-    return live && (plan === 'plus' || plan === 'pro') ? plan : 'free';
+    const paid = (v: unknown): PlanId => (v === 'plus' || v === 'pro' ? v : 'free');
+    const plan = live ? paid(d.plan) : 'free';
+    // nextPlan 是後來才加的欄位，舊資料沒有就當成「下一期還是同一個方案」
+    const nextPlan = plan === 'free' ? 'free' : paid(d.nextPlan ?? d.plan);
+    return { plan, expiresAt: Number(d.expiresAt ?? 0), nextPlan };
   } catch {
-    return 'free';
+    return freeEntitlement;
   }
+}
+
+export async function cloudPlan(uid: string): Promise<PlanId> {
+  return (await cloudEntitlement(uid)).plan;
 }
 
 /**
@@ -329,9 +348,9 @@ export async function cloudPlan(uid: string): Promise<PlanId> {
  * 先讀 entitlements（便宜、離線也不會壞），**沒過期就不打擾 Apple**；
  * 只有本來就有訂閱、而且已經過了到期日的人才需要重新驗證一次。
  */
-export async function syncPlan(uid: string): Promise<PlanId> {
-  const plan = await cloudPlan(uid);
-  if (plan !== 'free' || !iapSupported()) return plan;
+export async function syncPlan(uid: string): Promise<Entitlement> {
+  const ent = await cloudEntitlement(uid);
+  if (ent.plan !== 'free' || !iapSupported()) return ent;
 
   // 到這裡代表後端認為沒有有效訂閱。可能真的沒買過，也可能是續訂了但我們還不知道。
   //
@@ -342,10 +361,12 @@ export async function syncPlan(uid: string): Promise<PlanId> {
   // getAvailablePurchases 讀的是本機已有的 entitlement，不會跳任何視窗。
   try {
     const latest = latestOf(await availablePurchases());
-    if (!latest) return 'free';
+    if (!latest) return freeEntitlement;
     const result = await verifyOnServer(txId(latest));
-    return result.active ? result.plan : 'free';
+    return result.active
+      ? { plan: result.plan, expiresAt: result.expiresAt, nextPlan: result.nextPlan ?? result.plan }
+      : freeEntitlement;
   } catch {
-    return 'free';
+    return freeEntitlement;
   }
 }

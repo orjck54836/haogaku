@@ -908,7 +908,11 @@ export const verifyPurchase = onCall(
     const { res, env } = await lookupSubscription(transactionId);
 
     // 一個 App 可能有多個訂閱群組，每組回最後一筆交易。挑出還有效、而且我們認得的那個方案
-    let best: { plan: PlanId; expiresAt: number; productId: string; originalTransactionId: string } | null = null;
+    let best: {
+      plan: PlanId; expiresAt: number; productId: string; originalTransactionId: string;
+      /** 下一期會變成哪個方案。降級是排程的，這個值和 plan 不同時代表「還沒換過去」 */
+      nextPlan: PlanId; autoRenew: boolean;
+    } | null = null;
     for (const group of res.data ?? []) {
       for (const item of group.lastTransactions ?? []) {
         if (!item.signedTransactionInfo || !isLiveStatus(Number(item.status))) continue;
@@ -917,8 +921,20 @@ export const verifyPurchase = onCall(
         if (!plan) continue;
         const expiresAt = Number(info.expiresDate ?? 0);
         const originalTransactionId = String(info.originalTransactionId ?? item.originalTransactionId ?? '');
+        /**
+         * 同一個訂閱群組裡**降級是排程的**：按下標準版之後，這一期結束前
+         * Apple 仍然認為他是高級版，只有 renewalInfo 的 autoRenewProductId 會先變。
+         * 不把這個值讀出來的話，畫面會說他是高級版、他自己記得按的是標準版，
+         * 再按一次高級版還會被 StoreKit 擋成「你已經訂閱這個項目」——看起來就像壞掉。
+         * （升級相反，是立刻生效，所以這時候兩個值會一樣。）
+         */
+        const renewal = item.signedRenewalInfo ? decodeApplePayload(item.signedRenewalInfo) : null;
+        const autoRenew = Number(renewal?.autoRenewStatus ?? 1) === 1;
+        const nextPlan = (autoRenew && PRODUCT_PLAN[String(renewal?.autoRenewProductId ?? '')]) || (autoRenew ? plan : 'free');
         // 同時有兩個有效訂閱（升級的那一刻可能發生）時取到期日最晚的
-        if (!best || expiresAt > best.expiresAt) best = { plan, expiresAt, productId: String(info.productId), originalTransactionId };
+        if (!best || expiresAt > best.expiresAt) {
+          best = { plan, expiresAt, productId: String(info.productId), originalTransactionId, nextPlan, autoRenew };
+        }
       }
     }
 
@@ -935,11 +951,11 @@ export const verifyPurchase = onCall(
     if (!best) {
       // 查得到交易但沒有有效訂閱：過期或已退款。把資格收回來，不要留著舊的
       await entRef.set({
-        plan: 'free', expiresAt: 0, store: 'apple', environment: env,
+        plan: 'free', expiresAt: 0, nextPlan: 'free', autoRenew: false, store: 'apple', environment: env,
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
       entCache.delete(uid);
-      return { plan: 'free' as PlanId, expiresAt: 0, active: false };
+      return { plan: 'free' as PlanId, expiresAt: 0, nextPlan: 'free' as PlanId, active: false };
     }
 
     // 同一筆訂閱不能同時餵給兩個帳號
@@ -956,6 +972,9 @@ export const verifyPurchase = onCall(
     await entRef.set({
       plan: best.plan,
       expiresAt: best.expiresAt,
+      // 下一期的方案另外存：畫面要說得出「標準版會在 X 日生效」，額度一律還是看 plan
+      nextPlan: best.nextPlan,
+      autoRenew: best.autoRenew,
       productId: best.productId,
       originalTransactionId: best.originalTransactionId,
       store: 'apple',
@@ -967,7 +986,8 @@ export const verifyPurchase = onCall(
     // 交易成立當下就給他完整的一天，不要讓免費版用掉的次數跟著進來
     await resetQuotaOnUpgrade(uid, prevPlan, best.plan);
 
-    console.log(`verifyPurchase ${uid}: ${best.plan} 到 ${new Date(best.expiresAt).toISOString()} (${env})`);
-    return { plan: best.plan, expiresAt: best.expiresAt, active: true };
+    console.log(`verifyPurchase ${uid}: ${best.plan} 到 ${new Date(best.expiresAt).toISOString()}`
+      + `${best.nextPlan === best.plan ? '' : `，下一期改成 ${best.nextPlan}`} (${env})`);
+    return { plan: best.plan, expiresAt: best.expiresAt, nextPlan: best.nextPlan, active: true };
   },
 );

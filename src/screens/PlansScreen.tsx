@@ -36,7 +36,11 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
 
   const t = useTheme();
   const d = useData();
-  const current = planById(d.profile.plan);
+  // 目前方案一律看後端的 entitlement：降級是排程的，profile.plan 會比它早一步變
+  const current = planById(d.entitlement.plan);
+  /** 已排定、還沒生效的變更。不寫出來的話，按過標準版的人會覺得那一下沒有作用 */
+  const pending = d.entitlement.plan !== 'free' && d.entitlement.nextPlan !== d.entitlement.plan
+    ? d.entitlement.nextPlan : null;
 
   // 這一頁只回答「我該買哪個」。付款條件（扣多少、什麼時候扣、怎麼取消）
   // 交給購買頁去講——擠在比較表裡會把它們壓掉，而那正是審查在看的東西。
@@ -67,6 +71,11 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
           </T>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.lg }}>
             <Pill icon="checkmark-circle" label={`目前：${current.name}`} color="#FFFFFF" bg="rgba(255,255,255,0.16)" />
+            {pending ? (
+              <Pill icon="time-outline"
+                label={pending === 'free' ? '已取消續訂' : `下期改${planById(pending).name}`}
+                color="#231A08" bg={t.gold} />
+            ) : null}
           </View>
         </WineCard>
       </View>

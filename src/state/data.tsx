@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { syncPlan } from '../lib/iap';
+import { syncPlan, freeEntitlement, type Entitlement } from '../lib/iap';
 import { useAuth } from './auth';
 import { LevelId } from '../content/types';
 import { today, yesterday, addDays } from '../lib/date';
@@ -157,6 +157,15 @@ type DataCtx = Store & {
   setProfile: (p: Partial<Profile>) => void;
   /** 重新跟後端對一次方案資格。購買完、或 App 回到前景時呼叫 */
   refreshPlan: () => Promise<PlanId>;
+  /**
+   * 後端認定的方案資格（含下一期會變成什麼）。
+   *
+   * **判斷「他現在是不是這個方案」一律用這個，不要用 `profile.plan`**：
+   * 後者是存在手機上的顯示值，而同一個訂閱群組裡降級是排程的——
+   * 按下標準版之後這一期結束前他仍然是高級版，兩個值會不一樣。
+   * 不另外存檔，每次冷啟動和回前景重讀。
+   */
+  entitlement: Entitlement;
   /** 重新讀一次今天還剩幾次 AI。冷啟動、回前景、方案變動後呼叫 */
   refreshQuota: () => Promise<void>;
   addXp: (n: number) => void;
@@ -187,6 +196,7 @@ const Ctx = createContext<DataCtx | null>(null);
 export function DataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [store, setStore] = useState<Store>(emptyStore);
+  const [entitlement, setEntitlement] = useState<Entitlement>(freeEntitlement);
   const [loaded, setLoaded] = useState(false);
   const ref = useRef<Store>(emptyStore);
   const uidRef = useRef<string | null>(null);
@@ -198,7 +208,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const uid = user?.uid ?? null;
     uidRef.current = uid;
     setLoaded(false);
-    if (!uid) { ref.current = emptyStore; setStore(emptyStore); return; }
+    if (!uid) { ref.current = emptyStore; setStore(emptyStore); setEntitlement(freeEntitlement); return; }
 
     (async () => {
       let local: Store | null = null;
@@ -324,7 +334,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (planInFlight.current) return planInFlight.current;
     planInFlight.current = (async () => {
     try {
-      const plan = await syncPlan(uid);
+      const ent = await syncPlan(uid);
+      setEntitlement(ent);
+      const plan = ent.plan;
       if (plan !== ref.current.profile.plan) {
         commit(s => ({ ...s, profile: { ...s.profile, plan }, reports: trimReports(s.reports, plan) }));
       }
@@ -386,6 +398,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value: DataCtx = {
     ...store,
     loaded,
+    entitlement,
     // 方案變動時順手砍一次：降級後畫面不該還看得到超出額度的分析
     refreshPlan,
     refreshQuota: () => refreshQuotaRef.current(),
