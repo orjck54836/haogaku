@@ -11,7 +11,7 @@ import { planById, yearlySaving, yearlyPerMonth, YEARLY_AVAILABLE, IAP_AVAILABLE
 import { topicPhotos } from '../ui/images';
 import { legalLinks } from '../content/links';
 import { track } from '../lib/analytics';
-import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription, recoverPurchase, VerifyFailed } from '../lib/iap';
+import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription, recoverPurchase, VerifyFailed, PurchaseScheduled, VerifyResult } from '../lib/iap';
 import { useAuth } from '../state/auth';
 import { StackProps } from '../navigation';
 
@@ -125,15 +125,39 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
    * 之前只做 setProfile，一旦那一步沒跑到（例如走了錯誤分支），
    * 首頁右上角就會一直停在免費版，重開 App 才會好。
    */
-  async function done(nextPlan: PlanId) {
+  function done(nextPlan: PlanId) {
     d.setProfile({ plan: nextPlan });
     track('purchase_done', { plan: nextPlan, cycle });
-    await d.refreshPlan();
-    // 升級當下後端會把今天用掉的 AI 次數歸零（resetQuotaOnUpgrade），
-    // 不重讀一次的話右上角那顆鈕會停在免費版剩下的數字
-    await d.refreshQuota();
+    /**
+     * 重讀**不要 await**。
+     *
+     * 到這一行後端已經驗過、方案已經開通了，剩下的只是把顯示值補齊。
+     * 原本 `await` 這兩支，於是它們成了轉圈的一部分：refreshPlan 會走到
+     * Firestore 的 getDoc 和 StoreKit，網路一爛就卡在那裡不 resolve，
+     * 按鈕的 `finally { setBusy(false) }` 永遠跑不到——明明買成功了，
+     * 畫面卻是一顆轉不停的鈕。（refreshQuota 是為了讓右上角吃到
+     * resetQuotaOnUpgrade 歸零後的次數，晚個一兩秒到沒有差。）
+     */
+    void d.refreshPlan().then(() => d.refreshQuota()).catch(() => {});
     Alert.alert('訂閱完成', `${planById(nextPlan).name}已經開通，AI 和語音額度立刻生效。`,
       [{ text: '開始用', onPress: () => navigation.goBack() }]);
+  }
+
+  /**
+   * 變更排到下一期的收尾。
+   *
+   * **不要說「已經開通」**：他現在拿到的還是舊方案的額度，說開通了他會馬上
+   * 去用高級版的次數然後撞牆。也不要說失敗——錢的部分 Apple 已經安排好了，
+   * 再買一次只會被擋成「你已經訂閱這個項目」。
+   */
+  function scheduled(res: VerifyResult) {
+    track('purchase_scheduled', { plan: plan.id, from: res.plan });
+    void d.refreshPlan().then(() => d.refreshQuota()).catch(() => {});
+    const when = res.expiresAt ? new Date(res.expiresAt).toLocaleDateString('zh-TW') : '這一期結束後';
+    Alert.alert('已排定變更',
+      `Apple 把這次變更排在下一期：${when}起改成${plan.name}，在那之前你還是${planById(res.plan).name}。`
+      + '不用重新購買，也不會重複扣款。',
+      [{ text: '知道了', onPress: () => navigation.goBack() }]);
   }
 
   async function purchase() {
@@ -149,13 +173,17 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
     // 漏斗的最後一步：這裡和實際成交的差距就是流失
     track('purchase_tap', { plan: plan.id, cycle, price: total });
     try {
-      const res = await purchaseSubscription(sku);
+      const res = await purchaseSubscription(sku, plan.id);
       if (!res.active) throw new Error('verify-inactive');
-      await done(res.plan);
+      // Apple 把變更排到下一期時，回來的方案是**舊的那個**，不是他剛買的
+      if (res.plan !== plan.id) { scheduled(res); return; }
+      done(res.plan);
     } catch (e: any) {
       // 在 Apple 的付款表單上按取消不是錯誤，不要跳視窗罵他
       const code = String(e?.code ?? e?.message ?? '');
       if (/cancel/i.test(code)) return;
+      // 排到下一期不是錯誤，只是沒有新交易可以等（見 iap.ts 的 PurchaseScheduled）
+      if (e instanceof PurchaseScheduled) { scheduled(e.result); return; }
       /**
        * 等核准不是失敗。
        *
@@ -171,7 +199,11 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
        * 重讀一次資格再把實際狀況講給他聽，不要丟一句「購買沒有完成」。
        */
       if (/already[-\s]?owned|already.*subscri/i.test(code)) {
-        const now = await d.refreshPlan();
+        // 讀不回來也要把話講完，不然這個分支會變成另一條「卡在轉圈」的路
+        const now = await Promise.race([
+          d.refreshPlan(),
+          new Promise<PlanId>(r => setTimeout(() => r(d.entitlement.plan), 8_000)),
+        ]);
         Alert.alert('你已經有這個訂閱了',
           `這組 Apple ID 目前是${planById(now).name}。如果你剛改過方案，變更會在這一期結束後生效，不用重新購買。`,
           [{ text: '知道了', onPress: () => navigation.goBack() }]);
@@ -193,7 +225,9 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
        */
       const saved = await recoverPurchase();
       if (saved?.active) {
-        await done(saved.plan);
+        // 補救撿回來的也可能是「排程中」那一種：方案還是舊的、下一期才換
+        if (saved.plan !== plan.id && saved.nextPlan === plan.id) { scheduled(saved); return; }
+        done(saved.plan);
         return;
       }
       /**
@@ -224,8 +258,8 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       const res = await restoreSubscription();
       if (res) {
         d.setProfile({ plan: res.plan });
-        await d.refreshPlan();
-        await d.refreshQuota();
+        // 同 done()：補齊顯示值不該擋住按鈕的 loading
+        void d.refreshPlan().then(() => d.refreshQuota()).catch(() => {});
         Alert.alert('已還原', `找回了${planById(res.plan).name}。`,
           [{ text: '好', onPress: () => navigation.goBack() }]);
       } else {
