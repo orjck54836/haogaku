@@ -197,10 +197,39 @@ export class PurchaseScheduled extends Error {
   }
 }
 
+/**
+ * 後端給的是**最終答案**、再問一百次也一樣的錯誤碼。
+ *
+ * 這一條分界很重要：購買流程裡所有的重試（每 7 秒問一次排程、逾時後的
+ * recoverPurchase）都是為了「交易還沒傳到我們手上」設計的，對這幾種錯完全無效。
+ * 實際踩到的是 `permission-denied`（同一筆訂閱已經綁在別的帳號上）：
+ * 同一個 403 被重問三次、拖滿 75 秒逾時、再花 45 秒補救又問一次——
+ * 使用者看到的就是一顆轉快兩分鐘的按鈕，而答案第一次就拿到了。
+ *
+ * 不在這張表裡的（internal、unavailable、網路斷掉）才值得重試。
+ */
+const FINAL_CODES = [
+  'permission-denied',    // 這筆訂閱綁在別的帳號上
+  'failed-precondition',  // 訪客帳號不能訂閱
+  'unauthenticated',      // 沒登入
+  'invalid-argument',     // transactionId 有問題
+];
+
+/** callable 的錯誤碼長得像 `functions/permission-denied` */
+export function verifyCode(e: unknown): string {
+  const raw = String((e as any)?.code ?? '');
+  return raw.split('/').pop() ?? '';
+}
+
 /** 驗證那一步失敗時認得出來的錯：Apple 已經成交，卡在我們這邊 */
 export class VerifyFailed extends Error {
+  /** 後端明講的最終答案（見 FINAL_CODES）。true 就不要再重試、也不要走補救 */
+  readonly final: boolean;
+  readonly code: string;
   constructor(public readonly cause: unknown) {
     super('verify-failed');
+    this.code = verifyCode(cause);
+    this.final = FINAL_CODES.includes(this.code);
   }
 }
 
@@ -327,7 +356,11 @@ export async function purchaseSubscription(productId: string, wantPlan: PlanId):
       try {
         const hit = await scheduledChange();
         if (hit && !done) { ilog('是排程中的變更'); finish(() => reject(new PurchaseScheduled(hit))); return; }
-      } catch (e) { ilog(`問不到 ${errText(e)}`); }
+      } catch (e) {
+        ilog(`問不到 ${errText(e)}`);
+        // 後端已經給了最終答案：再等下去只會把同一個錯重問到逾時（見 VerifyFailed.final）
+        if (e instanceof VerifyFailed && e.final && !done) { finish(() => reject(e)); return; }
+      }
       // **一定要重問。** Apple 的 renewalInfo 不是按下確認就馬上變，
       // 第一次問常常還是舊值（降級特別明顯）。只問一兩次的話就會問空，
       // 然後一路空等到 75 秒逾時——那就是「降級也一直轉圈」的原因。

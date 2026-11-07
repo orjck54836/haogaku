@@ -958,15 +958,46 @@ export const verifyPurchase = onCall(
       return { plan: 'free' as PlanId, expiresAt: 0, nextPlan: 'free' as PlanId, active: false };
     }
 
-    // 同一筆訂閱不能同時餵給兩個帳號
+    /**
+     * 同一筆訂閱同一時間只餵一個帳號，但**可以換人**。
+     *
+     * 訂閱在 Apple 那邊屬於 Apple ID，不屬於我們的帳號，所以同一組 Apple ID
+     * 配到新的 uid 是日常：重裝 App（訪客 uid 換了一個）、改用 Google 而不是
+     * Apple 登入、或同一個人手上有兩個帳號。原本是「先到先贏、claim 永不釋放」，
+     * 這些人全部會被永久鎖死，而且畫面上沒有任何自助的路，只能寫信。
+     *
+     * 改成交接：新的 uid 接手 claim，**舊 uid 的資格在同一筆交易裡收回**。
+     * 用 transaction 是因為這兩件事不能只做一半——中間斷掉的話會變成兩個帳號
+     * 同時是付費版，等於一份訂閱兩份額度。
+     *
+     * 擋不住的是「兩個人共用一組 Apple ID 輪流搶」，但搶的那一下就會把對方踢成
+     * 免費版，拿不到兩份額度，所以不值得為它把正常使用者鎖死。
+     */
     if (best.originalTransactionId) {
       const claimRef = db.doc(`subscriptionClaims/${best.originalTransactionId}`);
-      const claim = await claimRef.get();
-      const owner = claim.data()?.uid;
-      if (owner && owner !== uid) {
-        throw new HttpsError('permission-denied', '這筆訂閱已經綁在另一個帳號上');
+      const prevOwner = await db.runTransaction(async tx => {
+        const snap = await tx.get(claimRef);
+        const owner = snap.data()?.uid as string | undefined;
+        if (owner === uid) return null;
+        tx.set(claimRef, {
+          uid,
+          ...(owner ? { previousUid: owner, transferredAt: FieldValue.serverTimestamp() } : {}),
+          createdAt: snap.exists ? (snap.data()?.createdAt ?? FieldValue.serverTimestamp()) : FieldValue.serverTimestamp(),
+        }, { merge: true });
+        // 舊帳號立刻降回免費：一份訂閱只能有一份額度
+        if (owner) {
+          tx.set(db.doc(`entitlements/${owner}`), {
+            plan: 'free', expiresAt: 0, nextPlan: 'free', autoRenew: false,
+            transferredTo: uid, updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+        }
+        return owner ?? null;
+      });
+      if (prevOwner) {
+        // 只清得掉這個實例的；舊 owner 要是正好打在別的實例上，靠 allowanceOf 的 10 秒 TTL 過期
+        entCache.delete(prevOwner);
+        console.log(`subscription transferred ${best.originalTransactionId}: ${prevOwner} → ${uid}`);
       }
-      if (!owner) await claimRef.set({ uid, createdAt: FieldValue.serverTimestamp() });
     }
 
     await entRef.set({

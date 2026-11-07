@@ -226,6 +226,15 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
           [{ text: '知道了' }]);
         return;
       }
+      /**
+       * 後端給的是最終答案，**不要再走補救**。
+       *
+       * recoverPurchase 會再問一次同一個後端、拿到同一個錯，白花 45 秒；
+       * 而且最後跳的是「付款完成了，但還沒開通」——那句話對
+       * 「這筆訂閱綁在別的帳號上」是錯的：重開 App 和還原購買都救不了，
+       * 他需要知道要換回哪一個帳號。
+       */
+      if (e instanceof VerifyFailed && e.final) { finalFail(e); return; }
       console.warn('purchase failed', e);
       /**
        * 失敗不代表沒成交。
@@ -277,6 +286,31 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
         { text: '傳給我們', onPress: () => { void Share.share({ message: text }).catch(() => {}); } },
         { text: '關閉', style: 'cancel' },
       ]);
+  }
+
+  /**
+   * 後端明確拒絕時的說明。
+   *
+   * 每一種都要講出**他下一步該做什麼**，不要只說失敗——這幾種錯重試都沒有用，
+   * 一句「請稍後再試」會讓他一直按同一顆按鈕。
+   */
+  function finalFail(e: VerifyFailed) {
+    const msg: Record<string, [string, string]> = {
+      'permission-denied': ['這個訂閱屬於另一個帳號',
+        '這組 Apple ID 的訂閱已經綁在你另一個皓學日語帳號上。請登出後改用那個帳號登入，'
+        + '就會自動恢復。Apple 不會重複扣款，如果你不記得是哪一個帳號，請從「我的 → 技術支援」聯絡我們。'],
+      'failed-precondition': ['請先綁定帳號',
+        '訂閱要綁在正式帳號上。先用 Apple 或 Google 綁定，再回來訂閱。'],
+      'unauthenticated': ['請先登入', '登入之後再訂閱，訂閱才找得回來。'],
+      'invalid-argument': ['這筆交易無法確認',
+        '請按「還原購買」再試一次。如果還是不行，請從「我的 → 技術支援」聯絡我們。'],
+    };
+    const [title, body] = msg[e.code] ?? ['購買沒有完成', '請稍後再試一次。'];
+    track('purchase_rejected', { plan: plan.id, reason: e.code });
+    Alert.alert(title, body, [
+      { text: '診斷紀錄', onPress: showLog },
+      { text: '知道了', style: 'cancel' },
+    ]);
   }
 
   async function restore() {
