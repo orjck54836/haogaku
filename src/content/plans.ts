@@ -110,7 +110,16 @@ export type Plan = {
   icon: IconName;
   /** 印在方案卡上的漢字章 */
   kanji: string;
-  /** 免費試用天數。0 或未填代表沒有試用 */
+  /**
+   * 免費試用天數。0 或未填代表沒有試用（**目前兩個方案都沒有**）。
+   *
+   * 這個欄位只管**文案**，真正的試用是 App Store Connect 訂閱項目底下的
+   * 「推薦優惠（Introductory Offer）」。兩邊一定要一致：
+   * 這裡寫 7 天而 ASC 沒設，使用者會被當場扣款卻以為免費——那是價格標示不實，
+   * 退件之外還會換來退款和一星。反過來 ASC 設了這裡沒寫只是少講一個好處。
+   *
+   * 要恢復試用：先在 ASC 建好推薦優惠，生效之後再把天數填回來。
+   */
   trialDays?: number;
   /**
    * App Store Connect 裡的產品 ID。
@@ -143,7 +152,6 @@ export const plans: Plan[] = [
     tagline: '適合每天輕鬆練習對話的人來增加語感',
     monthly: 150, yearly: 1280,
     aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000, hdVoice: true,
-    trialDays: 7,
     productId: { monthly: 'haogaku.japanese.plus.monthly', yearly: 'haogaku.japanese.plus.yearly' },
     icon: 'flash-outline',
     perks: [
@@ -157,7 +165,6 @@ export const plans: Plan[] = [
     tagline: '適合想讓口說語感突飛猛進，提升自己的人',
     monthly: 350, yearly: 2930,
     aiPerDay: 150, reportsPerDay: 20, ttsCharsPerMonth: 100_000, hdVoice: true,
-    trialDays: 7,
     productId: { monthly: 'haogaku.japanese.pro.monthly', yearly: 'haogaku.japanese.pro.yearly' },
     icon: 'infinite-outline',
     perks: [

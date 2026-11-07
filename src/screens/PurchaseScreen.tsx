@@ -347,7 +347,9 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
           marginTop: space.xl, paddingTop: space.lg, borderTopWidth: 1, borderTopColor: t.line }}>
           <View>
             <T variant="caption" color={t.sub}>
-              {trial ? `${trial} 天後開始收費` : '立即開始'}
+              {/* 沒有試用期了，就要說得出「現在就扣」——說「立即開始」容易被讀成
+                  「先用了再說」，而付款條件寫得不清楚正是審查在看的地方 */}
+              {trial ? `${trial} 天後開始收費` : '確認後立即扣款'}
             </T>
             <T variant="heading" style={{ marginTop: 2 }}>每{periodLabel}扣款</T>
           </View>
