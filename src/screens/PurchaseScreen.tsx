@@ -11,7 +11,7 @@ import { planById, yearlySaving, yearlyPerMonth, YEARLY_AVAILABLE, IAP_AVAILABLE
 import { topicPhotos } from '../ui/images';
 import { legalLinks } from '../content/links';
 import { track } from '../lib/analytics';
-import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription, recoverPurchase } from '../lib/iap';
+import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription, recoverPurchase, VerifyFailed } from '../lib/iap';
 import { useAuth } from '../state/auth';
 import { StackProps } from '../navigation';
 
@@ -166,6 +166,20 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
         await done(saved.plan);
         return;
       }
+      /**
+       * 驗證那一步失敗 ≠ 沒有扣款。
+       *
+       * Apple 的付款已經完成、交易也還留在佇列裡（沒驗過就不會 finishTransaction），
+       * 卡住的是我們跟 Apple 查證那一段。這時候說「沒有扣款」是錯的，
+       * 而且會讓他再買一次——實際踩過的是後端的 App Store 金鑰被回 401。
+       * 交易留著，之後冷啟動或按「還原購買」會自動補驗，不用重買。
+       */
+      if (e instanceof VerifyFailed) {
+        Alert.alert('付款完成了，但還沒開通',
+          '你的付款已經送出，是我們這邊確認訂閱時出了問題。不要重複購買——修好之後重開 App 或按「還原購買」就會自動開通。',
+          [{ text: '知道了' }]);
+        return;
+      }
       Alert.alert('購買沒有完成',
         '沒有扣款。如果你確定已經付過，請按「還原購買」，或稍後再試一次。',
         [{ text: '知道了' }]);
@@ -190,7 +204,9 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       }
     } catch (e) {
       console.warn('restore failed', e);
-      Alert.alert('還原失敗', '請確認網路之後再試一次。');
+      Alert.alert('還原失敗', e instanceof VerifyFailed
+        ? '找得到你的訂閱，但確認的時候出了問題。稍後再試一次，或聯絡我們。'
+        : '請確認網路之後再試一次。');
     } finally {
       setBusy(false);
     }

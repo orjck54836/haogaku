@@ -832,6 +832,22 @@ async function lookupSubscription(transactionId: string) {
       const res = await client.getAllSubscriptionStatuses(transactionId);
       return { res, env };
     } catch (e) {
+      /**
+       * 401 是**我們的金鑰被 Apple 拒絕**，不是這筆交易的問題。
+       *
+       * 實際踩過：手機端一切正常（Apple 的付款表單都說成功了），這裡每一筆都 401，
+       * 畫面卻顯示「購買沒有完成，沒有扣款」——錯的是伺服器設定，卻讓使用者
+       * 以為是自己的付款出問題，而且他真的被扣款了。
+       *
+       * 兩個環境用的是同一把金鑰，401 換環境再試也一樣，直接停下來並且**講清楚**。
+       * 常見原因：拿成「App Store Connect API 金鑰（團隊金鑰）」而不是
+       * 「App 內購買金鑰」、issuer id 複製自別頁、或 .p8 內容存成帶 \n 的單行字串。
+       */
+      const status = (e as { httpStatusCode?: number })?.httpStatusCode;
+      if (status === 401) {
+        console.error(`App Store Server API 回 401：金鑰被拒絕（keyId=${keyId.slice(0, 4)}…, env=${env}）`);
+        throw new HttpsError('failed-precondition', '伺服器的 App Store 金鑰無效，購買已經送出但還沒開通');
+      }
       // 4040010 = TransactionIdNotFoundError，換個環境再試；其餘直接往上拋
       const notFound = e instanceof APIException && e.apiError === 4040010;
       if (!notFound) throw e;

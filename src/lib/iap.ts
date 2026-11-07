@@ -135,9 +135,29 @@ function latestOf(list: any[]): any | null {
 /** 後端驗證的結果 */
 export type VerifyResult = { plan: PlanId; expiresAt: number; active: boolean };
 
+/** 驗證那一步失敗時認得出來的錯：Apple 已經成交，卡在我們這邊 */
+export class VerifyFailed extends Error {
+  constructor(public readonly cause: unknown) {
+    super('verify-failed');
+  }
+}
+
+/**
+ * 把交易送給後端驗。
+ *
+ * 失敗一律包成 `VerifyFailed`：**到這一步 Apple 已經收錢了**，畫面不能再說
+ * 「沒有扣款」。實際踩過的是後端金鑰被 Apple 回 401，每一筆都驗不過，
+ * 而使用者看到的是「購買沒有完成，沒有扣款」——他真的被扣了，
+ * 錯的是伺服器設定，這種話會讓他再買一次。
+ */
 async function verifyOnServer(transactionId: string): Promise<VerifyResult> {
-  const res = await httpsCallable(functions, 'verifyPurchase')({ transactionId });
-  return res.data as VerifyResult;
+  try {
+    const res = await httpsCallable(functions, 'verifyPurchase')({ transactionId });
+    return res.data as VerifyResult;
+  } catch (e) {
+    console.warn('verifyPurchase failed', e);
+    throw new VerifyFailed(e);
+  }
 }
 
 /**
