@@ -97,6 +97,15 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
    */
   const ent = d.entitlement;
   const pending = ent.plan !== 'free' && ent.nextPlan !== ent.plan ? ent.nextPlan : null;
+  /**
+   * 這一頁的方案**已經排定**要換過來了。
+   *
+   * 降級是排程的，所以這時候 `owned` 還是 false（他現在是舊方案），按鈕因此
+   * 照常可以按——但再按一次只是把同一件事重排一次，或者被 StoreKit 擋成
+   * 「你已經訂閱這個項目」。上面的黃色提示已經說了「不用重新購買」，
+   * 按鈕卻還是亮的，等於自己打自己的臉。
+   */
+  const alreadyScheduled = pending === plan.id;
   const pendingDate = ent.expiresAt ? new Date(ent.expiresAt).toLocaleDateString('zh-TW') : '';
   const yearly = YEARLY_AVAILABLE && cycle === 'yearly';
   const total = yearly ? plan.yearly : plan.monthly;
@@ -462,6 +471,9 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
              再讓他按下去只會被 StoreKit 當重複訂閱擋掉 */
           <Button label={pending && pending !== ent.plan ? '使用中（已排定變更）' : '使用中'}
             variant="secondary" size="lg" disabled onPress={() => {}} />
+        ) : alreadyScheduled ? (
+          /* 已經排定換成這個方案：日期寫在按鈕上，他才知道要等到什麼時候 */
+          <Button label={`${pendingDate} 起生效`} variant="secondary" size="lg" disabled onPress={() => {}} />
         ) : canBuy === null ? (
           <View style={{ alignItems: 'center', paddingVertical: space.xl, marginTop: space.md }}>
             <ActivityIndicator color={t.primary} />
