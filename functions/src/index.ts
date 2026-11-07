@@ -826,32 +826,44 @@ async function lookupSubscription(transactionId: string) {
   const issuerId = APPLE_IAP_ISSUER_ID.value();
   if (!key || !keyId || !issuerId) throw new HttpsError('failed-precondition', '伺服器還沒設定 App Store 金鑰');
 
+  /**
+   * 兩個環境都要試完才能說失敗。
+   *
+   * **還沒上架的 App，Production 端點一律回 401**（那邊根本沒有這個 App 的資料），
+   * 而 TestFlight 和沙盒帳號的交易全部在 Sandbox。原本收到非「查無此交易」的錯
+   * 就直接往上拋，於是永遠走不到第二輪——實測每一筆購買都是
+   * 「Apple 說成交、我們說失敗」，而 log 上只看得到一個 401。
+   *
+   * 所以 401／404 都當成「這個環境沒有，換一個」，記住最後一個錯，
+   * 兩邊都問完了才報出去。上架之後反過來：Production 查得到，Sandbox 回查無此交易。
+   */
+  let last: unknown;
   for (const env of [Environment.PRODUCTION, Environment.SANDBOX]) {
     const client = new AppStoreServerAPIClient(key, keyId, issuerId, APPLE_BUNDLE_ID, env);
     try {
       const res = await client.getAllSubscriptionStatuses(transactionId);
       return { res, env };
     } catch (e) {
-      /**
-       * 401 是**我們的金鑰被 Apple 拒絕**，不是這筆交易的問題。
-       *
-       * 實際踩過：手機端一切正常（Apple 的付款表單都說成功了），這裡每一筆都 401，
-       * 畫面卻顯示「購買沒有完成，沒有扣款」——錯的是伺服器設定，卻讓使用者
-       * 以為是自己的付款出問題，而且他真的被扣款了。
-       *
-       * 兩個環境用的是同一把金鑰，401 換環境再試也一樣，直接停下來並且**講清楚**。
-       * 常見原因：拿成「App Store Connect API 金鑰（團隊金鑰）」而不是
-       * 「App 內購買金鑰」、issuer id 複製自別頁、或 .p8 內容存成帶 \n 的單行字串。
-       */
+      last = e;
       const status = (e as { httpStatusCode?: number })?.httpStatusCode;
-      if (status === 401) {
-        console.error(`App Store Server API 回 401：金鑰被拒絕（keyId=${keyId.slice(0, 4)}…, env=${env}）`);
-        throw new HttpsError('failed-precondition', '伺服器的 App Store 金鑰無效，購買已經送出但還沒開通');
-      }
-      // 4040010 = TransactionIdNotFoundError，換個環境再試；其餘直接往上拋
+      // 4040010 = TransactionIdNotFoundError
       const notFound = e instanceof APIException && e.apiError === 4040010;
-      if (!notFound) throw e;
+      if (notFound || status === 401 || status === 404) {
+        console.warn(`${env} 查不到（HTTP ${status}），換下一個環境`);
+        continue;
+      }
+      throw e;
     }
+  }
+
+  /**
+   * 兩個環境都 401 才是真的金鑰有問題——這時候講清楚，不要讓它變成一個
+   * 沒有線索的 internal error。常見原因：拿成「App Store Connect API 金鑰」
+   * 而不是「App 內購買金鑰」、issuer id 抄自別頁、或 .p8 存成帶 \n 的單行。
+   */
+  if ((last as { httpStatusCode?: number })?.httpStatusCode === 401) {
+    console.error(`App Store Server API 兩個環境都回 401：金鑰被拒絕（keyId=${keyId.slice(0, 4)}…）`);
+    throw new HttpsError('failed-precondition', '伺服器的 App Store 金鑰無效，購買已經送出但還沒開通');
   }
   throw new HttpsError('not-found', '找不到這筆交易');
 }
