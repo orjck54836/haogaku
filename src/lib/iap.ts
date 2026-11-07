@@ -4,6 +4,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from './firebase';
 import { PlanId } from '../content/plans';
+import { ilog, iapLogReset, errText } from './iaplog';
 
 /**
  * App 內購買（iOS 自動續訂訂閱）。
@@ -72,7 +73,9 @@ let conn: Promise<IapModule> | null = null;
  */
 function withTimeout<T>(p: Promise<T>, ms: number, tag: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(tag)), ms);
+    // 逾時一定要記一筆：原生 promise 不回來的時候，「哪一個 tag 逾時了」
+    // 就是唯一的線索，而這裡是所有逾時的共同出口
+    const timer = setTimeout(() => { ilog(`逾時 ${tag}（${ms / 1000}s）`); reject(new Error(tag)); }, ms);
     p.then(
       v => { clearTimeout(timer); resolve(v); },
       e => { clearTimeout(timer); reject(e); },
@@ -84,10 +87,12 @@ async function connect(): Promise<IapModule> {
   const m = loadIap();
   if (!m) throw new Error('這個版本不支援 App 內購買');
   if (!conn) {
+    ilog('連線 StoreKit…');
     // 逾時一定要把 conn 清掉（下面的 catch）：連線的 promise 是快取的，
     // 留著一個永遠不 resolve 的在裡面，之後每一次購買都會在第一行就卡死
     conn = withTimeout(m.initConnection(), 15_000, 'iap-connect-timeout')
-      .then(() => m).catch(e => { conn = null; throw e; });
+      .then(() => { ilog('連線完成'); return m; })
+      .catch(e => { conn = null; ilog(`連線失敗 ${errText(e)}`); throw e; });
   }
   return conn;
 }
@@ -144,6 +149,7 @@ async function availablePurchases(): Promise<any[]> {
   const res = await withTimeout(
     m.getAvailablePurchases({ onlyIncludeActiveItemsIOS: true }), 20_000, 'iap-query-timeout');
   const list = Array.isArray(res) ? res : [];
+  ilog(`名下交易 ${list.length} 筆`);
   // pending 的交易（Ask to Buy 等家長核准、或銀行要二次驗證）還沒成交，拿去驗一定
   // 查無有效訂閱。濾掉是為了不要每次回前景都為同一筆 pending 白打一次後端
   return list.filter((p: any) => p?.purchaseState !== 'pending');
@@ -207,11 +213,22 @@ export class VerifyFailed extends Error {
  * 錯的是伺服器設定，這種話會讓他再買一次。
  */
 async function verifyOnServer(transactionId: string): Promise<VerifyResult> {
+  ilog(`送後端查證 tx=${transactionId}`);
   try {
-    const res = await httpsCallable(functions, 'verifyPurchase')({ transactionId });
-    return res.data as VerifyResult;
+    /**
+     * **這裡一定要有自己的上限。** callable 的預設上限是 70 秒，而它前面
+     * 已經可能等過 StoreKit 一輪；驗證卡住的時候畫面就是一顆轉不停的鈕。
+     * 後端自己的 timeoutSeconds 是 30，所以 35 秒沒回來就是網路那一段卡住，
+     * 等下去不會有別的結果（交易留在佇列裡，冷啟動會自動補驗）。
+     */
+    const res = await withTimeout(
+      httpsCallable(functions, 'verifyPurchase')({ transactionId }), 35_000, 'iap-verify-timeout');
+    const r = res.data as VerifyResult;
+    ilog(`查證回來 plan=${r?.plan} next=${r?.nextPlan ?? '-'} active=${r?.active}`);
+    return r;
   } catch (e) {
     console.warn('verifyPurchase failed', e);
+    ilog(`查證失敗 ${errText(e)}`);
     throw new VerifyFailed(e);
   }
 }
@@ -241,6 +258,7 @@ async function verifyOnServer(transactionId: string): Promise<VerifyResult> {
  * 反過來留著沒結束的交易，iOS 每次冷啟動都會重送，我們再驗一次就好。
  */
 export async function purchaseSubscription(productId: string, wantPlan: PlanId): Promise<VerifyResult> {
+  iapLogReset(`購買 ${productId} → ${wantPlan}`);
   const m = await connect();
 
   /**
@@ -275,8 +293,11 @@ export async function purchaseSubscription(productId: string, wantPlan: PlanId):
     };
 
     // dedupeTransactionIOS: false —— 見上面，去重歷史是全域的，用預設值會漏掉補送的那一則
-    const ok = m.purchaseUpdatedListener(p => { take(p); }, { dedupeTransactionIOS: false });
-    const bad = m.purchaseErrorListener(e => finish(() => reject(e)));
+    const ok = m.purchaseUpdatedListener(p => {
+      ilog(`收到交易事件 ${p?.productId ?? '?'} state=${p?.purchaseState ?? '-'}`);
+      take(p);
+    }, { dedupeTransactionIOS: false });
+    const bad = m.purchaseErrorListener(e => { ilog(`交易事件錯誤 ${errText(e)}`); finish(() => reject(e)); });
 
     /**
      * 監聽沒回來的保險。
@@ -288,7 +309,10 @@ export async function purchaseSubscription(productId: string, wantPlan: PlanId):
      *
      * 逾時不等於沒買到——所以丟一個認得出來的錯，讓上層去走還原購買把它救回來。
      */
-    timers.push(setTimeout(() => finish(() => reject(new Error('purchase-timeout'))), 75_000));
+    timers.push(setTimeout(() => {
+      ilog('等不到交易，逾時（75s）');
+      finish(() => reject(new Error('purchase-timeout')));
+    }, 75_000));
 
     /**
      * 等不到新交易時，問一次「是不是排到下一期了」。
@@ -299,10 +323,11 @@ export async function purchaseSubscription(productId: string, wantPlan: PlanId):
      */
     const checkScheduled = (delay: number) => timers.push(setTimeout(async () => {
       if (done) return;
+      ilog(`問後端：是不是排到下一期了（第 ${Math.round((delay - 6_000) / 7_000) + 1} 次）`);
       try {
         const hit = await scheduledChange();
-        if (hit && !done) { finish(() => reject(new PurchaseScheduled(hit))); return; }
-      } catch { /* 問不到就等下一輪或逾時 */ }
+        if (hit && !done) { ilog('是排程中的變更'); finish(() => reject(new PurchaseScheduled(hit))); return; }
+      } catch (e) { ilog(`問不到 ${errText(e)}`); }
       // **一定要重問。** Apple 的 renewalInfo 不是按下確認就馬上變，
       // 第一次問常常還是舊值（降級特別明顯）。只問一兩次的話就會問空，
       // 然後一路空等到 75 秒逾時——那就是「降級也一直轉圈」的原因。
@@ -313,10 +338,12 @@ export async function purchaseSubscription(productId: string, wantPlan: PlanId):
     /** 監聽和回傳值都沒給答案時，自己去問 StoreKit。成交了的話那筆一定在名下 */
     const poll = (delay: number) => timers.push(setTimeout(async () => {
       if (done) return;
+      ilog('問 StoreKit 名下有沒有這筆');
       try {
         const hit = (await availablePurchases()).filter((p: any) => p?.productId === productId);
+        ilog(`符合這個商品的 ${hit.length} 筆`);
         if (!done) take(latestOf(hit));
-      } catch { /* 問不到就等下一輪或逾時 */ }
+      } catch (e) { ilog(`問不到 ${errText(e)}`); }
       if (!done && delay < 40_000) poll(delay + 5_000);
     }, delay));
     // 2.5 秒就問第一次：原生層的交易去重是「設定過才關掉」，而關掉它要跟原生來回一趟
@@ -325,10 +352,15 @@ export async function purchaseSubscription(productId: string, wantPlan: PlanId):
     // 問 StoreKit 名下有什麼是不會被去重影響的那條路，所以愈早問愈好
     poll(2_500);
 
+    ilog('叫出付款表單');
     m.requestPurchase({ request: { apple: { sku: productId } }, type: 'subs' })
       // iOS 會 resolve 成這筆 Purchase（subs 有可能回陣列）。監聽先到就以監聽為準
-      .then((r: any) => { take(Array.isArray(r) ? latestOf(r.filter(Boolean)) : r); })
-      .catch((e: unknown) => finish(() => reject(e)));
+      .then((r: any) => {
+        const one = Array.isArray(r) ? latestOf(r.filter(Boolean)) : r;
+        ilog(`付款表單回來 ${one ? `${one.productId} state=${one.purchaseState ?? '-'}` : '沒有交易'}`);
+        take(one);
+      })
+      .catch((e: unknown) => { ilog(`付款表單錯誤 ${errText(e)}`); finish(() => reject(e)); });
   });
 
   /**
@@ -341,14 +373,16 @@ export async function purchaseSubscription(productId: string, wantPlan: PlanId):
    * 而且 **pending 不能 finishTransaction**：結束掉的話核准通過之後那筆交易
    * 不會再回來，使用者等到核准卻永遠拿不到方案。留著它，核准後 StoreKit 會重送。
    */
-  if (purchase.purchaseState === 'pending') throw new Error('purchase-pending');
+  if (purchase.purchaseState === 'pending') { ilog('交易還在等核准（pending）'); throw new Error('purchase-pending'); }
 
   const result = await verifyOnServer(txId(purchase));
   // 訂閱不是消耗型，isConsumable 要 false，否則 StoreKit 會當成可以再買一次。
   // 加上限是因為它在「驗證成功之後」：卡在這裡的話方案其實已經開通，
   // 畫面卻還在轉圈——結不掉沒關係，下次冷啟動 StoreKit 會重送同一筆
+  ilog('結束交易');
   await withTimeout(m.finishTransaction({ purchase, isConsumable: false }), 10_000, 'iap-finish-timeout')
-    .catch(() => {});
+    .catch(e => ilog(`結束交易失敗（方案已開通，不影響）${errText(e)}`));
+  ilog('購買流程結束');
   return result;
 }
 
@@ -369,19 +403,22 @@ export async function recoverPurchase(): Promise<VerifyResult | null> {
 }
 
 async function recoverOnce(): Promise<VerifyResult | null> {
+  ilog('開始補救：問名下有沒有有效訂閱');
   try {
     const m = await connect();
     // 這裡**不能**叫 restoreSubscription()：它內含 AppStore.sync()，會跳 Apple ID 密碼框。
     // 購買失敗的補救是自動發生的，使用者沒有按任何「還原」，突然跳密碼框只會像當機
     const latest = latestOf(await availablePurchases());
-    if (!latest) return null;
+    if (!latest) { ilog('名下沒有交易，真的沒買到'); return null; }
     const result = await verifyOnServer(txId(latest));
     if (result.active) {
       await withTimeout(m.finishTransaction({ purchase: latest, isConsumable: false }), 10_000, 'iap-finish-timeout')
         .catch(() => {});
     }
+    if (!result.active) ilog('有交易但不是有效訂閱（過期或已退款）');
     return result.active ? result : null;
-  } catch {
+  } catch (e) {
+    ilog(`補救失敗 ${errText(e)}`);
     return null;
   }
 }
@@ -393,10 +430,12 @@ async function recoverOnce(): Promise<VerifyResult | null> {
  * 回傳 null 代表這組 Apple ID 名下沒有我們的有效訂閱。
  */
 export async function restoreSubscription(): Promise<VerifyResult | null> {
+  iapLogReset('還原購買');
   const m = await connect();
   // restorePurchases 內含 AppStore.sync()，會跳 Apple ID 密碼框；使用者沒輸入完
   // 它就不會回來，所以上限給得比別的寬，但不能沒有——不然「還原購買」也會轉不停
-  await withTimeout(m.restorePurchases(), 90_000, 'iap-restore-timeout').catch(() => {});
+  ilog('向 Apple 同步（會跳密碼框）');
+  await withTimeout(m.restorePurchases(), 90_000, 'iap-restore-timeout').catch(e => ilog(`同步沒完成 ${errText(e)}`));
   const purchases = await withTimeout(m.getAvailablePurchases(), 20_000, 'iap-query-timeout');
   const list = (Array.isArray(purchases) ? purchases : []) as any[];
   if (!list.length) return null;

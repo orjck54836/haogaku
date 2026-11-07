@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Pressable, Alert, Linking, Image, ActivityIndicator } from 'react-native';
+import { View, Pressable, Alert, Linking, Image, ActivityIndicator, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,7 @@ import { topicPhotos } from '../ui/images';
 import { legalLinks } from '../content/links';
 import { track } from '../lib/analytics';
 import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription, recoverPurchase, VerifyFailed, PurchaseScheduled, VerifyResult } from '../lib/iap';
+import { iapStage, iapLogText, hasIapLog, onIapLog, ilog, errText } from '../lib/iaplog';
 import { useAuth } from '../state/auth';
 import { StackProps } from '../navigation';
 
@@ -60,6 +61,15 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
   // 年繳還沒開放（見 plans.ts 的 YEARLY_AVAILABLE），只能是月繳
   const [cycle, setCycle] = useState<Cycle>(YEARLY_AVAILABLE ? (route.params.cycle ?? 'monthly') : 'monthly');
   const [busy, setBusy] = useState(false);
+  /**
+   * 現在走到購買流程的哪一步。
+   *
+   * 轉圈的按鈕只說「處理中」，而卡住的那幾種情況（等不到交易事件、查證沒回來、
+   * StoreKit 不回應）**從畫面上完全分不出來**，回報進來只剩一句「一直在轉」。
+   * 把 iaplog 的最後一筆寫在按鈕下面，使用者截一張圖就看得出卡在哪一步。
+   */
+  const [stage, setStage] = useState('');
+  useEffect(() => onIapLog(() => setStage(iapStage())), []);
   /**
    * 商店回的售價，和這台手機到底買不買得到。
    *
@@ -174,13 +184,14 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
     track('purchase_tap', { plan: plan.id, cycle, price: total });
     try {
       const res = await purchaseSubscription(sku, plan.id);
-      if (!res.active) throw new Error('verify-inactive');
+      if (!res.active) { ilog('後端說這不是有效訂閱'); throw new Error('verify-inactive'); }
       // Apple 把變更排到下一期時，回來的方案是**舊的那個**，不是他剛買的
       if (res.plan !== plan.id) { scheduled(res); return; }
       done(res.plan);
     } catch (e: any) {
       // 在 Apple 的付款表單上按取消不是錯誤，不要跳視窗罵他
       const code = String(e?.code ?? e?.message ?? '');
+      ilog(`購買中斷 ${errText(e)}`);
       if (/cancel/i.test(code)) return;
       // 排到下一期不是錯誤，只是沒有新交易可以等（見 iap.ts 的 PurchaseScheduled）
       if (e instanceof PurchaseScheduled) { scheduled(e.result); return; }
@@ -250,6 +261,22 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
     } finally {
       setBusy(false);
     }
+  }
+
+  /**
+   * 把整段流程交出去。
+   *
+   * 用 `Share` 而不是剪貼簿：`expo-clipboard` 是原生模組，為了一個診斷入口
+   * 多裝一個套件就要重 build dev client（見 CLAUDE.md）。Share 是 RN 內建的，
+   * 而且使用者可以直接送到 LINE 給我們。
+   */
+  function showLog() {
+    const text = iapLogText();
+    Alert.alert('購買診斷紀錄', text || '這次還沒有紀錄。',
+      [
+        { text: '傳給我們', onPress: () => { void Share.share({ message: text }).catch(() => {}); } },
+        { text: '關閉', style: 'cancel' },
+      ]);
   }
 
   async function restore() {
@@ -410,6 +437,12 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
             variant={plan.id === 'pro' ? 'gold' : 'primary'} loading={busy} disabled={busy}
             style={{ marginTop: space.xl }} onPress={purchase} />
 
+          {/* 轉圈的時候一定要講出在等什麼：見 stage 的說明 */}
+          {busy && stage ? (
+            <T variant="caption" color={t.sub}
+              style={{ textAlign: 'center', marginTop: space.sm }}>{stage}</T>
+          ) : null}
+
           <Pressable accessibilityRole="button" onPress={busy ? undefined : restore} hitSlop={10}
             style={({ pressed }) => ({ alignSelf: 'center', paddingVertical: space.md, opacity: pressed ? 0.6 : 1 })}>
             <T variant="small" color={t.primary} style={{ fontWeight: '600' }}>還原購買</T>
@@ -423,6 +456,15 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
             </T>
           </View>
         )}
+
+        {/* 購買試過一次之後才出現：沒事的人不需要看到這個入口，
+            出事的人需要一個「把整段流程交出來」的方法（見 iaplog.ts） */}
+        {hasIapLog() && !busy ? (
+          <Pressable accessibilityRole="button" onPress={showLog} hitSlop={10}
+            style={({ pressed }) => ({ alignSelf: 'center', paddingVertical: space.sm, opacity: pressed ? 0.6 : 1 })}>
+            <T variant="caption" color={t.faint} style={{ textDecorationLine: 'underline' }}>購買診斷紀錄</T>
+          </Pressable>
+        ) : null}
 
         {/* 4. 服務條款 ＋ 5. 隱私權政策。審查要求「可以點而且真的打得開」 */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.sm, marginTop: space.sm }}>
