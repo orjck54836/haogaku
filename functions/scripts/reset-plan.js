@@ -24,6 +24,17 @@
  *
  * 收 email 是因為 uid 要去 Firebase Console 的 Authentication 分頁翻，
  * 而測試時最常用的就是自己那幾個登入帳號。加 --dry 只印不刪。
+ *
+ * ## 沒有 gcloud 的話
+ *
+ * firebase-admin 吃的是 application default credentials，而那個要 gcloud 才裝得起來。
+ * 機器上沒有 gcloud 時改用已經登入的 firebase CLI，不必為了刪三筆資料裝一整套 SDK：
+ *
+ *   firebase firestore:delete "entitlements/<uid>" -f
+ *   firebase firestore:delete "usage/<uid>" -f
+ *   firebase firestore:delete subscriptionClaims -r -f   # 整個 collection，正式環境不要跑
+ *
+ * claim 的 id 是 originalTransactionId 不是 uid，所以路徑拼不出來，只能整個清或去 Console 挑。
  */
 const admin = require('firebase-admin');
 
