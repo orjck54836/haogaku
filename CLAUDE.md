@@ -284,6 +284,26 @@ Google 按字元收費，播一個 5 字的單字和一句 60 字的例句成本
 就會留下一個看得見的缺口（「各算一次。 一場完整的」）。
 一句話一個 `<T>`，或整句包成 `{'…'}` 字串，不要靠原始碼換行排版。
 
+## 空中更新（EAS Update）
+
+純 JS／樣式／圖片的修正不用重新 build，推給已安裝的人就好：
+
+```bash
+eas update --branch production --message "說明"
+```
+
+兩件事要記得：
+
+- **只有正式 build 吃得到。** Expo Go 和 dev client 照常跑 Metro，驗不出更新行為。
+  build 5／6（接 EAS Update 之前打的）也收不到，要等下一次 build 之後才開始生效。
+- **動到原生就一定要重新 build**：新套件、權限字串、icon、splash。
+  `runtimeVersion` 用 **fingerprint**（不是 appVersion），原生層一變指紋就不同，
+  舊 binary 自然收不到那包更新——不然會把需要新原生模組的 JS 推到沒有那個模組的
+  binary 上，變成啟動即死（和「新裝的原生模組不要頂層 import」同一個坑）。
+
+設定在 `app.json` 的 `updates`／`runtimeVersion`，channel 在 `eas.json`，
+理由寫在 `app.config.ts` 檔頭。
+
 ## App icon
 
 `assets/icon.png` 是從 `assets/logo.png` 產出來的，不是手工檔案。要換 logo 就重跑產生程序。

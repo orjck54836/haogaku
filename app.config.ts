@@ -4,6 +4,19 @@ import { ExpoConfig, ConfigContext } from 'expo/config';
 const googleScheme = process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME
   || 'com.googleusercontent.apps.816924704019-ku81u20vmkg1cb47jdphgoa8tbto7j8c';
 
+/**
+ * EAS Update（空中更新）的設定**留在 app.json**：`updates.url` 和 `runtimeVersion`。
+ *
+ * `runtimeVersion` 用 **fingerprint**，不是 appVersion。
+ * appVersion 的意思是「所有 1.0.0 的 build 都吃同一包更新」——我們一旦裝了新的原生模組
+ * 卻忘了改版號，更新就會推到一個沒有那個模組的 binary 上，變成啟動即死
+ * （見 CLAUDE.md「新裝的原生模組不要頂層 import」，同一個坑）。
+ * fingerprint 會把原生相依算進去，原生層一變、指紋就不同，舊 build 自然收不到那包更新。
+ *
+ * **expo-updates 只在正式 build 生效**，Expo Go 和 dev client 照常跑 Metro。
+ * 純 JS／樣式／圖片的修正可以 `eas update --branch production` 推給已安裝的測試者；
+ * 動到原生（新套件、權限、icon、splash）一律還是要重新 build。
+ */
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: '皓學日語',
