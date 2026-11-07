@@ -20,18 +20,19 @@
  *
  *   cd functions
  *   gcloud auth application-default login     # 只要做一次
- *   node scripts/reset-plan.js <uid>
+ *   node scripts/reset-plan.js <uid 或 email>
  *
- * 加 --dry 只印不刪。
+ * 收 email 是因為 uid 要去 Firebase Console 的 Authentication 分頁翻，
+ * 而測試時最常用的就是自己那幾個登入帳號。加 --dry 只印不刪。
  */
 const admin = require('firebase-admin');
 
 const PROJECT_ID = process.env.GCLOUD_PROJECT || 'haogaku-60c56';
-const [uid, ...flags] = process.argv.slice(2);
+const [who, ...flags] = process.argv.slice(2);
 const dry = flags.includes('--dry');
 
-if (!uid) {
-  console.error('用法：node scripts/reset-plan.js <uid> [--dry]');
+if (!who) {
+  console.error('用法：node scripts/reset-plan.js <uid 或 email> [--dry]');
   process.exit(1);
 }
 
@@ -39,6 +40,11 @@ admin.initializeApp({ projectId: PROJECT_ID });
 const db = admin.firestore();
 
 (async () => {
+  const uid = who.includes('@')
+    ? (await admin.auth().getUserByEmail(who)).uid
+    : who;
+  if (who !== uid) console.log(`${who} → uid ${uid}\n`);
+
   const ent = await db.doc(`entitlements/${uid}`).get();
   console.log(ent.exists ? `entitlements/${uid}: ${JSON.stringify(ent.data())}` : `entitlements/${uid}: 不存在`);
 
