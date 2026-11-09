@@ -32,7 +32,7 @@ import type { IconName } from '../ui';
  * ## 用好用滿的真實損益（每月，匯率 NT$31.5）
  *
  *   方案   AI 文字   語音              成本    入袋    利潤
- *   訪客   2.5      1k 字 Neural2     3.0     0       -3.0
+ *   訪客   0.6      —（內建語音）      0.6     0       -0.6
  *   免費   3.7      3k 字 Neural2     5.2     0       -5.2
  *   標準   36.9     40k 字 HD         74.7    100     +25.3
  *   高級版   92.1     100k 字 HD        186.6   233.3   +46.7
@@ -216,7 +216,11 @@ export const YEARLY_AVAILABLE = false;
 export const IAP_AVAILABLE = true;
 
 /**
- * 還沒綁定帳號的訪客額度（免費方案的一半）。
+ * 還沒綁定帳號的訪客額度。
+ *
+ * **刻意只給「嘗一口」的量。** 額度綁在 uid 上，而匿名 uid 重裝就換一個——
+ * 免費方案的成本算得出上限（人數 × NT$5.2），匿名的算不出來。
+ * 所以分析和朗讀對訪客是 0，AI 只留 1 次/天：還摸得到 AI 教練，但刷不出成本。
  *
  * 不列進 `plans` 是因為它不是一個「可以選的方案」，是還沒登入的暫時狀態；
  * 混進方案比較表會多出一欄沒人需要選的東西。但規則頁必須寫出來——
@@ -224,7 +228,7 @@ export const IAP_AVAILABLE = true;
  *
  * 真正的數字在 functions/src/index.ts 的 GUEST_ALLOWANCE，這裡只負責顯示，要一起改。
  */
-export const guestLimits = { aiPerDay: 3, reportsPerDay: 1, ttsCharsPerMonth: 1_000 };
+export const guestLimits = { aiPerDay: 1, reportsPerDay: 0, ttsCharsPerMonth: 0 };
 
 /**
  * 一句日文的平均字數，把「字數」換算成使用者有感的「句數」。

@@ -41,7 +41,7 @@ export default function QuotaScreen({ navigation }: StackProps<'Quota'>) {
         <Line>
           {'分析報告除了算一次之外，每天還有自己的份數上限。產分析要讀完整場對話，比一般的回覆吃力得多。'}
         </Line>
-        <Row label="還沒登入（訪客）" value={`每天 ${guestLimits.reportsPerDay} 份`} />
+        <Row label="還沒登入（訪客）" value="要登入" />
         <Row label={`${free.name}（登入後）`} value={`每天 ${free.reportsPerDay} 份`} />
         <Row label={plus.name} value={`每天 ${plus.reportsPerDay} 份`} />
         <Row label={pro.name} value={`每天 ${pro.reportsPerDay} 份`} last />
@@ -99,6 +99,9 @@ export default function QuotaScreen({ navigation }: StackProps<'Quota'>) {
         <Row label={`${free.name}`} value={`每月約 ${sentencesOf(free.ttsCharsPerMonth)} 句`} />
         <Row label={plus.name} value={`每月約 ${sentencesOf(plus.ttsCharsPerMonth)} 句`} />
         <Row label={pro.name} value={`每月約 ${sentencesOf(pro.ttsCharsPerMonth)} 句`} last />
+        <Note>
+          {'還沒登入的訪客用的是手機內建的日文聲音。登入之後才有我們合成的自然語音。'}
+        </Note>
         <Line>
           <B>聽過的句子存在手機裡，重複播放不算。</B>所以實際上能聽的比上面的數字更多。
         </Line>

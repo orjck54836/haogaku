@@ -67,8 +67,20 @@ const PLAN_ALLOWANCE: Record<PlanId, Allowance> = {
   plus: { aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000, hd: true },
   pro: { aiPerDay: 150, reportsPerDay: 20, ttsCharsPerMonth: 100_000, hd: true },
 };
-// 訪客（還沒綁定帳號）給免費方案的一半，綁定才有完整免費額度
-const GUEST_ALLOWANCE: Allowance = { aiPerDay: 3, reportsPerDay: 1, ttsCharsPerMonth: 1_000, hd: false };
+/**
+ * 還沒綁定帳號的訪客額度。
+ *
+ * **只給「嘗一口」的量，因為匿名額度的上限不是我們說了算。** 額度綁在 uid 上，
+ * 而匿名 uid 重裝就換一個——免費方案的成本算得出上限（人數 × NT$5.2），
+ * 匿名的算不出來。原本給免費的一半（3 次＋1k 字），等於一個肯重裝的人可以無限刷。
+ *
+ * 1 次/天還留著「打一句看看 AI 回什麼」的體驗，這是登入的理由；
+ * 分析和語音直接給 0：分析成本是回覆的兩倍，語音是成本大宗，
+ * 兩個都不是登入前需要體驗的東西。單一假 uid 一個月的成本上限因此壓到約 NT$0.6。
+ *
+ * 語音 0 不會變成錯誤：aiSpeak 回 audio: null，手機端自己換成內建語音（見 src/lib/speech.ts）。
+ */
+const GUEST_ALLOWANCE: Allowance = { aiPerDay: 1, reportsPerDay: 0, ttsCharsPerMonth: 0, hd: false };
 
 /**
  * 使用者目前的方案。
@@ -261,7 +273,9 @@ async function useQuota(uid: string, guest: boolean, limit: number, reportLimit?
       throw new HttpsError('resource-exhausted', guest ? '今天的試用次數已用完，綁定帳號可以獲得更多次數' : '今天的 AI 次數已用完，明天再來吧');
     }
     if (reportLimit !== undefined && reports >= reportLimit) {
-      // 訊息要講清楚「只有分析到上限」，不然使用者會以為整個 AI 都不能用了
+      // 訊息要講清楚「只有分析到上限」，不然使用者會以為整個 AI 都不能用了。
+      // 訪客的上限是 0，講「已經用完（每天 0 份）」會像故障——要講成「這個功能要登入」
+      if (reportLimit === 0) throw new HttpsError('resource-exhausted', '會話分析要綁定帳號才能用，會話本身可以繼續練');
       throw new HttpsError('resource-exhausted', `今天的會話分析已經用完（每天 ${reportLimit} 份），但會話還可以繼續練`);
     }
     tx.set(ref, { date: today, count: count + 1, reports: reportLimit !== undefined ? reports + 1 : reports });
