@@ -12,7 +12,7 @@ import { topicPhotos } from '../ui/images';
 import { legalLinks } from '../content/links';
 import { track } from '../lib/analytics';
 import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription, recoverPurchase, VerifyFailed, PurchaseScheduled, VerifyResult } from '../lib/iap';
-import { iapStage, iapLogText, onIapLog, ilog, errText } from '../lib/iaplog';
+import { iapLogText, ilog, errText } from '../lib/iaplog';
 import { useAuth } from '../state/auth';
 import { StackProps } from '../navigation';
 
@@ -77,15 +77,6 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
   // 年繳還沒開放（見 plans.ts 的 YEARLY_AVAILABLE），只能是月繳
   const [cycle, setCycle] = useState<Cycle>(YEARLY_AVAILABLE ? (route.params.cycle ?? 'monthly') : 'monthly');
   const [busy, setBusy] = useState(false);
-  /**
-   * 現在走到購買流程的哪一步。
-   *
-   * 轉圈的按鈕只說「處理中」，而卡住的那幾種情況（等不到交易事件、查證沒回來、
-   * StoreKit 不回應）**從畫面上完全分不出來**，回報進來只剩一句「一直在轉」。
-   * 把 iaplog 的最後一筆寫在按鈕下面，使用者截一張圖就看得出卡在哪一步。
-   */
-  const [stage, setStage] = useState('');
-  useEffect(() => onIapLog(() => setStage(iapStage())), []);
   /**
    * 商店回的售價，和這台手機到底買不買得到。
    *
@@ -562,12 +553,6 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
           <Button label={busy ? '處理中' : trial ? `開始 ${trial} 天免費試用` : `訂閱 ${priceText}/${periodLabel}`}
             variant={plan.id === 'pro' ? 'gold' : 'primary'} loading={busy} disabled={busy}
             style={{ marginTop: space.xl }} onPress={purchase} />
-
-          {/* 轉圈的時候一定要講出在等什麼：見 stage 的說明 */}
-          {busy && stage ? (
-            <T variant="caption" color={t.sub}
-              style={{ textAlign: 'center', marginTop: space.sm }}>{stage}</T>
-          ) : null}
         </> : (
           <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center',
             backgroundColor: t.surface2, borderRadius: radius.lg, padding: space.lg, marginTop: space.xl }}>

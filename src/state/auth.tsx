@@ -115,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * 目前帳號還沒綁過這個提供者就用 link（訪客和正式帳號都適用，學習紀錄不會斷）；
    * 已經綁過、或這組憑證屬於別的帳號，就改為登入那個帳號。
    */
-  async function applyCredential(cred: AuthCredential) {
+  async function applyCredential(cred: AuthCredential, refresh?: () => Promise<AuthCredential | null>) {
     const current = auth.currentUser;
     if (current && !current.providerData.some(p => p.providerId === cred.providerId)) {
       try {
@@ -125,7 +125,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       } catch (e: any) {
         if (e?.code !== 'auth/credential-already-in-use' && e?.code !== 'auth/email-already-in-use') throw e;
-        // 這個 Google／Apple 帳號已經註冊過：改為登入原本的帳號
+        /**
+         * 這個 Apple／Google 帳號已經註冊過：改為登入原本的那個帳號。
+         *
+         * 但**不能把同一個 cred 直接拿去 signInWithCredential**。Apple 的
+         * identityToken 是一次性的，剛才那次 link 已經把它和 nonce 用掉了，
+         * 重送會被判成重放，回 `auth/missing-or-invalid-nonce`
+         * （訊息是 "Duplicate credential received"）——訪客想綁已存在的
+         * Apple 帳號時每次都踩到。
+         *
+         * Firebase 會把「可以用的那一份」掛在這個錯誤上，先取它；
+         * 取不到才回去重跑一次登入流程換新的憑證（使用者會再看到一次 Apple 視窗）。
+         */
+        const fromError = OAuthProvider.credentialFromError(e) ?? GoogleAuthProvider.credentialFromError(e);
+        const next = fromError ?? (refresh ? await refresh() : null);
+        if (!next) return;            // 重跑時使用者按了取消：什麼都不做，維持訪客
+        await signInWithCredential(auth, next);
+        return;
       }
     }
     await signInWithCredential(auth, cred);
@@ -139,14 +155,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signInGoogle() {
     const cred = await googleCredential();
     if (!cred) return;
-    await applyCredential(cred);
+    await applyCredential(cred, googleCredential);
     track('login', { method: 'google' });
   }
 
   async function signInApple() {
     const r = await appleCredential();
     if (!r) return;
-    await applyCredential(r.cred);
+    await applyCredential(r.cred, async () => (await appleCredential())?.cred ?? null);
     track('login', { method: 'apple' });
   }
 
