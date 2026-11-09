@@ -127,10 +127,73 @@ export type ChatMemory = {
   recent?: string[];
   /** 反覆出現的問題，用來提醒 AI 多注意 */
   weak?: string[];
+  /**
+   * 單字本裡還不熟的詞，讓 AI 在對話中自然地用上。
+   * 送 ja 和 zh 兩個欄位：只送日文的話，AI 得自己猜使用者當初存的是哪個意思，
+   * 多義詞（「結構」「適当」）很容易用成另一個意思，反而在加深錯的印象。
+   */
+  words?: { ja: string; zh?: string }[];
+  /** 一行學習進度（段位、連續天數、完成堂數），讓 AI 講話的深度對得上他的實力 */
+  progress?: string;
+  /** 上一場沒做分析就離開的對話聊到哪，見 ChatNote */
+  lastTurn?: string;
+  /**
+   * 這個人在這個情境練過幾次（分析紀錄＋未完成紀錄都算）。
+   * **只給手機端用**：>0 時不能再用寫死的「はじめまして」開場。
+   * 後端的 parseLearner 只挑它認得的欄位，多送這個不會進 prompt。
+   */
+  times?: number;
 };
 
 /**
- * 從已經存下來的分析紀錄裡擠出記憶。
+ * 沒做分析就離開的對話，留一筆輕量紀錄。
+ *
+ * 原因：記憶原本只從分析報告來，而分析要使用者**主動按「結束並分析」**才有。
+ * 中途返回的那幾場在程式眼裡完全沒發生過，所以「我明明聊過好幾次」的人
+ * 下次進來還是會被當成初次見面——這是「AI 不記得我」最主要的來源。
+ *
+ * 刻意不叫 AI 寫摘要：那要多一次 API 呼叫（每場約 NT$0.01），而這裡只需要
+ * 「上次聊到哪」，使用者自己的最後幾句話就夠了，等於零邊際成本。
+ */
+export type ChatNote = {
+  scenarioId: string;
+  at: number;
+  /** 使用者說了幾輪。用來判斷這場值不值得記（1 輪通常是點進去又退出） */
+  turns: number;
+  /** 使用者最後說的話，接起來當線索 */
+  tail: string;
+};
+
+/** 留幾筆。只是「上次聊到哪」的線索，多留沒有用，而且 progress 是整份重寫的 */
+export const CHAT_NOTES = 6;
+
+/** 同一個情境只留最新那筆：舊的那筆講的事已經被新的那場蓋過去了 */
+export function addChatNote(list: ChatNote[], note: ChatNote): ChatNote[] {
+  return [note, ...list.filter(n => n.scenarioId !== note.scenarioId)].slice(0, CHAT_NOTES);
+}
+
+/** 單字本裡的一筆。只宣告這裡會用到的欄位，避免 lib 反過來依賴 state/data */
+type WordLike = { ja: string; zh?: string; savedAt: number; box: number };
+
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+/**
+ * 挑要給 AI 用的單字。
+ *
+ * 優先還不熟的（box ≤ 1）：已經背起來的詞再聽一次沒有新的記憶效果，
+ * 而「複習」本來就有單字本自己的排程在做。
+ *
+ * **過濾掉長句**：單字本可以收藏 AI 的整句回覆和糾正，那種十幾二十字的句子
+ * 塞進 prompt 只會讓 AI 整句照抄一遍，看起來像在念稿。14 字以內才算「詞」。
+ */
+function pickWords(words: WordLike[]): { ja: string; zh?: string }[] {
+  const ok = words.filter(w => w.ja.length <= 14);
+  const sorted = [...ok].sort((a, b) => (a.box - b.box) || (b.savedAt - a.savedAt));
+  return sorted.slice(0, 6).map(w => ({ ja: w.ja, ...(w.zh ? { zh: clip(w.zh, 20) } : {}) }));
+}
+
+/**
+ * 從手機上已經有的資料擠出記憶。
  *
  * 不另外呼叫 AI 產生「使用者筆記」是刻意的：那要多一次 API 呼叫（每場多約 NT$0.01），
  * 而分析報告本來就寫好了摘要和待改進項目，拿現成的等於**零邊際成本**。
@@ -139,8 +202,18 @@ export type ChatMemory = {
  * 跨情境只留一則當背景，不然 prompt 會被塞滿不相干的內容，
  * AI 反而開始硬扯上次的事。
  */
-export function chatMemory(reports: SavedReport[], scenarioId: string): ChatMemory {
-  const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+export function chatMemory(input: {
+  scenarioId: string;
+  reports: SavedReport[];
+  notes?: ChatNote[];
+  words?: WordLike[];
+  /** 「Lv.3 道案内」這種已經組好的字串，lib/rank 的段位名不在這裡重算 */
+  rank?: string;
+  streak?: number;
+  /** 完成的課程數，要先把讀物排掉（見 isReadingLesson），不然數字會灌水 */
+  lessons?: number;
+}): ChatMemory {
+  const { scenarioId, reports, notes = [], words = [] } = input;
   const same = reports.filter(r => r.scenarioId === scenarioId);
   const other = reports.filter(r => r.scenarioId !== scenarioId);
   const recent = [...same.slice(0, 2), ...other.slice(0, 1)]
@@ -158,5 +231,26 @@ export function chatMemory(reports: SavedReport[], scenarioId: string): ChatMemo
     }
     if (weak.length >= 3) break;
   }
-  return { ...(recent.length ? { recent } : {}), ...(weak.length ? { weak } : {}) };
+
+  // 比分析還舊的那筆不要用：那一場的事已經寫在分析摘要裡，
+  // 兩個都塞進去 AI 會同時收到「上次聊完有分析」和「上次沒聊完就走」
+  const note = notes.find(n => n.scenarioId === scenarioId && n.turns > 0 && (!same[0] || n.at > same[0].at));
+  const lastTurn = note ? `上次在這個情境聊了 ${note.turns} 輪就離開（沒做分析），他最後說的是「${clip(note.tail, 60)}」` : '';
+
+  const bits: string[] = [];
+  if (input.rank) bits.push(`段位 ${input.rank}`);
+  if (input.streak) bits.push(`連續學習 ${input.streak} 天`);
+  if (input.lessons) bits.push(`完成 ${input.lessons} 堂課`);
+  const times = same.length + notes.filter(n => n.scenarioId === scenarioId).length;
+  if (times) bits.push(`這個情境練過 ${times} 次`);
+
+  const picked = pickWords(words);
+  return {
+    ...(recent.length ? { recent } : {}),
+    ...(weak.length ? { weak } : {}),
+    ...(picked.length ? { words: picked } : {}),
+    ...(bits.length ? { progress: bits.join('、') } : {}),
+    ...(lastTurn ? { lastTurn } : {}),
+    ...(times ? { times } : {}),
+  };
 }

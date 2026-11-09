@@ -12,8 +12,9 @@ import { track } from '../lib/analytics';
 import { speakJa, stopSpeech, cacheAudio, getSpeechRate } from '../lib/speech';
 import { startListening, speechInputAvailable } from '../lib/stt';
 import { StackProps } from '../navigation';
-import { CHAT_XP } from '../lib/rank';
+import { CHAT_XP, rankOf } from '../lib/rank';
 import { chatMemory } from '../lib/reports';
+import { isReadingLesson } from '../content/readings';
 import { addDoc, collection } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
@@ -29,8 +30,41 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   const scenario = scenarioById(route.params.scenarioId)!;
   const level = d.profile.startLevel;
 
-  const [bubbles, setBubbles] = useState<Bubble[]>(scenario.opening ? [{ id: 'open', from: 'ai', ja: scenario.opening, zh: scenario.openingZh ?? '' }] : []);
-  const [history, setHistory] = useState<ChatMsg[]>(scenario.opening ? [{ role: 'assistant', content: scenario.opening }] : []);
+  /**
+   * 送給 AI 的「我是誰」。每次呼叫都要帶——後端是無狀態的，不帶就等於每場都重新認識。
+   * 用 useMemo 不是為了效能，是為了讓同一場會話從頭到尾看到同一份記憶：
+   * 中途存了新分析的話，重算會讓 AI 在對話進行到一半時突然「想起」還沒發生的事。
+   */
+  const memory = useMemo(() => {
+    const rank = rankOf(d.progress.xp);
+    return chatMemory({
+      scenarioId: scenario.id,
+      reports: d.reports,
+      notes: d.progress.chatNotes,
+      words: d.words,
+      rank: `Lv.${rank.n} ${rank.name}`,
+      streak: d.progress.streak,
+      // 讀物也記在 completed 裡，不排掉的話課程數會灌水（見 content/readings）
+      lessons: d.progress.completed.filter(x => !isReadingLesson(x)).length,
+    });
+  }, []);
+  const learner = useMemo(() => ({
+    jaName: d.profile.jaName || d.profile.nickname || undefined,
+    intro: d.profile.intro || undefined,
+    goal: goalLabel[d.profile.goal],
+    ...memory,
+  }), []);
+  /**
+   * 寫死的開場白（`scenario.opening`）**只給第一次**。
+   *
+   * 那幾句是「はじめまして！ゆいです。台湾から来たんですか？」這種初次見面的台詞，
+   * 第二次之後再出現就是整場最明顯的「它根本不記得我」——而且它是手機端自己塞的，
+   * 後端的記憶再完整也蓋不掉它。練過就改走 AI 開場，讓它從記憶接上一次的話題。
+   */
+  const opening = memory.times ? undefined : scenario.opening;
+
+  const [bubbles, setBubbles] = useState<Bubble[]>(opening ? [{ id: 'open', from: 'ai', ja: opening, zh: scenario.openingZh ?? '' }] : []);
+  const [history, setHistory] = useState<ChatMsg[]>(opening ? [{ role: 'assistant', content: opening }] : []);
   const [hints, setHints] = useState<{ ja: string; zh: string }[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
@@ -42,17 +76,6 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   const stopRef = useRef<(() => void) | null>(null);
   const [loadingVoice, setLoadingVoice] = useState<string | null>(null);
   const voice = scenario.voice ?? 'female';
-  /**
-   * 送給 AI 的「我是誰」。每次呼叫都要帶——後端是無狀態的，不帶就等於每場都重新認識。
-   * 用 useMemo 不是為了效能，是為了讓同一場會話從頭到尾看到同一份記憶：
-   * 中途存了新分析的話，重算會讓 AI 在對話進行到一半時突然「想起」還沒發生的事。
-   */
-  const learner = useMemo(() => ({
-    jaName: d.profile.jaName || d.profile.nickname || undefined,
-    intro: d.profile.intro || undefined,
-    goal: goalLabel[d.profile.goal],
-    ...chatMemory(d.reports, scenario.id),
-  }), []);
   /** 自己要跳走（結束並分析）時不要再攔截 */
   const leaving = useRef(false);
 
@@ -81,6 +104,13 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
    */
   function leave() {
     leaving.current = true;
+    /**
+     * 沒做分析就離開也要留下「聊到哪」。
+     * 記憶原本只從分析報告來，而分析要主動按「結束並分析」才有——
+     * 中途返回的那幾場在程式眼裡等於沒發生過，所以下次進來 AI 只能當他是第一次。
+     */
+    const tail = [...history].reverse().find(m => m.role === 'user')?.content ?? '';
+    d.saveChatNote(scenario.id, userTurns, tail);
     stopSpeech();
     stopRef.current?.();
     navigation.goBack();
@@ -92,7 +122,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     Alert.alert(
       busy ? '對方還在回覆' : '要離開這場對話嗎？',
       userTurns > 0
-        ? '這場對話不會保留，也不會拿到分析和 XP。要先結束並分析嗎？'
+        ? '對話內容和 XP 都不會保留，只有「聊到哪」會留給下次的教練。要先結束並分析嗎？'
         : '這場對話不會保留。',
       [
         { text: '繼續對話', style: 'cancel' },
@@ -103,7 +133,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   }
 
   useEffect(() => {
-    if (scenario.opening) play('open', scenario.opening);
+    if (opening) play('open', opening);
     else openWithAI();
     return () => { stopSpeech(); stopRef.current?.(); };
   }, []);
@@ -300,6 +330,22 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     );
   };
 
+  /**
+   * 「教練記得你」那幾行。
+   *
+   * 記憶做在 prompt 裡是看不見的：AI 接得上一次的話題時，使用者只會覺得
+   * 「這次運氣好」，接不上就是「它又忘了」。把實際送出去的那幾項寫在任務卡上，
+   * 記憶才變成一個講得出來的功能，而不是碰運氣。
+   * 用實際組出來的 memory，不要另外算一份——顯示的和送出去的必須是同一件事。
+   */
+  const memoryLines = useMemo(() => {
+    const lines: string[] = [];
+    if (memory.times) lines.push(`這個情境練過 ${memory.times} 次，開場會接上次聊的`);
+    if (memory.weak?.length) lines.push(`會特別盯你常錯的：${memory.weak.slice(0, 2).join('、')}`);
+    if (memory.words?.length) lines.push(`會用上你單字本裡的：${memory.words.map(w => w.ja).join('、')}`);
+    return lines;
+  }, [memory]);
+
   // 任務卡放在對話列表最上方，跟著捲動，不會蓋住訊息
   const missionCard = (
     <View style={{ padding: space.md, borderRadius: radius.md, marginBottom: space.lg, borderWidth: 1,
@@ -310,6 +356,17 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
       </View>
       <T variant="small" style={{ marginTop: 4, fontWeight: '600', lineHeight: 20 }}>{scenario.goal}</T>
       <T variant="caption" color={t.sub} style={{ marginTop: 2, lineHeight: 18 }}>{scenario.setting}</T>
+      {memoryLines.length ? (
+        <View style={{ marginTop: space.md, paddingTop: space.sm, borderTopWidth: 1, borderTopColor: t.line }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="sparkles" size={13} color={t.sub} />
+            <T variant="caption" color={t.sub} style={{ fontWeight: '700' }}>教練記得你</T>
+          </View>
+          {memoryLines.map(line => (
+            <T key={line} variant="caption" color={t.sub} style={{ marginTop: 2, lineHeight: 18 }}>{`・${line}`}</T>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 

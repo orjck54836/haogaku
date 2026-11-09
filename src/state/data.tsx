@@ -13,7 +13,7 @@ import { ReviewState, emptyReview } from '../lib/review';
 import { isReadingLesson } from '../content/readings';
 import { track } from '../lib/analytics';
 import { PlanId, planById, guestLimits } from '../content/plans';
-import { SavedReport, addReport, trimReports, makeReport, retentionOf, fetchReports, pushReport, dropReport, pruneReports } from '../lib/reports';
+import { SavedReport, addReport, trimReports, makeReport, retentionOf, fetchReports, pushReport, dropReport, pruneReports, ChatNote, addChatNote } from '../lib/reports';
 import type { ChatReport } from '../lib/ai';
 
 export type Goal = 'travel' | 'study' | 'work' | 'hobby';
@@ -58,6 +58,12 @@ export type Progress = {
   aiRemaining: number | null;
   /** 評價詢問的紀錄，見 lib/review.ts */
   review: ReviewState;
+  /**
+   * 沒做分析就離開的 AI 會話留下的線索，見 lib/reports.ts 的 ChatNote。
+   * 放在 progress 而不是另開子集合：最多 6 筆、每筆百來字，
+   * 跟著 commit 一起走就有同步和離線快取，不值得為它多一次讀寫。
+   */
+  chatNotes: ChatNote[];
 };
 
 export type Word = {
@@ -82,7 +88,7 @@ type Store = { profile: Profile; progress: Progress; words: Word[]; reports: Sav
 
 const emptyStore: Store = {
   profile: { onboarded: false, nickname: '', jaName: '', intro: '', photo: '', goal: 'travel', startLevel: 'L2', dailyGoal: 50, speechRate: 1.0, leaderboard: true, plan: 'free' },
-  progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null, review: emptyReview },
+  progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null, review: emptyReview, chatNotes: [] },
   words: [],
   reports: [],
 };
@@ -182,6 +188,8 @@ type DataCtx = Store & {
   setAiRemaining: (n: number) => void;
   setReview: (r: Partial<ReviewState>) => void;
   saveReport: (scenarioId: string, report: ChatReport, lessonId?: string) => void;
+  /** 沒做分析就離開的會話，留一筆「聊到哪」。下次進同一個情境時當記憶用 */
+  saveChatNote: (scenarioId: string, turns: number, tail: string) => void;
   removeReport: (id: string) => void;
   isSaved: (ja: string) => boolean;
   toggleWord: (w: { ja: string; zh?: string; source: string }) => void;
@@ -478,11 +486,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // 之後就算靠這條路把數字補上，午夜那一刻也不會再對一次
     setAiRemaining: n => { quotaDay.current = taipeiDay(); withProgress(p => ({ ...p, aiRemaining: n })); },
     setReview: r => withProgress(p => ({ ...p, review: { ...p.review, ...r } })),
+    /**
+     * 中途離開也要留下痕跡。
+     *
+     * 不經過 AI、不扣額度：只是把輪數和他最後說的話記下來，
+     * 下一場在同一個情境時組進 prompt（見 chatMemory）。
+     * 一輪就走的通常是點錯進來，記了只會讓 AI 硬接一句沒頭沒尾的話。
+     */
+    saveChatNote: (scenarioId, turns, tail) => {
+      if (turns < 2 || !tail.trim()) return;
+      withProgress(p => ({ ...p, chatNotes: addChatNote(p.chatNotes, { scenarioId, at: Date.now(), turns, tail: tail.trim().slice(0, 120) }) }));
+    },
     saveReport: (scenarioId, report, lessonId) => {
       const uid = uidRef.current;
       const entry = makeReport(scenarioId, report, lessonId);
       const dropped = ref.current.reports.slice(retentionOf(ref.current.profile.plan) - 1);
-      commit(s => ({ ...s, reports: addReport(s.reports, entry, s.profile.plan) }));
+      commit(s => ({
+        ...s,
+        reports: addReport(s.reports, entry, s.profile.plan),
+        // 這個情境有正式分析了，中途離開那筆線索就過期了：
+        // 留著會讓下一場的 prompt 同時說「上次聊完有分析」和「上次沒聊完就走」
+        progress: { ...s.progress, chatNotes: s.progress.chatNotes.filter(n => n.scenarioId !== scenarioId) },
+      }));
       if (!uid) return;
       pushReport(uid, entry);
       // 被擠出額度的那幾筆要一起從雲端刪掉，不然會變成看不到也刪不掉的孤兒
@@ -544,6 +569,8 @@ function merge(d: Partial<Store>): Store {
       ...emptyStore.progress, ...(d.progress ?? {}),
       // review 是後來才加的欄位，雲端舊資料沒有，要再補一層預設
       review: { ...emptyReview, ...(d.progress?.review ?? {}) },
+      // chatNotes 也是後來才加的，舊資料沒有這個欄位
+      chatNotes: Array.isArray(d.progress?.chatNotes) ? d.progress.chatNotes : [],
       // 存下來的剩餘次數是「上次呼叫 AI 當下」的，跨日或換手機就是錯的數字。
       // 一律當成還不知道，由 refreshQuota() 讀 usage/{uid} 補上——
       // 寧願先不顯示次數，也不要顯示一個錯的

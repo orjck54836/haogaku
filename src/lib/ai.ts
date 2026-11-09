@@ -58,6 +58,12 @@ export type Learner = {
   /** 最近幾場會話的摘要（見 lib/reports.ts 的 chatMemory） */
   recent?: string[];
   weak?: string[];
+  /** 單字本裡還不熟的詞，後端會要求 AI 自然地用進對話 */
+  words?: { ja: string; zh?: string }[];
+  /** 一行學習進度（段位、連續天數、完成堂數） */
+  progress?: string;
+  /** 上一場沒做分析就離開的對話聊到哪 */
+  lastTurn?: string;
 };
 
 /**

@@ -28,10 +28,14 @@ export default function AIHubScreen() {
    * 文案一律落在具體的東西上——寫「個人化學習」沒人會信，說得出「叫你ケン」才有感。
    */
   const jaName = d.profile.jaName || d.profile.nickname;
+  // 中途離開的會話也算「聊過」：它一樣會留下記憶（見 lib/reports 的 ChatNote）
+  const played = reports.length + d.progress.chatNotes.length;
   const memory = [
     jaName ? `叫你「${jaName}」` : null,
     goalLabel[d.profile.goal],
-    reports.length ? `前 ${Math.min(reports.length, 3)} 場對話` : null,
+    played ? `前 ${Math.min(played, 3)} 場對話` : null,
+    // 單字本排在自我介紹前面：它是這裡唯一「會出現在對話裡」的東西，最值得先講
+    d.words.length ? `單字本的 ${Math.min(d.words.length, 6)} 個詞` : null,
     d.profile.intro ? '你的自我介紹' : null,
   ].filter(Boolean).slice(0, 3) as string[];
   const missing = !d.profile.intro || !d.profile.jaName;
