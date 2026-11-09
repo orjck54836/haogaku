@@ -521,10 +521,18 @@ export async function restoreSubscription(): Promise<VerifyResult | null> {
   // 可能有好幾筆歷史交易，挑最新的那筆去問後端；後端本來就會查整個訂閱群組的現況
   const latest = latestOf(list);
   const result = await verifyOnServer(txId(latest), 'restore');
-  for (const p of list) {
-    await withTimeout(m.finishTransaction({ purchase: p, isConsumable: false }), 10_000, 'iap-finish-timeout')
-      .catch(() => {});
-  }
+  /**
+   * 收尾要**一起發**，不要一筆一筆等。
+   *
+   * 這裡的 list 是整串歷史交易（沒帶 onlyIncludeActiveItemsIOS，還原本來就要看全部），
+   * 沙盒帳號測久了會累積十幾筆。序列跑的話每筆最多 10 秒，疊起來「還原購買」
+   * 會轉好幾分鐘——而方案在上面 verifyOnServer 回來那一刻就已經開通了，
+   * 這幾筆結不掉也只是下次冷啟動 StoreKit 再重送一次，不影響任何結果。
+   * 彼此之間沒有順序關係，所以總時間應該是一筆的時間，不是 N 筆的總和。
+   */
+  await Promise.all(list.map(p =>
+    withTimeout(m.finishTransaction({ purchase: p, isConsumable: false }), 10_000, 'iap-finish-timeout')
+      .catch(() => {})));
   return result.active ? result : null;
 }
 

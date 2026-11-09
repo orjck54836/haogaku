@@ -146,6 +146,12 @@ function leaderRow(uid: string, s: Store): Omit<LeaderRow, 'uid'> {
  */
 const taipeiDay = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
 
+/** 距離下一個台北午夜還有多久（毫秒）。和 `taipeiDay()` 用同一條位移才不會差一小時 */
+const msToTaipeiMidnight = () => {
+  const day = 86_400_000;
+  return day - ((Date.now() + 8 * 3600_000) % day);
+};
+
 /** 推上排行榜；不該上榜的人要主動把舊那筆刪掉，否則會永遠停在最後一次的分數 */
 function publishLeader(uid: string, s: Store) {
   if (shouldPublish(s)) setDoc(doc(db, 'leaderboard', uid), leaderRow(uid, s)).catch(() => {});
@@ -280,6 +286,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => sub.remove();
   }, [user?.uid]);
 
+  /**
+   * 跨過台北午夜時把剩餘次數對回來。
+   *
+   * 後端的額度是**比日期字串**決定的（functions 的 `taipeiDate()`），過 12 點
+   * 那一刻就是新的一天，不需要任何排程、也不用重開 App——這部分本來就是對的。
+   * 但畫面上那個數字只在冷啟動、回前景、呼叫完 AI 時才重讀，所以**一直開著 App
+   * 跨過午夜的人**（晚上十一點多在練的那種）右上角會停在「0 次」。
+   * 功能是好的，可是他看到 0 就不會再按，等於白擋。
+   *
+   * 分段醒（最多 30 分鐘）而不是一口氣排到午夜：長 timer 被系統延後或丟掉的話
+   * 整晚都不會再對一次。醒來只比一個日期字串，對不上才去讀 Firestore，
+   * 所以多醒幾次不花錢。
+   */
+  useEffect(() => {
+    if (!user?.uid) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = () => {
+      // +1 秒：剛好壓在邊界上醒來，有機會還比到舊的那一天
+      timer = setTimeout(tick, Math.min(msToTaipeiMidnight() + 1_000, 30 * 60_000));
+    };
+    const tick = () => {
+      // quotaDay 還空的代表第一次 refreshQuota 還沒回來（它自己會把數字補上）
+      if (quotaDay.current && quotaDay.current !== taipeiDay()) refreshQuotaRef.current();
+      arm();
+    };
+    arm();
+    return () => clearTimeout(timer);
+  }, [user?.uid]);
+
   function commit(fn: (s: Store) => Store) {
     const next = fn(ref.current);
     ref.current = next;
@@ -370,15 +405,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const snap = await getDoc(doc(db, 'usage', uid));
       const data = snap.data();
       // 日期界線要和後端的 taipeiDate() 一致：用本機時區算，出國的人會跨錯一天
-      const used = data && data.date === taipeiDay() ? Number(data.count) || 0 : 0;
+      const day = taipeiDay();
+      const used = data && data.date === day ? Number(data.count) || 0 : 0;
       const plan = planOverride ?? ref.current.profile.plan;
       const limit = userRef.current?.isAnonymous ? guestLimits.aiPerDay : planById(plan).aiPerDay;
       const left = Math.max(0, limit - used);
+      // 記下這個數字算的是哪一天，跨午夜的 timer 靠它判斷該不該重讀
+      quotaDay.current = day;
       if (left !== ref.current.progress.aiRemaining) {
         commit(s => ({ ...s, progress: { ...s.progress, aiRemaining: left } }));
       }
     } catch { /* 離線時維持現狀：這只是顯示值，擋不擋得住一律由後端決定 */ }
   }
+  /** 目前畫面上那個剩餘次數是哪一天算的（台北日）。空字串代表還沒讀過 */
+  const quotaDay = useRef('');
   const refreshQuotaRef = useRef(refreshQuota);
   refreshQuotaRef.current = refreshQuota;
   const userRef = useRef(user);

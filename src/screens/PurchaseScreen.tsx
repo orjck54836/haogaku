@@ -211,7 +211,23 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       const res = await purchaseSubscription(sku, plan.id);
       if (!res.active) { ilog('後端說這不是有效訂閱'); throw new Error('verify-inactive'); }
       // Apple 把變更排到下一期時，回來的方案是**舊的那個**，不是他剛買的
-      if (res.plan !== plan.id) { scheduled(res); return; }
+      if (res.plan !== plan.id) {
+        /**
+         * **`nextPlan` 真的是他剛買的那個，才叫「排到下一期」。**
+         *
+         * 只比 `res.plan` 的話，還有一種情況會落進來：Apple 的訂閱狀態端點
+         * 還沒反映出這筆新交易，後端回的是舊方案、`nextPlan` 也還是舊方案。
+         * 這時候跳「已排定改成高級版、X 日生效」是**憑空捏造**的——什麼都沒排，
+         * 而他會因為這句話不再重試，等到下一期發現沒變才回來。
+         *
+         * 包成 VerifyFailed（非 final）往下丟，走和其他「Apple 成交、我們沒接到」
+         * 一樣的路：先 recoverPurchase() 問一次真正的現況，問不到才說
+         * 「付款完成了，但還沒開通」。那句話對這個情況是對的。
+         */
+        if (res.nextPlan === plan.id) { scheduled(res); return; }
+        ilog(`後端回 plan=${res.plan} next=${res.nextPlan}，都不是 ${plan.id}`);
+        throw new VerifyFailed(new Error('plan-mismatch'));
+      }
       done(res.plan);
     } catch (e: any) {
       // 在 Apple 的付款表單上按取消不是錯誤，不要跳視窗罵他
@@ -450,7 +466,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
         {trial ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md,
             backgroundColor: t.goldSoft, borderRadius: radius.lg, padding: space.md }}>
-            <Ionicons size={18} color={t.warning} />
+            <Ionicons name="gift-outline" size={18} color={t.warning} />
             <T variant="small" color={t.warning} style={{ flex: 1, lineHeight: 20 }}>
               {`前 ${trial} 天免費。試用期間可隨時取消。`}
             </T>
