@@ -277,9 +277,12 @@ Google 按字元收費，播一個 5 字的單字和一句 60 字的例句成本
 `entCache.delete()` 只清得掉它自己那一個，`aiChat` 跑在別的實例上只能等自己的快取過期。
 所以 TTL 壓到 10 秒：那個數字就是「剛付完錢的人要等多久才吃得到新額度」。
 
-**訂閱還沒接**，所以現在沒有任何東西會寫 entitlements，每個人都是 free——
-這是正確的預設。接 IAP 時：收據送到 Cloud Functions 驗證，**驗證通過才由後端**
-寫 `entitlements/{uid} = { plan, expiresAt }`。`profile.plan` 永遠只拿來顯示畫面。
+**iOS 的訂閱已經接上**（`expo-iap` ＋ `verifyPurchase`）：收據送到 Cloud Functions，
+用 App Store Server API 查證過**才由後端**寫 `entitlements/{uid} = { plan, expiresAt }`。
+`profile.plan` 永遠只拿來顯示畫面。Android 還沒接，那邊目前每個人都是 free。
+
+`verifyPurchase` 擋匿名帳號：訂閱綁在訪客 uid 上，換一台手機就沒了。
+所以**審查員要測購買必須先綁定帳號**，送審備註要寫這件事。
 
 ## 中文排版：JSX 的換行會變成空格
 

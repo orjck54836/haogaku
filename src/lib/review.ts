@@ -86,7 +86,7 @@ async function openNativeReview(): Promise<void> {
       return;
     }
   } catch { /* 往下退回商店頁 */ }
-  // storeUrl() 要 app.config.ts 裡的 appStoreUrl，還沒上架就是 null
+  // storeUrl() 讀的是 app.config.ts 裡的 appStoreUrl；沒填就是 null，那就當作沒發生
   const url = SR.storeUrl();
   if (url) Linking.openURL(url).catch(() => {});
 }

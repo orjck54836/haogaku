@@ -35,9 +35,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       // 沒有這段，iOS 會在開啟相簿的瞬間直接閃退（而且審查也會退件）
       NSPhotoLibraryUsageDescription: '皓學日語需要讀取相簿，讓你挑一張照片當大頭照。',
     },
-    // 上架後把 App Store ID 填進來。expo-store-review 在原生評分視窗叫不出來時
-    // （例如系統已達次數上限）會用它退回商店頁；沒填就只是不退回，不會壞掉：
-    // appStoreUrl: 'https://apps.apple.com/tw/app/id0000000000',
+    // expo-store-review 在原生評分視窗叫不出來時（例如 iOS 一年三次的上限已滿）
+    // 會用這個網址退回商店頁。id 和 eas.json 的 ascAppId 是同一個。
+    appStoreUrl: 'https://apps.apple.com/tw/app/id6830791694',
   },
   android: {
     ...config.android,

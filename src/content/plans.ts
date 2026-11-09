@@ -69,15 +69,12 @@ import type { IconName } from '../ui';
  * 真正的額度在後端（functions/src/index.ts 的 PLAN_ALLOWANCE），這裡只負責顯示。
  * 兩邊的數字要一起改，不然畫面會承諾後端不給的東西。
  *
- * 這裡的數字是**依單價推的估算**，不是實際帳單。上架前拿真實的
- * Firebase 和 Google Cloud 帳單回來校正一次，特別是語音那一欄。
+ * ## 解鎖是誰說了算
  *
- * ## 還沒做的事
- *
- * 這個檔案只定義方案和畫面要顯示什麼。**真正的解鎖還沒接**：
- * 要接 App Store / Google Play 的訂閱，並且**在 Cloud Functions 驗證收據**
- * 之後才能放寬 functions/src/index.ts 的 LIMITS。
- * 絕對不能讓前端的 profile.plan 直接決定額度——那等於改個 client 就免費升級。
+ * iOS 的訂閱已經接上（expo-iap ＋ Cloud Functions 的 verifyPurchase）。
+ * 這個檔案**不決定任何人的方案**，只定義畫面要顯示什麼：
+ * 收據由後端跟 Apple 查證後寫 entitlements/{uid}，額度一律由後端讀那一筆決定。
+ * 前端的 profile.plan 永遠只是顯示用的影子——讓它決定額度等於改個 client 就免費升級。
  */
 
 export type PlanId = 'free' | 'plus' | 'pro';
