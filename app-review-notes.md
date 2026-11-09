@@ -28,7 +28,8 @@ To test the subscription:
   stored only on the device and a subscription attached to it would be lost.
   Receipts are verified server-side with the App Store Server API before any
   entitlement is granted.
-  "還原購買" (Restore Purchases) is at the bottom of the purchase screen.
+  "還原購買" (Restore Purchases) is at the bottom of the purchase screen. It is always
+  shown there, even if the store products cannot be loaded at that moment.
 
 Only monthly plans are on sale in this version. The yearly tiles are shown as
 "日後推出" (coming later) and are intentionally not tappable.

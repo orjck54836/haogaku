@@ -473,7 +473,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setResume: (lessonId, step) => withProgress(p => ({ ...p, resume: { lessonId, step } })),
     clearResume: () => withProgress(p => ({ ...p, resume: null })),
     recordChat: () => withProgress(p => ({ ...p, chats: p.chats + 1 })),
-    setAiRemaining: n => withProgress(p => ({ ...p, aiRemaining: n })),
+    // 後端回來的剩餘次數也要記下「這是哪一天的」：跨午夜的 timer 靠 quotaDay 判斷
+    // 該不該重讀，而冷啟動時 refreshQuota 要是失敗了（離線），它會一直是空字串，
+    // 之後就算靠這條路把數字補上，午夜那一刻也不會再對一次
+    setAiRemaining: n => { quotaDay.current = taipeiDay(); withProgress(p => ({ ...p, aiRemaining: n })); },
     setReview: r => withProgress(p => ({ ...p, review: { ...p.review, ...r } })),
     saveReport: (scenarioId, report, lessonId) => {
       const uid = uidRef.current;

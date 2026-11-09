@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Pressable, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Sheet, T, Card, Button, Pill, SectionTitle, Rule } from '../ui';
@@ -8,6 +8,7 @@ import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
 import { plans, planById, freeForever, YEARLY_AVAILABLE, IAP_AVAILABLE, Plan, PlanId } from '../content/plans';
 import { topicPhotos } from '../ui/images';
+import { iapSupported, fetchPrices } from '../lib/iap';
 import { StackProps } from '../navigation';
 
 /**
@@ -46,6 +47,34 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
   // 交給購買頁去講——擠在比較表裡會把它們壓掉，而那正是審查在看的東西。
   // 年繳還沒開（見 plans.ts 的 YEARLY_AVAILABLE），一律帶月繳過去。
   const subscribe = (p: Plan) => navigation.navigate('Purchase', { planId: p.id, cycle: 'monthly' });
+
+  /**
+   * 比較表上的價錢也要用商店的。
+   *
+   * `plans.ts` 的 NT$150／NT$350 是我們自己寫的台幣定價，別的地區看到的是當地幣別
+   * 和當地價格。這一頁寫 NT$350、點進購買頁卻變成另一個幣別，對使用者是前後不一，
+   * 對審查就是「價格標示和實際收費不符」。
+   *
+   * **問不到就安靜退回 plans.ts 的數字**（Expo Go、離線、商品還沒核准）：
+   * 這一頁只是比較，沒有付款動作，為了價錢讓整頁空著不划算。
+   * 在 effect 裡問、存進 state——iap.ts 要載原生模組，在 render 裡丟錯是整頁白掉。
+   */
+  const [storePrices, setStorePrices] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!IAP_AVAILABLE || !iapSupported()) return;
+      const skus = plans.map(p => p.productId?.monthly).filter((s): s is string => !!s);
+      if (!skus.length) return;
+      try {
+        const list = await fetchPrices(skus);
+        if (alive) setStorePrices(Object.fromEntries(list.map(x => [x.productId, x.price])));
+      } catch { /* 用 plans.ts 的台幣定價當備案 */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const priceOf = (p: Plan) =>
+    (p.productId && storePrices[p.productId.monthly]) || `NT$${p.monthly}`;
 
   return (
     <Screen shell padded={false}>
@@ -122,7 +151,7 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
 
         <View style={{ gap: space.lg, marginTop: space.xl }}>
           {plans.map(p => (
-            <PlanCard key={p.id} plan={p} current={p.id === d.profile.plan}
+            <PlanCard key={p.id} plan={p} current={p.id === d.profile.plan} priceText={priceOf(p)}
               /* 已經在用的方案不給再買一次：StoreKit 會把它當重複訂閱擋下來，
                  而使用者看到的只是一顆按了沒反應的按鈕 */
               onPress={p.monthly && IAP_AVAILABLE && p.id !== d.profile.plan ? () => subscribe(p) : undefined} />
@@ -172,8 +201,10 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
   );
 }
 
-function PlanCard({ plan, current, onPress }: {
+function PlanCard({ plan, current, onPress, priceText }: {
   plan: Plan; current: boolean; onPress?: () => void;
+  /** 商店回的售價，問不到時是 plans.ts 的台幣定價（見 priceOf） */
+  priceText: string;
 }) {
   const t = useTheme();
   const free = plan.monthly === 0;
@@ -208,9 +239,12 @@ function PlanCard({ plan, current, onPress }: {
             {free ? (
               <T style={{ fontSize: 22, fontWeight: '800', letterSpacing: -0.6 }} color="#FFFFFF">免費</T>
             ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2 }}>
-                <T variant="caption" color="rgba(255,255,255,0.75)">NT$</T>
-                <T style={{ fontSize: 26, fontWeight: '800', letterSpacing: -1 }} color="#FFFFFF">{plan.monthly}</T>
+              /* 幣別和位數都是商店決定的（"NT$350"、"US$11.99"），所以整串一起印，
+                 不要把 "NT$" 拆成固定的前綴——那只對台幣是對的。
+                 numberOfLines 擋住長幣別字串把方案名擠成直排 */
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2, flexShrink: 1 }}>
+                <T style={{ fontSize: 24, fontWeight: '800', letterSpacing: -1 }} color="#FFFFFF"
+                  numberOfLines={1}>{priceText}</T>
                 <T variant="caption" color="rgba(255,255,255,0.75)">/月</T>
               </View>
             )}

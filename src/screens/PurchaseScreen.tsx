@@ -95,6 +95,16 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
    */
   const [storePrice, setStorePrice] = useState<string | null>(null);
   const [canBuy, setCanBuy] = useState<boolean | null>(null);
+  /**
+   * 這台手機有沒有 StoreKit，**和「現在買不買得到」是兩件事**。
+   *
+   * 「還原購買」要跟著這個值出現，不能跟著 `canBuy`：商品還沒在 ASC 核准、
+   * 或查價那一刻剛好離線時 `canBuy` 是 false，整個購買區會換成一段說明——
+   * 要是還原入口也跟著消失，一個已經付過錢的人就沒有任何自助的路。
+   * 訂閱型 App 少了還原入口本身就是退件理由（而且送審備註裡才剛跟審查員說
+   * 「還原購買在購買頁最下面」）。
+   */
+  const [supported, setSupported] = useState(false);
 
   /**
    * 已經在用這個方案：按鈕要鎖住，不是讓他按了被 StoreKit 擋。
@@ -134,7 +144,10 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!IAP_AVAILABLE || !sku || !iapSupported()) {
+      // 原生模組在不在是「還原購買」唯一的前提，和查不查得到價錢無關
+      const hasStoreKit = IAP_AVAILABLE && iapSupported();
+      if (alive) setSupported(hasStoreKit);
+      if (!hasStoreKit || !sku) {
         if (alive) { setCanBuy(false); setStorePrice(''); }
         return;
       }
@@ -195,6 +208,26 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       [{ text: '知道了', onPress: () => navigation.goBack() }]);
   }
 
+  /**
+   * Apple 成交了，但後端查到的方案**不是他剛買的那個**，也沒有排程。
+   *
+   * 走到這裡的是「訂閱狀態還沒反映出這筆新交易」：`res.plan` 和 `nextPlan` 都還是
+   * 舊方案，補救問一次也一樣。**絕對不能丟給 `done()`**——那句「標準方案已經開通」
+   * 對一個剛按下高級方案的人是錯的，他會收起手機以為買到了，下次打開才發現沒有。
+   *
+   * 但顯示值還是要跟上後端：他現在真的就是這個方案（多半是本來就有的那個），
+   * 停在免費版的話連自己原本有什麼都看不到。
+   */
+  function mismatch(res: VerifyResult) {
+    d.setProfile({ plan: res.plan });
+    void d.refreshPlan().then(() => d.refreshQuota()).catch(() => {});
+    track('purchase_mismatch', { plan: plan.id, got: res.plan });
+    Alert.alert('付款完成了，但還沒開通',
+      `你的付款已經送出，但 Apple 目前回報的還是${planById(res.plan).name}。`
+      + '不要重複購買——通常過幾分鐘就會生效，重開 App 或按「還原購買」會自動開通。',
+      [{ text: '診斷紀錄', onPress: showLog }, { text: '知道了', style: 'cancel' }]);
+  }
+
   async function purchase() {
     if (!sku || owned) return;
     // 訪客帳號換一台手機就沒了，訂閱綁在上面等於買了會不見。後端也會再擋一次
@@ -205,9 +238,11 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       return;
     }
     setBusy(true);
-    // 漏斗的最後一步：這裡和實際成交的差距就是流失
-    track('purchase_tap', { plan: plan.id, cycle, price: total });
     try {
+      // 漏斗的最後一步：這裡和實際成交的差距就是流失。
+      // **一定要在 try 裡面**：放在 setBusy(true) 和 try 之間的話，這行同步丟錯
+      // （佇列、AsyncStorage）就跳過了 finally，按鈕永遠停在「處理中」
+      track('purchase_tap', { plan: plan.id, cycle, price: total });
       const res = await purchaseSubscription(sku, plan.id);
       if (!res.active) { ilog('後端說這不是有效訂閱'); throw new Error('verify-inactive'); }
       // Apple 把變更排到下一期時，回來的方案是**舊的那個**，不是他剛買的
@@ -288,6 +323,8 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       if (saved?.active) {
         // 補救撿回來的也可能是「排程中」那一種：方案還是舊的、下一期才換
         if (saved.plan !== plan.id && saved.nextPlan === plan.id) { scheduled(saved); return; }
+        // 撿回來的不是他買的那個，也沒排程：不能說「開通了」（見 mismatch）
+        if (saved.plan !== plan.id) { mismatch(saved); return; }
         done(saved.plan);
         return;
       }
@@ -370,6 +407,14 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       }
     } catch (e) {
       console.warn('restore failed', e);
+      /**
+       * 後端的最終答案在這裡也要講清楚，**不要都說成「稍後再試」**。
+       *
+       * 最常見的是 `permission-denied`（這組 Apple ID 的訂閱綁在他另一個帳號上）：
+       * 那個錯重試一百次都一樣，而「還原購買」正是他會一直按的那顆按鈕。
+       * 購買流程已經為這幾個碼寫好了說明，還原共用同一份。
+       */
+      if (e instanceof VerifyFailed && e.final) { finalFail(e); return; }
       Alert.alert('還原失敗', e instanceof VerifyFailed
         ? '找得到你的訂閱，但確認的時候出了問題。稍後再試一次，或聯絡我們。'
         : '請確認網路之後再試一次。');
@@ -483,7 +528,10 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
 
           **不要在買不到的時候留一顆按得下去的訂閱鈕。** 有完整的訂閱介面、
           按下去卻跳一個錯誤，審查會當成未完成的功能退件（Guideline 2.1）。
-          「還原購買」跟著一起收起來——沒有東西可買就沒有東西可還原。
+
+          但「還原購買」**不跟著收**（見 supported 的說明）：買不到不等於沒買過，
+          而已經付過錢的人就只有這一條自助的路。它排在這整塊的後面，
+          不管上面長成哪一種樣子都在同一個位置。
         */}
         {/* 排程中的變更：講清楚現在是什麼、什麼時候換、以及「再按一次沒有用」 */}
         {pending ? (
@@ -520,11 +568,6 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
             <T variant="caption" color={t.sub}
               style={{ textAlign: 'center', marginTop: space.sm }}>{stage}</T>
           ) : null}
-
-          <Pressable accessibilityRole="button" onPress={busy ? undefined : restore} hitSlop={10}
-            style={({ pressed }) => ({ alignSelf: 'center', paddingVertical: space.md, opacity: pressed ? 0.6 : 1 })}>
-            <T variant="small" color={t.primary} style={{ fontWeight: '600' }}>還原購買</T>
-          </Pressable>
         </> : (
           <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center',
             backgroundColor: t.surface2, borderRadius: radius.lg, padding: space.lg, marginTop: space.xl }}>
@@ -534,6 +577,21 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
             </T>
           </View>
         )}
+
+        {/*
+          「還原購買」：只要這台手機有 StoreKit 就一定看得到。
+
+          換手機、重裝、驗證那一步剛好斷線的人靠這一顆把方案找回來，
+          而那幾種情況都可能同時伴隨「查不到商品」。綁在 canBuy 上等於
+          在最需要它的時候把它藏起來。
+        */}
+        {supported ? (
+          <Pressable accessibilityRole="button" onPress={busy ? undefined : restore} hitSlop={10}
+            style={({ pressed }) => ({ alignSelf: 'center', paddingVertical: space.md,
+              marginTop: canBuy ? 0 : space.sm, opacity: pressed ? 0.6 : 1 })}>
+            <T variant="small" color={t.primary} style={{ fontWeight: '600' }}>還原購買</T>
+          </Pressable>
+        ) : null}
 
         {/* 4. 服務條款 ＋ 5. 隱私權政策。審查要求「可以點而且真的打得開」 */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.sm, marginTop: space.sm }}>
