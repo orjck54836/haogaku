@@ -4,6 +4,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import * as Crypto from 'expo-crypto';
 import { httpsCallable } from 'firebase/functions';
 import { auth, functions } from './firebase';
+import { stripFurigana } from './furigana';
 
 export type Voice = 'female' | 'male';
 
@@ -119,21 +120,11 @@ async function writeCache(file: File, base64: string) {
 }
 
 /**
- * 把括號裡的注音讀法拿掉再唸。
- *
- * 課程文字會寫成「陳(ちん)さん」讓使用者看得到漢字怎麼唸，但 TTS 會把括號裡的
- * 假名當成另一個詞，變成「ちん ちん さん」——同一個字唸兩次。
- *
- * 只拿掉「**漢字後面、括號裡全是假名**」的那一種，因為那才是注音。
- * 不限定成「括號內是假名就刪」：像「(はい)」這種本身就是內容的括號會被誤刪。
- * 中文的括號註解（「（文法錯誤）」）也因此留著——它們出現在 sub／zh 這些
- * 本來就不會送進 TTS 的欄位，但規則寫窄一點，之後多接一個欄位也不會出事。
- *
- * 做在這裡而不是去清 lessons.json：讀物、單字本、AI 補的例句都可能帶注音，
- * 而且畫面上**要**看得到那個假名，只有唸的時候不要。
+ * 唸之前也要清一次注音：TTS 會把括號裡的假名當成另一個詞，
+ * 「陳(ちん)さん」聽起來是「ちん ちん さん」。和畫面共用 stripFurigana，
+ * 兩邊的結果一致，快取 key 才不會因為「看到的」和「唸到的」不同而各存一份。
  */
-const FURIGANA = /([\u3400-\u4dbf\u4e00-\u9fff])[(（][\u3040-\u309f\u30a0-\u30ff ・ー]+[)）]/g;
-export const forSpeech = (text: string) => text.replace(FURIGANA, '$1');
+const forSpeech = stripFurigana;
 
 /** 快取檔小到不可能是一段 MP3，就是上面那種寫壞的半成品 */
 const MIN_AUDIO_BYTES = 256;
