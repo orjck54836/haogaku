@@ -96,11 +96,12 @@ export default function QuotaScreen({ navigation }: StackProps<'Quota'>) {
         <Line>
           <B>朗讀算的是字數，不是次數</B>，而且是<B>每個月</B>補一次，不是每天。唸一個單字和唸一整句話的成本差很多，用字數算對你比較公平。一句日文大約 {CHARS_PER_SENTENCE} 個字。
         </Line>
-        <Row label={`${free.name}`} value={`每月約 ${sentencesOf(free.ttsCharsPerMonth)} 句`} />
+        <Row label="還沒登入（訪客）" value={`每月約 ${sentencesOf(guestLimits.ttsCharsPerMonth)} 句`} />
+        <Row label={`${free.name}（登入後）`} value={`每月約 ${sentencesOf(free.ttsCharsPerMonth)} 句`} />
         <Row label={plus.name} value={`每月約 ${sentencesOf(plus.ttsCharsPerMonth)} 句`} />
         <Row label={pro.name} value={`每月約 ${sentencesOf(pro.ttsCharsPerMonth)} 句`} last />
         <Note>
-          {'還沒登入的訪客用的是手機內建的日文聲音。登入之後才有我們合成的自然語音。'}
+          {'所有方案的聲音完全一樣，付費買的是句數，不是比較好聽的聲音。'}
         </Note>
         <Line>
           <B>聽過的句子存在手機裡，重複播放不算。</B>所以實際上能聽的比上面的數字更多。

@@ -59,13 +59,19 @@ type Allowance = {
    */
   reportsPerDay: number;
   ttsCharsPerMonth: number;
-  hd: boolean;
 };
 
+/**
+ * **音色不分方案。** 以前免費和訪客走 Neural2、付費走 Chirp3-HD，省下一半的語音成本，
+ * 但那等於把「聽起來自然」做成付費功能——付費方案賣的是**用量**，不是把免費版的
+ * 品質調差。而且差別只在音色，使用者聽不出原因，只會覺得這個 app 的語音很機械。
+ *
+ * 代價是免費版的語音成本從 NT$1.5 變成 NT$2.8，用滿的免費單人月虧 NT$5.2 → NT$6.6。
+ */
 const PLAN_ALLOWANCE: Record<PlanId, Allowance> = {
-  free: { aiPerDay: 5, reportsPerDay: 1, ttsCharsPerMonth: 3_000, hd: false },
-  plus: { aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000, hd: true },
-  pro: { aiPerDay: 150, reportsPerDay: 20, ttsCharsPerMonth: 100_000, hd: true },
+  free: { aiPerDay: 5, reportsPerDay: 1, ttsCharsPerMonth: 3_000 },
+  plus: { aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000 },
+  pro: { aiPerDay: 150, reportsPerDay: 20, ttsCharsPerMonth: 100_000 },
 };
 /**
  * 還沒綁定帳號的訪客額度。
@@ -78,9 +84,11 @@ const PLAN_ALLOWANCE: Record<PlanId, Allowance> = {
  * 分析和語音直接給 0：分析成本是回覆的兩倍，語音是成本大宗，
  * 兩個都不是登入前需要體驗的東西。單一假 uid 一個月的成本上限因此壓到約 NT$0.6。
  *
- * 語音 0 不會變成錯誤：aiSpeak 回 audio: null，手機端自己換成內建語音（見 src/lib/speech.ts）。
+ * 語音留 500 字（約 17 句）。原本給 0，但**審查員預設也是訪客**：他點開課程聽到的
+ * 會是手機內建的機械音，很容易判斷成「這個 app 的語音品質很差」，而我們真正的語音
+ * 他一句都沒聽到。500 字的成本上限是每個假 uid 約 NT$0.25/月。
  */
-const GUEST_ALLOWANCE: Allowance = { aiPerDay: 1, reportsPerDay: 0, ttsCharsPerMonth: 0, hd: false };
+const GUEST_ALLOWANCE: Allowance = { aiPerDay: 1, reportsPerDay: 0, ttsCharsPerMonth: 500 };
 
 /**
  * 使用者目前的方案。
@@ -245,11 +253,11 @@ function recordAi(uid: string, kind: CostKind, model: string, u: { inTok: number
   }, { merge: true }).catch(e => console.warn('recordAi failed', e));
 }
 
-function recordTts(uid: string, chars: number, hd: boolean) {
+function recordTts(uid: string, chars: number) {
   costRef(uid).set({
     uid, date: taipeiDate(), updatedAt: Date.now(),
-    // HD 和 Neural2 單價差一倍，分開記才對得上帳單
-    tts: { [hd ? 'hd' : 'std']: FieldValue.increment(chars) },
+    // 欄位仍叫 hd：現在所有人都是 HD，但舊紀錄裡還有 std 的字數，合併會對不上帳單
+    tts: { hd: FieldValue.increment(chars) },
   }, { merge: true }).catch(e => console.warn('recordTts failed', e));
 }
 
@@ -389,9 +397,9 @@ correction 有內容時格式為 {"corrected":"更自然的日文","explanation"
   if (req.data?.voice === 'female' || req.data?.voice === 'male') {
     try {
       if (await useTtsChars(uid, reply.length, a.ttsCharsPerMonth)) {
-        audio = (await synthesize(reply, req.data.voice, clampRate(req.data?.rate), a.hd)) ?? undefined;
+        audio = (await synthesize(reply, req.data.voice, clampRate(req.data?.rate))) ?? undefined;
         // 產出來才記：全部音色都失敗時沒有合成成功，Google 也不會計費
-        if (audio) recordTts(uid, reply.length, a.hd);
+        if (audio) recordTts(uid, reply.length);
         // 合成失敗就把剛才預扣的字元還回去，否則使用者沒聽到聲音卻被扣額度，
         // 而且扣到見底之後會變成每一句都用手機內建語音（聽起來就像「換了一個人」）
         else await useTtsChars(uid, -reply.length, a.ttsCharsPerMonth);
@@ -455,22 +463,14 @@ improvements 最多 3 項，keyPhrases 3〜5 句。`;
 // ---------- 自然語音（Google Cloud Text-to-Speech） ----------
 
 /**
- * 音色。
+ * 音色。**所有方案共用同一條鏈**，包含訪客。
  *
- * Chirp3-HD 最自然，但也最貴（約 US$30 / 1M 字元）；Neural2 約一半價，
- * 品質對初學者來說夠用。所以 **HD 留給付費方案**，免費和訪客從 Neural2 開始，
- * 這一條就把免費用戶的語音成本砍半。
- * 陣列是 fallback 鏈：前面的音色失敗（區域不支援、服務異常）就往後試。
+ * 陣列是 fallback：Chirp3-HD（約 US$30 / 1M 字元，最自然）失敗——區域不支援、
+ * 服務異常——才往後退到 Neural2、Wavenet。退階是故障時的保險，不是方案差別。
  */
 const VOICES = {
-  hd: {
-    female: ['ja-JP-Chirp3-HD-Aoede', 'ja-JP-Neural2-B', 'ja-JP-Wavenet-A'],
-    male: ['ja-JP-Chirp3-HD-Charon', 'ja-JP-Neural2-C', 'ja-JP-Wavenet-C'],
-  },
-  std: {
-    female: ['ja-JP-Neural2-B', 'ja-JP-Wavenet-A', 'ja-JP-Standard-A'],
-    male: ['ja-JP-Neural2-C', 'ja-JP-Wavenet-C', 'ja-JP-Standard-C'],
-  },
+  female: ['ja-JP-Chirp3-HD-Aoede', 'ja-JP-Neural2-B', 'ja-JP-Wavenet-A'],
+  male: ['ja-JP-Chirp3-HD-Charon', 'ja-JP-Neural2-C', 'ja-JP-Wavenet-C'],
 };
 const workingVoice: Partial<Record<string, string>> = {};
 let ttsClient: TextToSpeechClient | null = null;
@@ -498,11 +498,10 @@ async function useTtsChars(uid: string, chars: number, limit: number): Promise<b
 const clampRate = (v: unknown) => Math.max(0.7, Math.min(1.3, Number(v) || 1));
 
 /** 產生日文語音（base64 MP3），依序嘗試可用的聲音；全部失敗回傳 null */
-async function synthesize(text: string, voice: 'female' | 'male', rate: number, hd: boolean): Promise<string | null> {
+async function synthesize(text: string, voice: 'female' | 'male', rate: number): Promise<string | null> {
   ttsClient ??= new TextToSpeechClient();
-  const chain = VOICES[hd ? 'hd' : 'std'][voice];
-  const key = `${hd ? 'hd' : 'std'}-${voice}`;
-  const known = workingVoice[key];
+  const chain = VOICES[voice];
+  const known = workingVoice[voice];
   const candidates = known ? [known, ...chain.filter(v => v !== known)] : chain;
   for (const name of candidates) {
     try {
@@ -512,7 +511,7 @@ async function synthesize(text: string, voice: 'female' | 'male', rate: number, 
         audioConfig: { audioEncoding: 'MP3', speakingRate: rate },
       });
       if (!res.audioContent) continue;
-      workingVoice[key] = name;
+      workingVoice[voice] = name;
       return typeof res.audioContent === 'string' ? res.audioContent : Buffer.from(res.audioContent).toString('base64');
     } catch (e) {
       console.warn(`TTS voice ${name} failed`, e);
@@ -529,12 +528,12 @@ export const aiSpeak = onCall({ region: 'asia-east1', timeoutSeconds: 30, memory
 
   // 額度不夠就回傳沒有音檔，手機端自己改用內建語音（見 src/lib/speech.ts）
   if (!(await useTtsChars(uid, text.length, a.ttsCharsPerMonth))) return { audio: null, quota: 'exhausted' };
-  const audio = await synthesize(text, voice, clampRate(req.data?.rate), a.hd);
+  const audio = await synthesize(text, voice, clampRate(req.data?.rate));
   if (!audio) {
     await useTtsChars(uid, -text.length, a.ttsCharsPerMonth);   // 沒合成出來就不該扣額度
     throw new HttpsError('unavailable', '語音暫時無法產生');
   }
-  recordTts(uid, text.length, a.hd);
+  recordTts(uid, text.length);
   return { audio };
 });
 

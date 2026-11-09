@@ -19,6 +19,7 @@ import type { IconName } from '../ui';
  * 一份會話分析是 **NT$0.0425**（input 吃整份逐字稿，output 上限 2000），**是一則回覆的兩倍**。
  *
  * **語音仍然是最大宗**。Chirp3-HD 按字元計價（約 US$30 / 1M 字元），
+ * 而且**所有方案共用同一個音色**，包含訪客——音質不是付費差異，付費買的是用量。
  * 一句日文約 30 字 ≈ NT$0.029，和一則 AI 回覆差不多，但語音額度給得比 AI 多一個量級。
  * （手機會把播過的音檔存起來，重播不計，所以實際用量比上限低很多。）
  *
@@ -32,19 +33,19 @@ import type { IconName } from '../ui';
  * ## 用好用滿的真實損益（每月，匯率 NT$31.5）
  *
  *   方案   AI 文字   語音              成本    入袋    利潤
- *   訪客   0.6      —（內建語音）      0.6     0       -0.6
- *   免費   3.7      3k 字 Neural2     5.2     0       -5.2
+ *   訪客   0.6      500 字 HD         1.1     0       -1.1
+ *   免費   3.7      3k 字 HD          6.6     0       -6.6
  *   標準   36.9     40k 字 HD         74.7    100     +25.3
  *   高級版   92.1     100k 字 HD        186.6   233.3   +46.7
  *
  * 付費方案用好用滿還是賺，但毛利是 **25%／20%**，不是原本寫的 65%。
  * 免費和訪客用滿一定虧——這是獲客成本，不是錯誤，但要知道它多少：
- * **1 個標準訂戶的淨利養得起 4.8 個「天天用滿」的免費使用者。**
+ * **1 個標準訂戶的淨利養得起 3.8 個「天天用滿」的免費使用者**（音色統一之後從 4.8 降下來）。
  *
  * 免費額度刻意壓到「嘗得到味道但練不完一場」：AI 5 次／天約是半場會話，
  * 語音 3k 字／月約 100 句。原本給 10 次＋8k 字，單人虧 NT$10.2，
  * 打平要 40% 的轉換率——那個數字在實務上不存在，等於用免費方案補貼掉整個營收。
- * 砍半之後單人虧 NT$5.2，打平的轉換率降到 **約 20%**，而且額度不夠用這件事
+ * 砍半之後單人虧 NT$5.2（音色統一到 HD 之後是 NT$6.6），打平的轉換率約 **20〜26%**，而且額度不夠用這件事
  * 本身就是升級的理由；付費方案一個字都沒動，落差因此變大。
  *
  * 常駐實例（functions 的 minInstances: 1）約 NT$300〜600/月是固定成本，
@@ -106,8 +107,6 @@ export type Plan = {
    * 額度要和成本同一個單位，最壞情況才守得住。
    */
   ttsCharsPerMonth: number;
-  /** 高品質音色（Chirp3-HD）。免費方案用 Neural2，成本約一半 */
-  hdVoice?: boolean;
   /** 這個方案多出來的東西，條列在卡片上 */
   perks: string[];
   icon: IconName;
@@ -154,12 +153,12 @@ export const plans: Plan[] = [
     id: 'plus', name: '標準版', kana: 'スタンダード', kanji: '標準',
     tagline: '適合每天輕鬆練習對話的人來增加語感',
     monthly: 150, yearly: 1280,
-    aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000, hdVoice: true,
+    aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000,
     productId: { monthly: 'haogaku.japanese.plus.monthly', yearly: 'haogaku.japanese.plus.yearly' },
     icon: 'flash-outline',
     perks: [
       '每天 60 次 AI（約 4〜6 場完整會話）',
-      '每月約 1,330 句朗讀，用最自然的 HD 音色',
+      '每月約 1,330 句朗讀',
       '會話分析保留最近 20 份',
     ],
   },
@@ -167,12 +166,12 @@ export const plans: Plan[] = [
     id: 'pro', name: '高級版', kana: 'プロ', kanji: '極',
     tagline: '適合想讓口說語感突飛猛進，提升自己的人',
     monthly: 350, yearly: 2930,
-    aiPerDay: 150, reportsPerDay: 20, ttsCharsPerMonth: 100_000, hdVoice: true,
+    aiPerDay: 150, reportsPerDay: 20, ttsCharsPerMonth: 100_000,
     productId: { monthly: 'haogaku.japanese.pro.monthly', yearly: 'haogaku.japanese.pro.yearly' },
     icon: 'infinite-outline',
     perks: [
       '每天 150 次 AI（約 12 場完整會話）',
-      '每月約 3,330 句朗讀，用最自然的 HD 音色',
+      '每月約 3,330 句朗讀',
       '會話分析保留完整歷史（200 份）',
     ],
   },
@@ -225,7 +224,7 @@ export const IAP_AVAILABLE = true;
  *
  * 真正的數字在 functions/src/index.ts 的 GUEST_ALLOWANCE，這裡只負責顯示，要一起改。
  */
-export const guestLimits = { aiPerDay: 1, reportsPerDay: 0, ttsCharsPerMonth: 0 };
+export const guestLimits = { aiPerDay: 1, reportsPerDay: 0, ttsCharsPerMonth: 500 };
 
 /**
  * 一句日文的平均字數，把「字數」換算成使用者有感的「句數」。
