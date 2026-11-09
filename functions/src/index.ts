@@ -904,6 +904,8 @@ export const verifyPurchase = onCall(
     }
     const transactionId = str(req.data?.transactionId, 64, 'transactionId');
     if (!transactionId) throw new HttpsError('invalid-argument', '缺少 transactionId');
+    /** 'purchase' / 'restore' 代表這是使用者主動按出來的，背景對帳不帶（見下面的 suppress） */
+    const intent = str(req.data?.intent, 16, 'intent');
 
     const { res, env } = await lookupSubscription(transactionId);
 
@@ -959,6 +961,29 @@ export const verifyPurchase = onCall(
     }
 
     /**
+     * 測試重置忽略掉的那一期（見 `resetPlan`）。
+     *
+     * 取消訂閱到當期結束前 Apple 都還是回 ACTIVE，所以這裡不擋的話，
+     * 重置完下一次冷啟動就把同一份資格寫回去。
+     *
+     * **只擋背景對帳（沒有 intent 的那種）。** 使用者自己按了購買或還原，
+     * 就是要這份資格，再擋著就是「Apple 說成功、我們說沒有」，而購買流程
+     * 會一直等一個永遠不會變的答案——實測就是按鈕轉不停。
+     *
+     * 為什麼不靠時間或 id 自己判斷：舊的那一期還在跑的時候重新訂閱，Apple
+     * 當成同一個訂閱群組裡的變更，`originalTransactionId` 一樣、到期日也沒有
+     * 往後跳，從資料上分不出「殘留的那一期」和「他剛剛又買了一次」。
+     * 到期日往後跳（續訂、或這一期真的結束後重買）則是另一個解除條件，
+     * 讓背景對帳自己也會收斂回正常狀態。
+     */
+    const sup = prevData?.suppress as { tx?: string; until?: number } | undefined;
+    if (!intent && sup?.tx && sup.tx === best.originalTransactionId
+      && best.expiresAt <= Number(sup.until) && Date.now() < Number(sup.until)) {
+      console.log(`verifyPurchase ${uid}: 跳過（測試重置忽略 ${sup.tx} 到 ${new Date(Number(sup.until)).toISOString()}）`);
+      return { plan: 'free' as PlanId, expiresAt: 0, nextPlan: 'free' as PlanId, active: false };
+    }
+
+    /**
      * 同一筆訂閱同一時間只餵一個帳號，但**可以換人**。
      *
      * 訂閱在 Apple 那邊屬於 Apple ID，不屬於我們的帳號，所以同一組 Apple ID
@@ -1001,6 +1026,10 @@ export const verifyPurchase = onCall(
     }
 
     await entRef.set({
+      // 走到這裡就代表這一期該認了（新的一期，或本來就沒有被忽略）。
+      // 忽略紀錄要一起清掉，留著的話下一次又會比到同一筆、同一個到期日
+      suppress: FieldValue.delete(),
+      testReset: FieldValue.delete(),
       plan: best.plan,
       expiresAt: best.expiresAt,
       // 下一期的方案另外存：畫面要說得出「標準版會在 X 日生效」，額度一律還是看 plan
@@ -1020,5 +1049,104 @@ export const verifyPurchase = onCall(
     console.log(`verifyPurchase ${uid}: ${best.plan} 到 ${new Date(best.expiresAt).toISOString()}`
       + `${best.nextPlan === best.plan ? '' : `，下一期改成 ${best.nextPlan}`} (${env})`);
     return { plan: best.plan, expiresAt: best.expiresAt, nextPlan: best.nextPlan, active: true };
+  },
+);
+
+/**
+ * 把自己的訂閱資格打回免費版，用來重測購買流程。
+ *
+ * 做的事和 `scripts/reset-plan.js` 一樣（刪 entitlement、claim、當天用量），
+ * 差別是不用 gcloud 憑證、不用去 Console 翻 uid——測試時最花時間的其實是這兩件事。
+ *
+ * ## 為什麼需要它
+ *
+ * 訂閱改成可以轉移之後（見 verifyPurchase 的 subscriptionClaims），同一台手機上
+ * **每個新帳號冷啟動都會自動把訂閱接走**，那是刻意的；代價是沒辦法靠換帳號
+ * 測回「剛綁定」的起點。
+ *
+ * ## 只開給沙盒
+ *
+ * 唯一的條件是**現有的 entitlement 來自 Sandbox**（TestFlight 和沙盒測試帳號的交易
+ * 都在那裡，見 lookupSubscription）。兩件事都靠這一條擋住：
+ *
+ *   - 正式付費的人按不到，也打不進來——他的 entitlement 是 Production。
+ *   - 沒有 entitlement 的人一樣拒絕。不擋的話任何免費使用者都能叫這支清掉
+ *     `usage/{uid}`，等於無限次 AI：那正是 resetQuotaOnUpgrade 花了一整段註解
+ *     防的事，別從這裡開個後門回去。
+ *
+ * ## 清完不等於回到免費版
+ *
+ * Apple 那邊的訂閱如果還有效，下一次 syncPlan 問到它就會原封不動把資格寫回來。
+ * 要真的回到起點得先在 iOS 取消沙盒訂閱、等這一期過完（月繳約 5 分鐘一期）。
+ * 判斷「清完到底回去了沒有」交給手機端：它清完會再對一次方案，資格又長回來
+ * 就直接說「Apple 的訂閱還有效」，不要讓人以為這顆按鈕沒作用。
+ */
+export const resetPlan = onCall(
+  { region: 'asia-east1', timeoutSeconds: 30, memory: '256MiB', maxInstances: 5 },
+  async req => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', '請先登入');
+
+    const entRef = db.doc(`entitlements/${uid}`);
+    const ent = await entRef.get();
+    const cur = ent.data();
+    const env = cur?.environment;
+    if (env !== 'Sandbox') {
+      throw new HttpsError('permission-denied',
+        ent.exists ? '這個帳號的訂閱不是沙盒訂閱，不能用測試重置' : '這個帳號沒有可以重置的訂閱資格');
+    }
+
+    // claim 的 id 是 originalTransactionId，拼不出路徑，只能從 uid 反查。
+    // entitlement 刪掉之後也查得到（claim 自己存了 uid），但一起撈完比較不容易漏
+    const claims = await db.collection('subscriptionClaims').where('uid', '==', uid).get();
+
+    /**
+     * **把現在這一期「忽略」掉，而不是只刪資料。**
+     *
+     * 取消訂閱不等於立刻失效：Apple 到當期結束前都還是回 ACTIVE，所以只刪
+     * entitlement 的話，下一次 syncPlan 一問就原封不動長回來——實測就是
+     * 「清掉了，但資格又被接回來」。沙盒月繳雖然只要等約 5 分鐘，但每測一輪
+     * 都要等一次，那顆按鈕就等於沒有用。
+     *
+     * 所以留一筆 free 的 entitlement，記住「這一期不要認」：
+     * 同一個 originalTransactionId、而且到期日沒有往後跳，就當作沒有訂閱。
+     *
+     * 兩個條件都要比，少一個都會壞：
+     *   - **比到期日**，`verifyPurchase` 才擋不到之後的新購買——同一組 Apple ID
+     *     重新訂閱多半沿用同一個 originalTransactionId，只看 id 的話下次買了
+     *     也開不通，剛好把這顆按鈕要支援的那件事弄壞。
+     *   - **比 id**，換一筆訂閱不受影響。
+     *
+     * 這一期真的過完之後 `until` 也過期，整筆忽略自動失效，不會留下髒狀態。
+     */
+    const suppress = cur?.originalTransactionId && Number(cur?.expiresAt) > Date.now()
+      ? { tx: String(cur.originalTransactionId), until: Number(cur.expiresAt) }
+      : null;
+
+    const batch = db.batch();
+    batch.set(entRef, {
+      plan: 'free', expiresAt: 0, nextPlan: 'free', autoRenew: false,
+      // environment 要留著：手機端的「重置成免費版」入口就是看這個欄位，
+      // 刪掉等於重置一次之後入口自己消失，想再測一輪就找不到路
+      environment: 'Sandbox', store: 'apple', testReset: true,
+      suppress: suppress ?? FieldValue.delete(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    claims.forEach(d => batch.delete(d.ref));
+    // 當天的 AI 次數跟著歸零：不然測升級時分不出「resetQuotaOnUpgrade 生效了」
+    // 和「本來就沒用過」。ttsUsage 是按月的，一起清掉才是真正的「剛綁定」
+    batch.delete(db.doc(`usage/${uid}`));
+    batch.delete(db.doc(`ttsUsage/${uid}`));
+    await batch.commit();
+
+    entCache.delete(uid);   // 只清得掉這個實例的，別的實例靠 allowanceOf 的 10 秒 TTL
+
+    console.log(`resetPlan ${uid}: 清掉 entitlement(${cur?.plan}) + claim ${claims.size} 筆`
+      + `${suppress ? `，忽略 ${suppress.tx} 到 ${new Date(suppress.until).toISOString()}` : ''}`);
+    return {
+      ok: true, claims: claims.size, previousPlan: (cur?.plan ?? 'free') as PlanId,
+      /** 這一期被忽略到什麼時候（0 = 沒有要忽略的）。手機端要講得出「幾點之後才是真的」 */
+      suppressedUntil: suppress?.until ?? 0,
+    };
   },
 );

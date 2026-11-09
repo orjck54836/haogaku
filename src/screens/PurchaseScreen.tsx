@@ -11,7 +11,7 @@ import { planById, yearlySaving, yearlyPerMonth, YEARLY_AVAILABLE, IAP_AVAILABLE
 import { topicPhotos } from '../ui/images';
 import { legalLinks } from '../content/links';
 import { track } from '../lib/analytics';
-import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription, recoverPurchase, VerifyFailed, PurchaseScheduled, VerifyResult } from '../lib/iap';
+import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription, recoverPurchase, resetPlanOnServer, VerifyFailed, PurchaseScheduled, VerifyResult } from '../lib/iap';
 import { iapStage, iapLogText, hasIapLog, onIapLog, ilog, errText } from '../lib/iaplog';
 import { useAuth } from '../state/auth';
 import { StackProps } from '../navigation';
@@ -53,6 +53,35 @@ const HEADER_H = space.sm + 44 + 6;
  * 價格以 App Store 回的 displayPrice 為準，問不到才退回 plans.ts 的數字：
  * 別的國家看到的是當地幣別和當地定價，寫死 NT$ 會變成價格標示不實。
  */
+/**
+ * 測試用的入口一律關在這後面。
+ *
+ * **不能用沙盒旗標當條件。** 審查員就是拿沙盒帳號買的，所以他的 entitlement
+ * 也是 Sandbox——靠 `entitlement.sandbox` 擋等於沒擋，那幾個入口會直接印在
+ * 他的購買頁上（條款連結正上方），是 2.2／2.3.1 的退件理由。
+ *
+ * `__DEV__` 在 Metro 跑的 dev build 是 true，在 release build（TestFlight 和
+ * App Store 都算）是 false，而且會被 Metro 搖掉整段，正式包裡連字串都不留。
+ * 代價是 TestFlight 上看不到診斷紀錄，要查購買問題得用 dev build 重現。
+ */
+const DEV_TOOLS = __DEV__;
+
+/**
+ * 到期／生效時間的文字。**一天之內的要連時間一起講。**
+ *
+ * 原本只寫日期，於是「這一期再 3 分鐘就結束」被印成今天的日期——看起來像
+ * 「排到今天卻沒生效」，實際上只是還沒到。沙盒一期約 5 分鐘，測試時每一次
+ * 降級都會撞到；正式環境也有同一個情境（續訂永遠發生在到期前 24 小時內）。
+ */
+function whenText(ms: number): string {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const soon = ms - Date.now() < 24 * 60 * 60 * 1000;
+  return soon
+    ? d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('zh-TW');
+}
+
 export default function PurchaseScreen({ route, navigation }: StackProps<'Purchase'>) {
   const t = useTheme();
   const d = useData();
@@ -106,7 +135,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
    * 按鈕卻還是亮的，等於自己打自己的臉。
    */
   const alreadyScheduled = pending === plan.id;
-  const pendingDate = ent.expiresAt ? new Date(ent.expiresAt).toLocaleDateString('zh-TW') : '';
+  const pendingDate = whenText(ent.expiresAt);
   const yearly = YEARLY_AVAILABLE && cycle === 'yearly';
   const total = yearly ? plan.yearly : plan.monthly;
   const periodLabel = yearly ? '年' : '月';
@@ -172,7 +201,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
   function scheduled(res: VerifyResult) {
     track('purchase_scheduled', { plan: plan.id, from: res.plan });
     void d.refreshPlan().then(() => d.refreshQuota()).catch(() => {});
-    const when = res.expiresAt ? new Date(res.expiresAt).toLocaleDateString('zh-TW') : '這一期結束後';
+    const when = res.expiresAt ? `${whenText(res.expiresAt)} ` : '這一期結束後';
     Alert.alert('已排定變更',
       `Apple 把這次變更排在下一期：${when}起改成${plan.name}，在那之前你還是${planById(res.plan).name}。`
       + '不用重新購買，也不會重複扣款。',
@@ -346,6 +375,73 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
     }
   }
 
+  /**
+   * 一鍵把訂閱狀態打回「剛綁定」的樣子。
+   *
+   * 只有沙盒訂閱看得到也做得到（見後端的 `resetPlan`）：訂閱改成可以轉移之後，
+   * 同一台手機上每個新帳號冷啟動都會自動把訂閱接走，於是沒辦法靠換帳號
+   * 測回免費版的起點——而重測購買流程是現在最常做的事。
+   *
+   * **清完要再對一次方案，用對回來的結果講話。** Apple 那邊的沙盒訂閱如果還有效，
+   * syncPlan 問到它就會把資格原封不動寫回來；那時候說「已回到免費版」是錯的，
+   * 使用者會以為下一步可以直接重買，然後被 StoreKit 擋成「你已經訂閱這個項目」。
+   */
+  async function resetForTest() {
+    setBusy(true);
+    try {
+      const { previousPlan, claims, suppressedUntil } = await resetPlanOnServer();
+      // 這裡的 refreshPlan 會重新跟 Apple 對一次，所以它的答案就是「清完之後到底算什麼」
+      const now = await d.refreshPlan();
+      d.setProfile({ plan: now });
+      void d.refreshQuota().catch(() => {});
+      if (now === 'free') {
+        // 被忽略的那一期什麼時候真的結束，要講出來：在那之前 Apple 仍然認為他有訂閱，
+        // 這時候去 StoreKit 重買會被擋成「你已經訂閱這個項目」，不講他會以為是壞掉
+        const until = suppressedUntil
+          ? `\n\nApple 那邊的訂閱要到 ${new Date(suppressedUntil).toLocaleTimeString('zh-TW')} 才真的結束，`
+            + '在那之前後端會忽略它。要測「重新購買」請等過了那個時間。'
+          : '';
+        Alert.alert('已回到免費版',
+          `清掉了${planById(previousPlan).name}的資格${claims ? `和 ${claims} 筆訂閱綁定` : ''}，今天的 AI 和語音用量也歸零了。`
+          + '現在這個帳號和剛綁定一樣。' + until);
+      } else {
+        Alert.alert('資格又被接回來了',
+          `後端的資料清掉了，但 Apple 那邊的沙盒訂閱還有效，所以對完方案又回到${planById(now).name}。\n\n`
+          + '要真的回到免費版：先到「設定 → App Store → 沙盒帳號 → 管理訂閱」取消，'
+          + '等這一期過完（沙盒月繳約 5 分鐘一期）再按一次。');
+      }
+    } catch (e: any) {
+      const code = String(e?.code ?? '');
+      Alert.alert('重置失敗', code.includes('permission-denied')
+        ? '這個帳號沒有沙盒訂閱資格可以重置。這顆按鈕只對 TestFlight 和沙盒測試帳號有效。'
+        : '請確認網路之後再試一次。');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * 長按價格那一列叫出來的測試入口。
+   *
+   * 有這個是因為「重置成免費版」那一行本身掛在 `entitlement.sandbox` 上，
+   * 而那個旗標要等冷啟動對完方案才有——真正需要重置的時候，常常正是
+   * 資格怪怪的、旗標讀不到的時候，入口剛好不見。這裡**什麼都不依賴**，
+   * 而且順便把現在讀到的狀態印出來：看得到這個視窗就代表新版 JS 已經生效。
+   *
+   * 正式包裡整個關掉（`DEV_TOOLS`）：長按雖然不容易誤觸，但審查員也按得到，
+   * 而跳出 uid 的除錯視窗是會被挑的。真正的門檻仍然在後端（只認沙盒 entitlement）。
+   */
+  function devMenu() {
+    const e = d.entitlement;
+    Alert.alert('開發者',
+      `plan=${e.plan}\nnextPlan=${e.nextPlan}\nsandbox=${String(!!e.sandbox)}\n`
+      + `profile.plan=${d.profile.plan}\nuid=${a.user?.uid ?? '-'}`,
+      [
+        { text: '重置成免費版', style: 'destructive', onPress: () => { void resetForTest(); } },
+        { text: '關閉', style: 'cancel' },
+      ]);
+  }
+
   const open = (url: string) => Linking.openURL(url).catch(() => {
     Alert.alert('打不開連結', url);
   });
@@ -412,8 +508,12 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
           </View>
         </Card>
 
-        {/* 總計：付款當下最重要的一行，獨立出來放大 */}
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
+        {/* 總計：付款當下最重要的一行，獨立出來放大。
+            **長按這一列是測試入口**（見 devMenu）：不佔版面、使用者不會誤觸，
+            而且它不依賴任何要等網路的值——`entitlement` 還沒載回來的時候
+            一樣叫得出來，否則最需要它的那幾種壞掉的狀態剛好都看不到入口。 */}
+        <Pressable onLongPress={DEV_TOOLS ? devMenu : undefined} delayLongPress={800}
+          style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
           marginTop: space.xl, paddingTop: space.lg, borderTopWidth: 1, borderTopColor: t.line }}>
           <View>
             <T variant="caption" color={t.sub}>
@@ -429,7 +529,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
             <T style={{ fontSize: 32, fontWeight: '800', letterSpacing: -1.2 }} color={t.ink}>{priceText}</T>
             <T variant="caption" color={t.sub}>/{periodLabel}</T>
           </View>
-        </View>
+        </Pressable>
 
         {trial ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.md,
@@ -504,11 +604,31 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
         )}
 
         {/* 購買試過一次之後才出現：沒事的人不需要看到這個入口，
-            出事的人需要一個「把整段流程交出來」的方法（見 iaplog.ts） */}
-        {hasIapLog() && !busy ? (
+            出事的人需要一個「把整段流程交出來」的方法（見 iaplog.ts）
+
+            **轉圈的時候也要留著。** 原本條件是 `&& !busy`，而「一直轉圈」
+            正是 busy === true——等於最需要看紀錄的那一兩分鐘入口剛好不見，
+            而強制關掉 App 又會把記憶體裡的紀錄清空（iaplog 不寫檔）。
+            紀錄本身是即時更新的，轉圈中打開看得到卡在哪一步。 */}
+        {DEV_TOOLS && hasIapLog() ? (
           <Pressable accessibilityRole="button" onPress={showLog} hitSlop={10}
             style={({ pressed }) => ({ alignSelf: 'center', paddingVertical: space.sm, opacity: pressed ? 0.6 : 1 })}>
             <T variant="caption" color={t.faint} style={{ textDecorationLine: 'underline' }}>購買診斷紀錄</T>
+          </Pressable>
+        ) : null}
+
+        {/* 測試用的一鍵重置。正式包裡不存在（`DEV_TOOLS`），dev build 裡還要是沙盒訂閱才看得到。
+            位置放在診斷紀錄旁邊——這一塊就是測試用的角落，不要混進條款那一段。 */}
+        {DEV_TOOLS && d.entitlement.sandbox ? (
+          <Pressable accessibilityRole="button" disabled={busy} hitSlop={10}
+            onPress={() => Alert.alert('重置成免費版？',
+              '這會清掉這個帳號在我們後端的訂閱資格、訂閱綁定和今天的用量，回到剛綁定的狀態。'
+              + '只有沙盒訂閱做得到，不影響真實付款。',
+              [{ text: '取消', style: 'cancel' }, { text: '重置', style: 'destructive', onPress: () => { void resetForTest(); } }])}
+            style={({ pressed }) => ({ alignSelf: 'center', paddingVertical: space.sm, opacity: busy ? 0.4 : pressed ? 0.6 : 1 })}>
+            <T variant="caption" color={t.faint} style={{ textDecorationLine: 'underline' }}>
+              {'重置成免費版（沙盒測試）'}
+            </T>
           </Pressable>
         ) : null}
 

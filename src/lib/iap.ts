@@ -172,7 +172,16 @@ export type VerifyResult = { plan: PlanId; expiresAt: number; nextPlan?: PlanId;
  * 畫面要講得出這件事，不然使用者會覺得自己按的那一下沒有作用。
  * `nextPlan: 'free'` 是已經取消自動續訂。
  */
-export type Entitlement = { plan: PlanId; expiresAt: number; nextPlan: PlanId };
+export type Entitlement = {
+  plan: PlanId; expiresAt: number; nextPlan: PlanId;
+  /**
+   * 這份資格是沙盒交易換來的（TestFlight 或沙盒測試帳號）。
+   *
+   * 只給「測試重置」那顆按鈕用（見 `resetPlanOnServer`）：正式付費的人
+   * 不該看到它，而後端也只認沙盒，按了只會被拒絕。
+   */
+  sandbox?: boolean;
+};
 
 export const freeEntitlement: Entitlement = { plan: 'free', expiresAt: 0, nextPlan: 'free' };
 
@@ -241,7 +250,16 @@ export class VerifyFailed extends Error {
  * 而使用者看到的是「購買沒有完成，沒有扣款」——他真的被扣了，
  * 錯的是伺服器設定，這種話會讓他再買一次。
  */
-async function verifyOnServer(transactionId: string): Promise<VerifyResult> {
+/**
+ * 這次查證是「使用者主動做了什麼」，還是背景對帳。
+ *
+ * 後端的測試重置會把當期的沙盒訂閱忽略掉（見 functions 的 `resetPlan`），
+ * 而那個忽略**只對背景對帳有效**：使用者自己按了購買或還原，就是要這份資格，
+ * 再擋著只會變成「Apple 說成功、我們說沒有」，購買流程等一個永遠不會變的答案。
+ */
+type VerifyIntent = 'purchase' | 'restore';
+
+async function verifyOnServer(transactionId: string, intent?: VerifyIntent): Promise<VerifyResult> {
   ilog(`送後端查證 tx=${transactionId}`);
   try {
     /**
@@ -251,7 +269,7 @@ async function verifyOnServer(transactionId: string): Promise<VerifyResult> {
      * 等下去不會有別的結果（交易留在佇列裡，冷啟動會自動補驗）。
      */
     const res = await withTimeout(
-      httpsCallable(functions, 'verifyPurchase')({ transactionId }), 35_000, 'iap-verify-timeout');
+      httpsCallable(functions, 'verifyPurchase')({ transactionId, intent }), 35_000, 'iap-verify-timeout');
     const r = res.data as VerifyResult;
     ilog(`查證回來 plan=${r?.plan} next=${r?.nextPlan ?? '-'} active=${r?.active}`);
     return r;
@@ -291,17 +309,33 @@ export async function purchaseSubscription(productId: string, wantPlan: PlanId):
   const m = await connect();
 
   /**
-   * 問後端「這次的變更是不是已經排到下一期了」。
+   * 等不到交易事件時，問後端「現在到底算什麼」。
    *
    * 要問後端而不是看本機：排程中的變更只存在 Apple 的 renewalInfo 裡，
    * StoreKit 名下的交易看起來完全沒變（還是舊方案），本機分不出
    * 「還沒成交」和「成交了但下一期才生效」。
+   *
+   * **三種答案都要處理，不能只認 scheduled。** 原本這裡只回傳「排到下一期」
+   * 那一種，於是購買成功的情況被當成「還沒有答案」丟掉——而 `verifyOnServer`
+   * 查證通過的同時後端就已經把 entitlement 寫進去了，方案其實在第一次問
+   * （第 6 秒）就開通了。丟掉這個答案的代價是一路空等到 75 秒逾時、
+   * 再走 45 秒的 recoverPurchase，使用者看到的就是「Apple 說成功、
+   * 畫面轉了快兩分鐘」。
    */
-  const scheduledChange = async (): Promise<VerifyResult | null> => {
+  type Probe =
+    | { kind: 'bought'; purchase: any }
+    | { kind: 'scheduled'; result: VerifyResult }
+    | null;
+  const probe = async (): Promise<Probe> => {
     const latest = latestOf(await availablePurchases());
     if (!latest) return null;
-    const r = await verifyOnServer(txId(latest));
-    return r.active && r.plan !== wantPlan && r.nextPlan === wantPlan ? r : null;
+    const r = await verifyOnServer(txId(latest), 'purchase');
+    if (!r.active) return null;
+    // 回傳交易本體而不是 VerifyResult：下面要用它 finishTransaction。
+    // 不結束的話那筆交易會留在佇列裡，每次冷啟動都重送一遍
+    if (r.plan === wantPlan) return { kind: 'bought', purchase: latest };
+    if (r.nextPlan === wantPlan) return { kind: 'scheduled', result: r };
+    return null;
   };
 
   const purchase = await new Promise<any>((resolve, reject) => {
@@ -352,10 +386,21 @@ export async function purchaseSubscription(productId: string, wantPlan: PlanId):
      */
     const checkScheduled = (delay: number) => timers.push(setTimeout(async () => {
       if (done) return;
-      ilog(`問後端：是不是排到下一期了（第 ${Math.round((delay - 6_000) / 7_000) + 1} 次）`);
+      ilog(`問後端現在算什麼（第 ${Math.round((delay - 6_000) / 7_000) + 1} 次）`);
       try {
-        const hit = await scheduledChange();
-        if (hit && !done) { ilog('是排程中的變更'); finish(() => reject(new PurchaseScheduled(hit))); return; }
+        const hit = await probe();
+        if (hit && !done) {
+          if (hit.kind === 'scheduled') {
+            ilog('是排程中的變更');
+            finish(() => reject(new PurchaseScheduled(hit.result)));
+            return;
+          }
+          // 後端已經認這個方案了。走 take() 和監聽同一條路，
+          // 才會接著做 pending 檢查和 finishTransaction
+          ilog('後端說已經是這個方案了');
+          if (take(hit.purchase)) return;
+          ilog('但那筆交易不是這個商品，繼續等');
+        }
       } catch (e) {
         ilog(`問不到 ${errText(e)}`);
         // 後端已經給了最終答案：再等下去只會把同一個錯重問到逾時（見 VerifyFailed.final）
@@ -408,7 +453,7 @@ export async function purchaseSubscription(productId: string, wantPlan: PlanId):
    */
   if (purchase.purchaseState === 'pending') { ilog('交易還在等核准（pending）'); throw new Error('purchase-pending'); }
 
-  const result = await verifyOnServer(txId(purchase));
+  const result = await verifyOnServer(txId(purchase), 'purchase');
   // 訂閱不是消耗型，isConsumable 要 false，否則 StoreKit 會當成可以再買一次。
   // 加上限是因為它在「驗證成功之後」：卡在這裡的話方案其實已經開通，
   // 畫面卻還在轉圈——結不掉沒關係，下次冷啟動 StoreKit 會重送同一筆
@@ -443,7 +488,7 @@ async function recoverOnce(): Promise<VerifyResult | null> {
     // 購買失敗的補救是自動發生的，使用者沒有按任何「還原」，突然跳密碼框只會像當機
     const latest = latestOf(await availablePurchases());
     if (!latest) { ilog('名下沒有交易，真的沒買到'); return null; }
-    const result = await verifyOnServer(txId(latest));
+    const result = await verifyOnServer(txId(latest), 'purchase');
     if (result.active) {
       await withTimeout(m.finishTransaction({ purchase: latest, isConsumable: false }), 10_000, 'iap-finish-timeout')
         .catch(() => {});
@@ -475,7 +520,7 @@ export async function restoreSubscription(): Promise<VerifyResult | null> {
 
   // 可能有好幾筆歷史交易，挑最新的那筆去問後端；後端本來就會查整個訂閱群組的現況
   const latest = latestOf(list);
-  const result = await verifyOnServer(txId(latest));
+  const result = await verifyOnServer(txId(latest), 'restore');
   for (const p of list) {
     await withTimeout(m.finishTransaction({ purchase: p, isConsumable: false }), 10_000, 'iap-finish-timeout')
       .catch(() => {});
@@ -500,7 +545,7 @@ export async function cloudEntitlement(uid: string): Promise<Entitlement> {
     const plan = live ? paid(d.plan) : 'free';
     // nextPlan 是後來才加的欄位，舊資料沒有就當成「下一期還是同一個方案」
     const nextPlan = plan === 'free' ? 'free' : paid(d.nextPlan ?? d.plan);
-    return { plan, expiresAt: Number(d.expiresAt ?? 0), nextPlan };
+    return { plan, expiresAt: Number(d.expiresAt ?? 0), nextPlan, sandbox: d.environment === 'Sandbox' };
   } catch {
     return freeEntitlement;
   }
@@ -528,14 +573,37 @@ export async function syncPlan(uid: string): Promise<Entitlement> {
   // 就會讓 App 離開再回到前景，於是跳完一次又觸發一次——實測是密碼框跳不完，
   // 而且會把購買流程的 busy 一起卡住（TestFlight 上就是這樣炸的）。
   // getAvailablePurchases 讀的是本機已有的 entitlement，不會跳任何視窗。
+  // 降回免費也要保留 sandbox 旗標：沙盒訂閱取消完就是 plan free，
+  // 這時正是最需要「測試重置」那顆按鈕的時候，旗標掉了按鈕就跟著不見
+  const free: Entitlement = { ...freeEntitlement, sandbox: ent.sandbox };
   try {
     const latest = latestOf(await availablePurchases());
-    if (!latest) return freeEntitlement;
-    const result = await verifyOnServer(txId(latest));
+    if (!latest) return free;
+    const result = await verifyOnServer(txId(latest));   // 背景對帳不帶 intent：被測試重置忽略掉的那一期，這裡就該當作沒有
     return result.active
-      ? { plan: result.plan, expiresAt: result.expiresAt, nextPlan: result.nextPlan ?? result.plan }
-      : freeEntitlement;
+      ? { plan: result.plan, expiresAt: result.expiresAt, nextPlan: result.nextPlan ?? result.plan, sandbox: ent.sandbox }
+      : free;
   } catch {
-    return freeEntitlement;
+    return free;
   }
+}
+
+/**
+ * 把自己的訂閱資格打回免費版（只有沙盒訂閱做得到，見後端的 `resetPlan`）。
+ *
+ * 後端會順便把**現在這一期忽略掉**（取消訂閱到當期結束前 Apple 都還是回
+ * ACTIVE，不忽略的話下一次 syncPlan 就把資格寫回來），`suppressedUntil`
+ * 是那一期的到期時間。呼叫端清完仍然要再對一次方案，用對回來的結果講話：
+ * 忽略只認同一筆、而且到期日沒往後跳的訂閱，所以還是有長回來的可能。
+ */
+export async function resetPlanOnServer(): Promise<{ previousPlan: PlanId; claims: number; suppressedUntil: number }> {
+  ilog('測試重置：請後端清掉資格');
+  const res = await withTimeout(httpsCallable(functions, 'resetPlan')({}), 30_000, 'iap-reset-timeout');
+  const d = (res as any).data ?? {};
+  ilog(`測試重置回來 previous=${d.previousPlan} claims=${d.claims} 忽略到=${d.suppressedUntil ?? 0}`);
+  return {
+    previousPlan: (d.previousPlan ?? 'free') as PlanId,
+    claims: Number(d.claims) || 0,
+    suppressedUntil: Number(d.suppressedUntil) || 0,
+  };
 }
