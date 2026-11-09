@@ -63,12 +63,12 @@ type Allowance = {
 };
 
 const PLAN_ALLOWANCE: Record<PlanId, Allowance> = {
-  free: { aiPerDay: 10, reportsPerDay: 3, ttsCharsPerMonth: 8_000, hd: false },
+  free: { aiPerDay: 5, reportsPerDay: 1, ttsCharsPerMonth: 3_000, hd: false },
   plus: { aiPerDay: 60, reportsPerDay: 10, ttsCharsPerMonth: 40_000, hd: true },
   pro: { aiPerDay: 150, reportsPerDay: 20, ttsCharsPerMonth: 100_000, hd: true },
 };
 // 訪客（還沒綁定帳號）給免費方案的一半，綁定才有完整免費額度
-const GUEST_ALLOWANCE: Allowance = { aiPerDay: 5, reportsPerDay: 1, ttsCharsPerMonth: 3_000, hd: false };
+const GUEST_ALLOWANCE: Allowance = { aiPerDay: 3, reportsPerDay: 1, ttsCharsPerMonth: 1_000, hd: false };
 
 /**
  * 使用者目前的方案。

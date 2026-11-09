@@ -32,14 +32,20 @@ import type { IconName } from '../ui';
  * ## 用好用滿的真實損益（每月，匯率 NT$31.5）
  *
  *   方案   AI 文字   語音              成本    入袋    利潤
- *   訪客   3.1      3k 字 Neural2     4.6     0       -4.6
- *   免費   6.1      8k 字 Neural2     10.2    0       -10.2
+ *   訪客   2.5      1k 字 Neural2     3.0     0       -3.0
+ *   免費   3.7      3k 字 Neural2     5.2     0       -5.2
  *   標準   36.9     40k 字 HD         74.7    100     +25.3
  *   高級版   92.1     100k 字 HD        186.6   233.3   +46.7
  *
  * 付費方案用好用滿還是賺，但毛利是 **25%／20%**，不是原本寫的 65%。
  * 免費和訪客用滿一定虧——這是獲客成本，不是錯誤，但要知道它多少：
- * **1 個標準訂戶的淨利只養得起 2.5 個「天天用滿」的免費使用者。**
+ * **1 個標準訂戶的淨利養得起 4.8 個「天天用滿」的免費使用者。**
+ *
+ * 免費額度刻意壓到「嘗得到味道但練不完一場」：AI 5 次／天約是半場會話，
+ * 語音 3k 字／月約 100 句。原本給 10 次＋8k 字，單人虧 NT$10.2，
+ * 打平要 40% 的轉換率——那個數字在實務上不存在，等於用免費方案補貼掉整個營收。
+ * 砍半之後單人虧 NT$5.2，打平的轉換率降到 **約 20%**，而且額度不夠用這件事
+ * 本身就是升級的理由；付費方案一個字都沒動，落差因此變大。
  *
  * 常駐實例（functions 的 minInstances: 1）約 NT$300〜600/月是固定成本，
  * 要 **12〜24 個標準訂戶**才打平（抽 30% 時）。
@@ -49,7 +55,7 @@ import type { IconName } from '../ui';
  * 分析和會話共用同一個 aiPerDay 的桶，但成本是兩倍。
  * 把次數全部拿去產分析的話，標準方案一個月的成本是 NT$114（虧 14），高級版是 NT$286（虧 53）——
  * 而且不需要惡意，一個很認真複盤的人就做得到。
- * 所以 reportsPerDay 另外加一道上限（免費 3／標準版 10／高級版 20），會話本身完全不受影響。
+ * 所以 reportsPerDay 另外加一道上限（免費 1／標準版 10／高級版 20），會話本身完全不受影響。
  *
  * 上面都是**依單價推的估算**，不是實際帳單。上架後拿真實的
  * Firebase 和 Google Cloud 帳單回來校正一次，特別是語音那一欄。
@@ -134,7 +140,7 @@ export const plans: Plan[] = [
     id: 'free', name: '免費版', kana: 'フリー', kanji: '學',
     tagline: '所有課程與讀物完全免費',
     monthly: 0, yearly: 0,
-    aiPerDay: 10, reportsPerDay: 3, ttsCharsPerMonth: 8_000,
+    aiPerDay: 5, reportsPerDay: 1, ttsCharsPerMonth: 3_000,
     icon: 'leaf-outline',
     perks: [
       '83 個生活主題・249 堂課',
@@ -142,9 +148,9 @@ export const plans: Plan[] = [
       '五十音、敬語、流行語',
       '單字本與間隔複習',
       '排行榜與等級',
-      '每天 10 次 AI 會話',
-      '每月約 260 句雲端朗讀',
-      '會話分析保留最近 3 份',
+      '每天 5 次 AI 會話',
+      '每月約 100 句雲端朗讀',
+      '每天 1 份會話分析（保留最近 3 份）',
     ],
   },
   {
@@ -218,7 +224,7 @@ export const IAP_AVAILABLE = true;
  *
  * 真正的數字在 functions/src/index.ts 的 GUEST_ALLOWANCE，這裡只負責顯示，要一起改。
  */
-export const guestLimits = { aiPerDay: 5, reportsPerDay: 1, ttsCharsPerMonth: 3_000 };
+export const guestLimits = { aiPerDay: 3, reportsPerDay: 1, ttsCharsPerMonth: 1_000 };
 
 /**
  * 一句日文的平均字數，把「字數」換算成使用者有感的「句數」。
