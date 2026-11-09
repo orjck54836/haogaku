@@ -118,6 +118,23 @@ async function writeCache(file: File, base64: string) {
   part.moveSync(file);
 }
 
+/**
+ * 把括號裡的注音讀法拿掉再唸。
+ *
+ * 課程文字會寫成「陳(ちん)さん」讓使用者看得到漢字怎麼唸，但 TTS 會把括號裡的
+ * 假名當成另一個詞，變成「ちん ちん さん」——同一個字唸兩次。
+ *
+ * 只拿掉「**漢字後面、括號裡全是假名**」的那一種，因為那才是注音。
+ * 不限定成「括號內是假名就刪」：像「(はい)」這種本身就是內容的括號會被誤刪。
+ * 中文的括號註解（「（文法錯誤）」）也因此留著——它們出現在 sub／zh 這些
+ * 本來就不會送進 TTS 的欄位，但規則寫窄一點，之後多接一個欄位也不會出事。
+ *
+ * 做在這裡而不是去清 lessons.json：讀物、單字本、AI 補的例句都可能帶注音，
+ * 而且畫面上**要**看得到那個假名，只有唸的時候不要。
+ */
+const FURIGANA = /([\u3400-\u4dbf\u4e00-\u9fff])[(（][\u3040-\u309f\u30a0-\u30ff ・ー]+[)）]/g;
+export const forSpeech = (text: string) => text.replace(FURIGANA, '$1');
+
 /** 快取檔小到不可能是一段 MP3，就是上面那種寫壞的半成品 */
 const MIN_AUDIO_BYTES = 256;
 const usableCache = (file: File) => file.exists && (file.size ?? 0) >= MIN_AUDIO_BYTES;
@@ -125,7 +142,7 @@ const usableCache = (file: File) => file.exists && (file.size ?? 0) >= MIN_AUDIO
 /** 把後端一起回傳的語音存進快取（AI 會話用：文字和語音同時到，不必再多等一次） */
 export async function cacheAudio(text: string, voice: Voice, base64: string) {
   try {
-    const file = await cacheFile(text, voice);
+    const file = await cacheFile(forSpeech(text), voice);
     if (!usableCache(file)) await writeCache(file, base64);
   } catch { /* 忽略，播放時會再向雲端要 */ }
 }
@@ -149,9 +166,12 @@ async function cloudAudio(text: string, voice: Voice): Promise<string | null> {
  * 播放日文。回傳的 Promise 在「開始出聲」（或確定改用手機語音）時完成，
  * 畫面可以用它顯示「語音準備中」。
  */
-export async function speakJa(text: string, voice: Voice = 'female'): Promise<void> {
+export async function speakJa(raw: string, voice: Voice = 'female'): Promise<void> {
   const my = ++token;
   stopPlayback();
+  // 注音在這裡就拿掉：快取的 key 和送上雲端的字串都用唸出來的那一份，
+  // 「陳(ちん)さん」和「陳さん」才不會各存一份一模一樣的音檔
+  const text = forSpeech(raw);
   if (!text.trim()) return;
   await ensureAudioMode();
   try {
