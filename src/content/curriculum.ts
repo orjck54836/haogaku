@@ -84,8 +84,8 @@ export const collectionMeta: Record<string, {
   },
   [GRAMMAR_ID]: {
     title: '基本文法介紹', caption: 'きそぶんぽう', photoKey: 'idioms',
-    desc: '句子的骨架、助詞、動詞、形容詞',
-    focus: '看懂一個日文句子最少需要的四件事：句尾、助詞、動詞變化、形容詞。學完就拆得開主題課裡的句子。',
+    desc: '骨架、助詞、動詞、形容詞・10 堂',  // 卡片上只排得下一行，再長就會掉到第二行
+    focus: '看懂和說出一句日文最少需要的東西：句尾、助詞、三個動詞形、形容詞，再加上有沒有、想不想、幾個、為什麼。學完就拆得開主題課裡的句子。',
   },
   [ONOMATO_ID]: {
     title: '擬聲擬態語', caption: 'ぎおんご・ぎたいご', photoKey: 'onomatopoeia',
