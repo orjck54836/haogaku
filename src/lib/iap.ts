@@ -144,12 +144,12 @@ function txId(p: any): string {
  * 只能掛在使用者自己按的「還原購買」上。自動對帳（冷啟動、回前景、購買失敗補救）
  * 一律走這一個，不然使用者會被密碼框追著跑（見 syncPlan 的註解）。
  */
-async function availablePurchases(): Promise<any[]> {
+async function availablePurchases(activeOnly = true): Promise<any[]> {
   const m = await connect();
   const res = await withTimeout(
-    m.getAvailablePurchases({ onlyIncludeActiveItemsIOS: true }), 20_000, 'iap-query-timeout');
+    m.getAvailablePurchases({ onlyIncludeActiveItemsIOS: activeOnly }), 20_000, 'iap-query-timeout');
   const list = Array.isArray(res) ? res : [];
-  ilog(`名下交易 ${list.length} 筆`);
+  ilog(`名下交易 ${list.length} 筆${activeOnly ? '' : '（含歷史）'}`);
   // pending 的交易（Ask to Buy 等家長核准、或銀行要二次驗證）還沒成交，拿去驗一定
   // 查無有效訂閱。濾掉是為了不要每次回前景都為同一筆 pending 白打一次後端
   return list.filter((p: any) => p?.purchaseState !== 'pending');
@@ -176,7 +176,26 @@ async function availablePurchasesRetry(tries = 3, gapMs = 1_500): Promise<any[]>
       await new Promise(r => setTimeout(r, gapMs));
     }
   }
-  return [];
+  /**
+   * 「現有資格」問不到時，**改問整串歷史**。
+   *
+   * `onlyIncludeActiveItemsIOS: true` 問的是 StoreKit 的 currentEntitlements，
+   * 它在「App 還沒跟 App Store 對過這組 Apple ID」的狀態下會是空的——
+   * 實測就是換帳號登入後一直停在免費版，直到使用者去按一次訂閱
+   * （`requestPurchase` 會逼 StoreKit 同步一次）才突然好了。
+   * 那一步不該是使用者的責任。
+   *
+   * 問歷史不會跳密碼框（跳框的是 restorePurchases 的 AppStore.sync()），
+   * 而且**拿到過期或退款的舊交易也無所謂**：我們只需要一個 transactionId，
+   * 有沒有效是後端拿去跟 Apple 查證之後才算數的。
+   */
+  ilog('現有資格是空的，改問整串歷史');
+  try {
+    return await availablePurchases(false);
+  } catch (e) {
+    ilog(`問歷史也失敗 ${errText(e)}`);
+    return [];
+  }
 }
 
 /** 好幾筆歷史交易時挑最新的：後端本來就會查整個訂閱群組的現況，給誰都一樣，給最新的最保險 */

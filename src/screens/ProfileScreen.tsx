@@ -41,6 +41,28 @@ const paces = [30, 50, 80];
 const rates = [{ v: 1.0, l: '標準' }, { v: 0.85, l: '慢' }, { v: 1.15, l: '快' }];
 
 export default function ProfileScreen() {
+  /**
+   * 現在跑的是哪一包 JS。
+   *
+   * 空中更新（EAS Update）是「下次啟動才套用」的，而且 Expo Go 和 dev client
+   * 根本不吃更新——沒有這行就只能用猜的，實際上已經為了「更新到底進來了沒」
+   * 來回試過好幾輪。顯示 updateId 的前 8 碼，和 `eas update` 回報的 id 對得起來。
+   *
+   * 原生模組要探測過才 require，而且判斷放在 effect 裡不要放在 render：
+   * 在 render 丟錯是整頁白掉，在 effect 裡最多是這一行不顯示（見 CLAUDE.md）。
+   */
+  const [jsTag, setJsTag] = useState('');
+  useEffect(() => {
+    try {
+      const { requireOptionalNativeModule } = require('expo-modules-core');
+      if (!requireOptionalNativeModule('ExpoUpdates')) return;
+      const U = require('expo-updates');
+      const id = U.updateId as string | null;
+      // 內建那包沒有 updateId：那代表這台還跑著 build 當下的 JS，不是更新
+      setJsTag(id ? id.slice(0, 8) : '內建');
+    } catch { /* 沒有原生模組（Expo Go）就不顯示 */ }
+  }, []);
+
   const t = useTheme();
   const a = useAuth();
   const d = useData();
@@ -369,7 +391,7 @@ export default function ProfileScreen() {
         right={<T variant="caption" color={t.faint}>課程・留學代辦</T>} />
       <OfficialLinks />
 
-      <BrandFooter text="皓學日語 v1.0.0 · FORMA Global" />
+      <BrandFooter text={`皓學日語 v1.0.0 · FORMA Global${jsTag ? ` · ${jsTag}` : ''}`} />
     </Screen>
   );
 }
