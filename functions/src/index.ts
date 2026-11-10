@@ -370,6 +370,61 @@ async function resetQuotaOnUpgrade(uid: string, prev: PlanId, next: PlanId) {
   console.log(`quota reset ${uid}: ${prev} → ${next}`);
 }
 
+/**
+ * 訂閱換帳號時，**用量跟著訂閱搬過去**。
+ *
+ * 額度文件（`usage`／`ttsUsage`）是以 uid 當 key 的，而訂閱屬於 Apple ID、
+ * 可以在帳號之間交接（見 verifyPurchase 的 subscriptionClaims）。不搬的話，
+ * 同一個人用 Apple 帳號買了高級版、今天用掉 9 次，改用 Google 登入就看到
+ * 滿滿 150 次——而且**切回去又是一份新的**。語音更嚴重：`ttsUsage` 按月算，
+ * 換一個帳號等於整包 10 萬字元從頭開始，而語音才是成本大宗。
+ *
+ * ## 取兩邊的大的，不是覆蓋
+ *
+ * 搬過去要用 `max(新帳號已用, 舊帳號已用)`。直接覆蓋的話，用量少的那一邊
+ * 會把多的洗掉，來回切就是無限次數——那正是這個函式要擋的事。
+ * 取 max 是單調的：切幾次、往哪個方向切，已用量都只會往上，不會回頭。
+ *
+ * 舊帳號那份**故意留著不清**。清掉的話它下次被切回去時是空的，等於又送一份；
+ * 留著並讓下一次交接再 max 一遍，兩邊就會收斂到同一個數字。
+ *
+ * 跨日／跨月的舊數字不算：日期對不上代表那是上一期的用量，本來就該歸零。
+ */
+async function carryUsage(from: string, to: string) {
+  const day = taipeiDate();
+  const month = taipeiMonth();
+  try {
+    await db.runTransaction(async tx => {
+      const [a, b] = await Promise.all([
+        tx.get(db.doc(`usage/${from}`)), tx.get(db.doc(`usage/${to}`))]);
+      const of = (d: FirebaseFirestore.DocumentSnapshot, f: string) => {
+        const v = d.data();
+        return v && v.date === day ? Number(v[f]) || 0 : 0;
+      };
+      const count = Math.max(of(a, 'count'), of(b, 'count'));
+      const reports = Math.max(of(a, 'reports'), of(b, 'reports'));
+      // 新帳號本來就不比舊的少時不用寫：這是最常見的情況（同一個人只是換個登入方式）
+      if (count <= of(b, 'count') && reports <= of(b, 'reports')) return;
+      tx.set(db.doc(`usage/${to}`), { date: day, count, reports }, { merge: true });
+    });
+    await db.runTransaction(async tx => {
+      const [a, b] = await Promise.all([
+        tx.get(db.doc(`ttsUsage/${from}`)), tx.get(db.doc(`ttsUsage/${to}`))]);
+      const of = (d: FirebaseFirestore.DocumentSnapshot) => {
+        const v = d.data();
+        return v && v.month === month ? Number(v.chars) || 0 : 0;
+      };
+      const chars = Math.max(of(a), of(b));
+      if (chars <= of(b)) return;
+      tx.set(db.doc(`ttsUsage/${to}`), { month, chars }, { merge: true });
+    });
+    console.log(`usage carried ${from} → ${to}`);
+  } catch (e) {
+    // 搬不過去不該讓購買／還原失敗：資格比額度重要，額度最多是多給了一天
+    console.warn('carryUsage failed', e);
+  }
+}
+
 async function askClaude(uid: string, kind: CostKind, system: string, messages: Msg[], maxTokens: number, schema: Record<string, unknown>): Promise<any> {
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
   try {
@@ -1051,12 +1106,27 @@ export const verifyPurchase = onCall(
      * 擋不住的是「兩個人共用一組 Apple ID 輪流搶」，但搶的那一下就會把對方踢成
      * 免費版，拿不到兩份額度，所以不值得為它把正常使用者鎖死。
      */
+    /**
+     * 交接過來的資格**不算升級**（見下面的 effectivePrev）。
+     *
+     * 交接會把舊 owner 寫回免費版，所以切回去那一次又會是 free → pro，
+     * 看起來就是一次全新的升級。照著重置當天用量的話，兩個帳號來回切
+     * 就能無限刷 AI 次數——`resetQuotaOnUpgrade` 原本那道「第二次 prev 就等於
+     * next」的防線剛好被交接繞過。所以要拿**舊 owner 的方案**當比較基準。
+     */
+    let transferredFrom: PlanId | null = null;
     if (best.originalTransactionId) {
       const claimRef = db.doc(`subscriptionClaims/${best.originalTransactionId}`);
       const prevOwner = await db.runTransaction(async tx => {
         const snap = await tx.get(claimRef);
         const owner = snap.data()?.uid as string | undefined;
         if (owner === uid) return null;
+        // 讀要全部排在寫前面（Firestore 的交易規則），所以舊 owner 的方案在這裡先讀
+        if (owner) {
+          const o = (await tx.get(db.doc(`entitlements/${owner}`))).data();
+          const live = !o?.expiresAt || Number(o.expiresAt) > Date.now();
+          transferredFrom = live && (o?.plan === 'plus' || o?.plan === 'pro') ? o.plan : 'free';
+        }
         tx.set(claimRef, {
           uid,
           ...(owner ? { previousUid: owner, transferredAt: FieldValue.serverTimestamp() } : {}),
@@ -1074,6 +1144,8 @@ export const verifyPurchase = onCall(
       if (prevOwner) {
         // 只清得掉這個實例的；舊 owner 要是正好打在別的實例上，靠 allowanceOf 的 10 秒 TTL 過期
         entCache.delete(prevOwner);
+        // 額度跟著訂閱走：不搬的話換個帳號就是一份全新的次數和語音字元
+        await carryUsage(prevOwner, uid);
         console.log(`subscription transferred ${best.originalTransactionId}: ${prevOwner} → ${uid}`);
       }
     }
@@ -1096,8 +1168,14 @@ export const verifyPurchase = onCall(
     }, { merge: true });
     entCache.delete(uid);   // 清掉這個實例的；別的實例靠 allowanceOf 的短 TTL 自己過期
 
-    // 交易成立當下就給他完整的一天，不要讓免費版用掉的次數跟著進來
-    await resetQuotaOnUpgrade(uid, prevPlan, best.plan);
+    /**
+     * 交易成立當下就給他完整的一天，不要讓免費版用掉的次數跟著進來。
+     *
+     * 但**交接過來的不算**：那不是一次購買，只是同一份訂閱換了個帳號拿，
+     * 所以基準要用舊 owner 的方案。pro → pro 不是升級，當天用量就留著。
+     */
+    const effectivePrev: PlanId = transferredFrom ?? prevPlan;
+    await resetQuotaOnUpgrade(uid, effectivePrev, best.plan);
 
     console.log(`verifyPurchase ${uid}: ${best.plan} 到 ${new Date(best.expiresAt).toISOString()}`
       + `${best.nextPlan === best.plan ? '' : `，下一期改成 ${best.nextPlan}`} (${env})`);

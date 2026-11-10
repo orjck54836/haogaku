@@ -59,6 +59,24 @@ export default function PlansScreen({ navigation }: StackProps<'Plans'>) {
    * 這一頁只是比較，沒有付款動作，為了價錢讓整頁空著不划算。
    * 在 effect 裡問、存進 state——iap.ts 要載原生模組，在 render 裡丟錯是整頁白掉。
    */
+  /**
+   * 進到付費頁就再對一次方案資格。
+   *
+   * 訂閱屬於 Apple ID、不屬於我們的帳號，所以「後端說免費、Apple 名下其實有」
+   * 是日常：換帳號登入、重裝、同一個人有兩個帳號。那份對帳只在冷啟動和回前景
+   * 各跑一次，中間失手（StoreKit 剛接起來回空的）就沒有第二次機會——
+   * 使用者在這一頁看到免費版，按下去才被 StoreKit 回「你已經訂閱這個項目」。
+   *
+   * 只在顯示值是免費時問：已經是付費的人這一趟沒有任何新資訊。
+   * 不 await、不轉圈：問到了畫面自己會跟上，問不到就維持現狀。
+   */
+  useEffect(() => {
+    if (d.entitlement.plan !== 'free' || !IAP_AVAILABLE || !iapSupported()) return;
+    void d.refreshPlan().then(() => d.refreshQuota()).catch(() => {});
+    // 只在進頁面時問一次：entitlement 進了 deps 會在對帳回來那一刻再觸發一輪
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [storePrices, setStorePrices] = useState<Record<string, string>>({});
   useEffect(() => {
     let alive = true;

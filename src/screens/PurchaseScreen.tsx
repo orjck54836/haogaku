@@ -157,6 +157,24 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
   }, [sku]);
 
   /**
+   * 掏錢之前再對一次資格：**不要讓人買已經有的東西**。
+   *
+   * 訂閱屬於 Apple ID，不屬於我們的帳號，所以「後端說免費、Apple 名下其實有」
+   * 是日常（換帳號登入、重裝、一人兩個帳號）。那份對帳只在冷啟動和回前景各跑
+   * 一次，中間失手就沒有第二次機會——實際踩到的是用 Apple 帳號買過高級版、
+   * 改用 Google 登入：畫面是免費版，按下標準版才被 StoreKit 回
+   * 「你已經訂閱這個項目」。對完之後 `owned`／`pending` 會自己把按鈕鎖住。
+   *
+   * 只在顯示值是免費時問，而且不 await：這一頁的轉圈要留給真正的購買動作。
+   */
+  useEffect(() => {
+    if (d.entitlement.plan !== 'free' || !IAP_AVAILABLE || !iapSupported()) return;
+    void d.refreshPlan().then(() => d.refreshQuota()).catch(() => {});
+    // 只在進頁面時問一次：entitlement 進了 deps 會在對帳回來那一刻再觸發一輪
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
    * 開通成功之後的收尾。
    *
    * `setProfile` 只是先把畫面跟上，**再 `refreshPlan()` 重讀一次 entitlements**：
@@ -278,12 +296,25 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
        */
       if (/already[-\s]?owned|already.*subscri/i.test(code)) {
         // 讀不回來也要把話講完，不然這個分支會變成另一條「卡在轉圈」的路
+        const before = d.entitlement.plan;
         const now = await Promise.race([
           d.refreshPlan(),
           new Promise<PlanId>(r => setTimeout(() => r(d.entitlement.plan), 8_000)),
         ]);
-        Alert.alert('你已經有這個訂閱了',
-          `這組 Apple ID 目前是${planById(now).name}。如果你剛改過方案，變更會在這一期結束後生效，不用重新購買。`,
+        /**
+         * 「資格剛剛才接過來」和「排程中的降級」要說不一樣的話。
+         *
+         * 上面那次 refreshPlan 會把 Apple 名下的訂閱驗一遍，後端順手把
+         * `subscriptionClaims` 交接到現在這個帳號（見 functions 的 verifyPurchase）。
+         * 也就是說走到這裡的人常常是「換帳號登入、資格這一秒才長回來」——
+         * 對他講「如果你剛改過方案」是答非所問，他要知道的是訂閱回到這個帳號了。
+         */
+        const moved = before === 'free' && now !== 'free';
+        Alert.alert(moved ? '這組 Apple ID 已經有訂閱了' : '你已經有這個訂閱了',
+          moved
+            ? `已經把${planById(now).name}接回你現在登入的帳號，不用重新購買。`
+              + '（同一份訂閱同時只能給一個帳號，之前那個帳號會變回免費版。）'
+            : `這組 Apple ID 目前是${planById(now).name}。如果你剛改過方案，變更會在這一期結束後生效，不用重新購買。`,
           [{ text: '知道了', onPress: () => navigation.goBack() }]);
         return;
       }

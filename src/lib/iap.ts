@@ -155,6 +155,30 @@ async function availablePurchases(): Promise<any[]> {
   return list.filter((p: any) => p?.purchaseState !== 'pending');
 }
 
+/**
+ * 名下交易問到東西為止，**空手不算答案**。
+ *
+ * `initConnection()` 剛接起來那一下問，StoreKit 的本機交易快取還沒暖，
+ * 常常回空陣列——而對帳的呼叫端一看到空的就結論「這個人沒有訂閱」。
+ * 實際踩到的是換帳號登入：Apple 帳號買過高級版，改用 Google 登入後
+ * 對帳問到空的，畫面停在免費版；去按訂閱才被 StoreKit 回
+ * 「你已經訂閱這個項目」，那一下才把名下交易叫出來。
+ *
+ * 重試只是本機查詢，不打後端也不跳任何視窗，真的沒買過的人成本是幾毫秒。
+ * 間隔不能太短：要留時間給 StoreKit 把交易讀進來。
+ */
+async function availablePurchasesRetry(tries = 3, gapMs = 1_500): Promise<any[]> {
+  for (let i = 0; i < tries; i++) {
+    const list = await availablePurchases();
+    if (list.length) return list;
+    if (i < tries - 1) {
+      ilog('名下沒有交易，等一下再問一次');
+      await new Promise(r => setTimeout(r, gapMs));
+    }
+  }
+  return [];
+}
+
 /** 好幾筆歷史交易時挑最新的：後端本來就會查整個訂閱群組的現況，給誰都一樣，給最新的最保險 */
 function latestOf(list: any[]): any | null {
   if (!list.length) return null;
@@ -486,7 +510,7 @@ async function recoverOnce(): Promise<VerifyResult | null> {
     const m = await connect();
     // 這裡**不能**叫 restoreSubscription()：它內含 AppStore.sync()，會跳 Apple ID 密碼框。
     // 購買失敗的補救是自動發生的，使用者沒有按任何「還原」，突然跳密碼框只會像當機
-    const latest = latestOf(await availablePurchases());
+    const latest = latestOf(await availablePurchasesRetry());
     if (!latest) { ilog('名下沒有交易，真的沒買到'); return null; }
     const result = await verifyOnServer(txId(latest), 'purchase');
     if (result.active) {
@@ -585,7 +609,8 @@ export async function syncPlan(uid: string): Promise<Entitlement> {
   // 這時正是最需要「測試重置」那顆按鈕的時候，旗標掉了按鈕就跟著不見
   const free: Entitlement = { ...freeEntitlement, sandbox: ent.sandbox };
   try {
-    const latest = latestOf(await availablePurchases());
+    // 問到為止：一次空手不代表沒買過（見 availablePurchasesRetry）
+    const latest = latestOf(await availablePurchasesRetry());
     if (!latest) return free;
     const result = await verifyOnServer(txId(latest));   // 背景對帳不帶 intent：被測試重置忽略掉的那一期，這裡就該當作沒有
     return result.active
