@@ -27,8 +27,13 @@ export type ChatReport = {
   remaining: number;
 };
 
-type ScenarioInput = Pick<Scenario, 'title' | 'role' | 'setting' | 'goal'>;
-const pick = (s: Scenario): ScenarioInput => ({ title: s.title, role: s.role, setting: s.setting, goal: s.goal });
+/**
+ * 後端**只拿 id 查自己那份情境**（functions/src/scenarios.ts），送上去的角色和情境文字
+ * 它一概不採用——改 client 也只能挑既有的 83 個主題，不能自創情境把 AI 當通用助理。
+ * title 仍然送：已經上架的舊 build 沒送 id，後端靠標題反查，兩邊都留著才不會斷。
+ */
+type ScenarioInput = Pick<Scenario, 'id' | 'title'>;
+const pick = (s: Scenario): ScenarioInput => ({ id: s.id, title: s.title });
 
 function friendly(e: any): Error {
   const code: string = e?.code ?? '';

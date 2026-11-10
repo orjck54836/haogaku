@@ -12,6 +12,9 @@ import { speakJa } from '../lib/speech';
 import { aiExample } from '../lib/ai';
 import { RootStack } from '../navigation';
 
+/** 一頁的筆數。20 筆大約是兩個螢幕高，少到載得快、多到不必一直按 */
+const PAGE = 20;
+
 export default function WordbookScreen() {
   const t = useTheme();
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
@@ -21,6 +24,17 @@ export default function WordbookScreen() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState('');     // 正在產生的詞條（空字串＝閒置）
   const [open, setOpen] = useState<string | null>(null);   // 展開例句的詞條，一次只開一個
+
+  /**
+   * 分頁。單字本是**一路累積**的東西，收到兩三百筆之後整列一次渲染，
+   * 每一筆都帶例句區塊和兩顆播放鍵，進畫面會明顯卡一下。
+   *
+   * 用「看更多」而不是上下頁：新增的詞會 unshift 到最前面（見 data.tsx 的 addWord），
+   * 第一頁永遠看得到剛加的字；翻頁式的話加完一個字還要自己翻回第一頁。
+   */
+  const [shown, setShown] = useState(PAGE);
+  const list = d.words.slice(0, shown);
+  const rest = d.words.length - list.length;
 
   /**
    * 手打新增。
@@ -157,7 +171,7 @@ export default function WordbookScreen() {
             <SectionTitle title="收藏的單字" ja="ことば"
               right={<T variant="small" color={t.faint}>長按可移除</T>} />
             <Card tone="soft" style={{ paddingVertical: space.xs }}>
-              {d.words.map((w, i) => (
+              {list.map((w, i) => (
                 <View key={w.ja}>
                   {i > 0 ? <Rule /> : null}
                   <Pressable accessibilityRole="button" accessibilityLabel={`播放 ${w.ja}`}
@@ -226,6 +240,12 @@ export default function WordbookScreen() {
                 </View>
               ))}
             </Card>
+
+            {/* 剩幾筆要寫出來：只寫「看更多」看不出還有 3 筆還是 300 筆 */}
+            {rest > 0 ? (
+              <Button label={`看更多（還有 ${rest} 個）`} icon="chevron-down" variant="secondary" size="md"
+                onPress={() => setShown(n => n + PAGE)} />
+            ) : null}
           </>
         )}
       </Sheet>
