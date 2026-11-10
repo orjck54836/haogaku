@@ -24,7 +24,7 @@ export default function LoginScreen() {
       <View style={{
         flex: 1, backgroundColor: t.primary, margin: space.md, marginBottom: 0,
         borderRadius: radius.xl, padding: space.xl, overflow: 'hidden',
-        justifyContent: 'space-between', alignItems: 'center',
+        alignItems: 'center',
       }}>
         {/* 主視覺已經是 logo 時就不要再放一次，只留字標 */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
@@ -32,14 +32,22 @@ export default function LoginScreen() {
           <Text style={[type.caption, { color: 'rgba(255,255,255,0.7)', fontWeight: '700', letterSpacing: 1 }]}>HAOGAKU JAPANESE</Text>
         </View>
 
+        {/**
+         * 主視覺和標題是一組，一起在剩下的空間裡置中。
+         *
+         * 原本三塊都交給卡片的 `space-between`，等於把字標、圖、標題各推到一角，
+         * 高一點的機型上圖和標題之間會拉開一大片空白，看起來不是留白是沒排完。
+         * 現在只有字標固定在上緣，其餘置中，間距由 gap 決定、不隨螢幕高度膨脹。
+         */}
+        <View style={{ flex: 1, alignSelf: 'stretch', justifyContent: 'center', alignItems: 'center', gap: space.lg }}>
         {/* 有登記主視覺就放圖，沒有就用漢字章排版（見 src/ui/images.ts） */}
         {heroImage ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', marginVertical: space.lg }}>
+          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
             <Image source={heroImage} accessibilityLabel="皓學" resizeMode="contain"
-              style={{ width: 190, height: 190, maxWidth: '100%' }} />
+              style={{ width: 190, height: 270, maxWidth: '100%' }} />
           </View>
         ) : (
-          <View style={{ flexDirection: 'row', gap: space.sm, marginVertical: space.xl }}>
+          <View style={{ flexDirection: 'row', gap: space.sm }}>
             {['話', '食', '交', '敬'].map((k, i) => (
               <View key={k} style={{ transform: [{ rotate: `${(i - 1.5) * 4}deg` }, { translateY: i % 2 ? 10 : 0 }] }}>
                 <Seal kanji={k} size={62} tone={i === 0 ? 'gold' : 'ink'} />
@@ -51,10 +59,14 @@ export default function LoginScreen() {
         {/* 字標、主視覺、標題同一條中軸：logo 本來就是置中的，
             只有這一段靠左時，整張卡看起來像沒對齊的兩半 */}
         <View style={{ alignSelf: 'stretch' }}>
-          <Text style={[type.display, { color: '#FFFFFF', fontSize: 40, lineHeight: 46, textAlign: 'center' }]}>從生活的角度{'\n'}真正學好日文</Text>
+          <Text style={[type.display, { color: '#FFFFFF', fontSize: 40, lineHeight: 50, textAlign: 'center' }]}>從生活的角度{'\n'}真正學好日文</Text>
           <Text style={[type.body, { color: 'rgba(255,255,255,0.78)', marginTop: space.md, textAlign: 'center' }]}>
-            從五十音、生活大小事，到職場敬語。
+            從五十音、生活大小事、到職場敬語
           </Text>
+          <Text style={[type.body, { color: 'rgba(255,255,255,0.78)', textAlign: 'center' }]}>
+            全方位強化你的日文實戰能力
+          </Text>
+        </View>
         </View>
       </View>
 
