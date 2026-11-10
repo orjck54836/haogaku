@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Alert, Platform, Pressable, Text, Image, Linking } from 'react-native';
+import { View, Alert, Platform, Pressable, Text, Image, Linking, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Row, Divider, SectionTitle, Rule, Avatar, RoundButton, Segmented } from '../ui';
 import { useTheme, space, fonts, radius, shadows, tintedShadow } from '../theme';
@@ -12,6 +12,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStack } from '../navigation';
 import { BrandFooter } from '../ui/brand';
+import { iapLogText } from '../lib/iaplog';
 import { topicPhotos, uiPhotos } from '../ui/images';
 import { RankRow } from '../ui/RankCard';
 import { Seal } from '../ui/seal';
@@ -62,6 +63,16 @@ export default function ProfileScreen() {
       setJsTag(id ? id.slice(0, 8) : '內建');
     } catch { /* 沒有原生模組（Expo Go）就不顯示 */ }
   }, []);
+
+  /** 用 Share 而不是剪貼簿：expo-clipboard 是原生模組，為了一個診斷入口不值得重 build */
+  function showIapLog() {
+    const text = iapLogText();
+    Alert.alert('購買診斷紀錄', text || '這次啟動還沒有購買或對帳的紀錄。',
+      [
+        { text: '傳給我們', onPress: () => { void Share.share({ message: text }).catch(() => {}); } },
+        { text: '關閉', style: 'cancel' },
+      ]);
+  }
 
   const t = useTheme();
   const a = useAuth();
@@ -391,7 +402,17 @@ export default function ProfileScreen() {
         right={<T variant="caption" color={t.faint}>課程・留學代辦</T>} />
       <OfficialLinks />
 
-      <BrandFooter text={`皓學日語 v1.0.0 · FORMA Global${jsTag ? ` · ${jsTag}` : ''}`} />
+      {/*
+        長按頁尾叫出購買診斷紀錄。
+
+        這段紀錄原本只在「購買失敗」的 Alert 裡拿得到，而最難查的那一類
+        （換帳號之後方案對不上）**根本不會失敗**，所以永遠叫不出來。
+        用長按而不是放一顆按鈕：一般使用者不會誤觸，畫面上也不會多一個
+        開發用入口，但要請人回報時講得出「長按最下面那行字」。
+      */}
+      <Pressable onLongPress={showIapLog} delayLongPress={800}>
+        <BrandFooter text={`皓學日語 v1.0.0 · FORMA Global${jsTag ? ` · ${jsTag}` : ''}`} />
+      </Pressable>
     </Screen>
   );
 }
