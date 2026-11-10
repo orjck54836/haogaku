@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ComponentRef, ReactNode, RefObject } from 'react';
 import { View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet, Image, ViewStyle, StyleProp, TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
@@ -7,17 +7,19 @@ import { useTheme, space, radius, type, fonts, shadows } from '../theme';
 
 export type IconName = keyof typeof Ionicons.glyphMap;
 
-export function Screen({ children, scroll = true, padded = true, edges = ['top'], shell }: {
+export function Screen({ children, scroll = true, padded = true, edges = ['top'], shell, scrollRef }: {
   children: ReactNode; scroll?: boolean; padded?: boolean; edges?: ('top' | 'bottom')[];
   /** 深色殼：首頁那種「黑底 → 彩卡 → 白面板」的版面用 */
   shell?: boolean;
+  /** 要自己捲動時給（單字本翻頁後要回到列表頂端） */
+  scrollRef?: RefObject<ComponentRef<typeof ScrollView> | null>;
 }) {
   const t = useTheme();
   const pad = padded ? { padding: space.xl, paddingBottom: space.section * 2 } : undefined;
   // flexGrow 讓內容少的時候也撐滿整頁，Sheet 才不會只蓋一半、下面露出深色殼
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: shell ? t.shell : t.bg }} edges={edges}>
-      {scroll ? <ScrollView contentContainerStyle={[{ flexGrow: 1 }, pad]} showsVerticalScrollIndicator={false}>{children}</ScrollView>
+      {scroll ? <ScrollView ref={scrollRef} contentContainerStyle={[{ flexGrow: 1 }, pad]} showsVerticalScrollIndicator={false}>{children}</ScrollView>
         : <View style={[{ flex: 1 }, pad]}>{children}</View>}
     </SafeAreaView>
   );

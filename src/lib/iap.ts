@@ -615,9 +615,6 @@ export async function cloudPlan(uid: string): Promise<PlanId> {
  */
 export async function syncPlan(uid: string): Promise<Entitlement> {
   const ent = await cloudEntitlement(uid);
-  // 每一次對帳都留一筆：沒有這行的話，「診斷紀錄是空的」分不出
-  // 「根本沒跑對帳」和「後端已經說是付費版所以不必問 Apple」
-  ilog(`對帳 ${uid.slice(0, 6)}… 後端說 ${ent.plan}${iapSupported() ? '' : '（這台沒有 StoreKit）'}`);
   if (ent.plan !== 'free' || !iapSupported()) return ent;
 
   // 到這裡代表後端認為沒有有效訂閱。可能真的沒買過，也可能是續訂了但我們還不知道。

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Pressable, Alert, TextInput, ActivityIndicator } from 'react-native';
+import { ComponentRef, useRef, useState } from 'react';
+import { View, Pressable, Alert, TextInput, ActivityIndicator, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,8 +12,8 @@ import { speakJa } from '../lib/speech';
 import { aiExample } from '../lib/ai';
 import { RootStack } from '../navigation';
 
-/** 一頁的筆數。20 筆大約是兩個螢幕高，少到載得快、多到不必一直按 */
-const PAGE = 20;
+/** 一頁的筆數。每筆都帶例句區塊和兩顆播放鍵，10 筆大約一個螢幕多一點，翻一頁看得完 */
+const PAGE = 10;
 
 export default function WordbookScreen() {
   const t = useTheme();
@@ -29,12 +29,20 @@ export default function WordbookScreen() {
    * 分頁。單字本是**一路累積**的東西，收到兩三百筆之後整列一次渲染，
    * 每一筆都帶例句區塊和兩顆播放鍵，進畫面會明顯卡一下。
    *
-   * 用「看更多」而不是上下頁：新增的詞會 unshift 到最前面（見 data.tsx 的 addWord），
-   * 第一頁永遠看得到剛加的字；翻頁式的話加完一個字還要自己翻回第一頁。
+   * 頁數用 `Math.min` 夾住：移除單字會讓總頁數變少，停在最後一頁的人
+   * 不夾的話會看到空列表，而且那一頁永遠回不去。
    */
-  const [shown, setShown] = useState(PAGE);
-  const list = d.words.slice(0, shown);
-  const rest = d.words.length - list.length;
+  const [page, setPage] = useState(0);
+  // 翻頁後要回到列表頂端：停在原地的話看到的是新一頁的最後一筆，像什麼都沒發生
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const listY = useRef(0);
+  function goPage(n: number) {
+    setPage(n);
+    scrollRef.current?.scrollTo({ y: Math.max(0, listY.current - space.md), animated: false });
+  }
+  const pages = Math.max(1, Math.ceil(d.words.length / PAGE));
+  const cur = Math.min(page, pages - 1);
+  const list = d.words.slice(cur * PAGE, cur * PAGE + PAGE);
 
   /**
    * 手打新增。
@@ -56,6 +64,8 @@ export default function WordbookScreen() {
       }
       if (d.addWord({ ja: r.ja, kana: r.kana, zh: r.zh, source: '自己新增', examples: r.examples })) {
         setInput('');
+        // 新增的詞 unshift 到最前面（見 data.tsx 的 addWord），不回第一頁就看不到剛加的字
+        setPage(0);
         setOpen(r.ja);
         if (r.remaining !== undefined) d.setAiRemaining(r.remaining);
       } else {
@@ -102,7 +112,7 @@ export default function WordbookScreen() {
   }
 
   return (
-    <Screen shell padded={false}>
+    <Screen shell padded={false} scrollRef={scrollRef}>
       <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
         <TopBar right={<PlanButton />} />
 
@@ -170,6 +180,7 @@ export default function WordbookScreen() {
           <>
             <SectionTitle title="收藏的單字" ja="ことば"
               right={<T variant="small" color={t.faint}>長按可移除</T>} />
+            <View onLayout={e => { listY.current = e.nativeEvent.layout.y; }}>
             <Card tone="soft" style={{ paddingVertical: space.xs }}>
               {list.map((w, i) => (
                 <View key={w.ja}>
@@ -240,15 +251,48 @@ export default function WordbookScreen() {
                 </View>
               ))}
             </Card>
+            </View>
 
-            {/* 剩幾筆要寫出來：只寫「看更多」看不出還有 3 筆還是 300 筆 */}
-            {rest > 0 ? (
-              <Button label={`看更多（還有 ${rest} 個）`} icon="chevron-down" variant="secondary" size="md"
-                onPress={() => setShown(n => n + PAGE)} />
+            {/* 頁碼和總筆數都要寫出來：只有左右箭頭看不出還有 3 筆還是 300 筆 */}
+            {pages > 1 ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
+                <PageArrow icon="chevron-back" label="上一頁" disabled={cur === 0}
+                  onPress={() => goPage(cur - 1)} />
+                <View style={{ alignItems: 'center' }}>
+                  <T variant="small" color={t.sub}>{`第 ${cur + 1} / ${pages} 頁`}</T>
+                  <T variant="caption" color={t.faint} style={{ marginTop: 1 }}>{`共 ${d.words.length} 個`}</T>
+                </View>
+                <PageArrow icon="chevron-forward" label="下一頁" disabled={cur >= pages - 1}
+                  onPress={() => goPage(cur + 1)} />
+              </View>
             ) : null}
           </>
         )}
       </Sheet>
     </Screen>
+  );
+}
+
+/**
+ * 翻頁箭頭。沒用 `RoundButton` 是因為它不收 disabled——
+ * 第一頁還能按「上一頁」的話，按下去沒反應比直接變灰更難懂。
+ */
+function PageArrow({ icon, label, disabled, onPress }: {
+  icon: 'chevron-back' | 'chevron-forward'; label: string; disabled: boolean; onPress: () => void;
+}) {
+  const t = useTheme();
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel={label}
+      accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        paddingHorizontal: space.md, paddingVertical: 10,
+        borderRadius: radius.pill, backgroundColor: t.surface2,
+        opacity: disabled ? 0.4 : pressed ? 0.7 : 1,
+      })}>
+      {icon === 'chevron-back' ? <Ionicons name={icon} size={14} color={t.ink} /> : null}
+      <T variant="small" color={t.ink}>{label}</T>
+      {icon === 'chevron-forward' ? <Ionicons name={icon} size={14} color={t.ink} /> : null}
+    </Pressable>
   );
 }
