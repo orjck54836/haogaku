@@ -153,6 +153,21 @@ const str = (v: unknown, max: number, field: string) => {
   return v.trim();
 };
 
+/**
+ * 選填的字串：沒帶就是沒帶，**不是錯誤**。
+ *
+ * 這條分界踩過一次，而且很貴：`verifyPurchase` 的 `intent` 設計上是選填的
+ * （背景對帳刻意不帶，見那裡的註解），卻寫成 `str(req.data?.intent, …)`——
+ * 於是**每一次背景對帳都在第一行就被回 400「缺少 intent」**。只有使用者
+ * 自己按購買／還原那條路會過，因為它帶了 intent。
+ *
+ * 症狀完全不像參數問題：畫面上是「換帳號之後方案一直停在免費版，
+ * 去按一次訂閱就好了」，查了好幾輪 StoreKit 和交接邏輯。
+ * 而且 `invalid-argument` 在手機端的 FINAL_CODES 裡，連重試都不會發生。
+ */
+const optStr = (v: unknown, max: number, field: string) =>
+  (v === undefined || v === null || v === '' ? '' : str(v, max, field));
+
 // 舊版 App 還會送 L1／L4 上來，收斂到最接近的那一階，不要讓它退成預設值
 function parseLevel(v: unknown): Level {
   if (v === 'L3' || v === 'L4') return 'L3';
@@ -1020,7 +1035,7 @@ export const verifyPurchase = onCall(
     const transactionId = str(req.data?.transactionId, 64, 'transactionId');
     if (!transactionId) throw new HttpsError('invalid-argument', '缺少 transactionId');
     /** 'purchase' / 'restore' 代表這是使用者主動按出來的，背景對帳不帶（見下面的 suppress） */
-    const intent = str(req.data?.intent, 16, 'intent');
+    const intent = optStr(req.data?.intent, 16, 'intent');
 
     const { res, env } = await lookupSubscription(transactionId);
 
