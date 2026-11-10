@@ -74,27 +74,12 @@ export default function AIHubScreen() {
               opacity: pressed ? 0.75 : 1,
             })}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.xs }}>
-              <Ionicons name="bookmark" size={13} color="#FFFFFF" />
-              <T variant="small" color="#FFFFFF" style={{ flex: 1 }}>他記得你，不用從頭講起</T>
+              <T variant="small" color="#FFFFFF" style={{ flex: 1 }}>教練會依過去的對談記錄跟你的單字庫發起談話</T>
               <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.6)" />
             </View>
             <T variant="caption" color="rgba(255,255,255,0.7)" style={{ marginTop: 4 }} numberOfLines={1}>
               {memory.join('・')}
             </T>
-          </Pressable>
-
-          {/* 剩餘次數已經在右上角那顆方案鈕上（同一件事不要兩處顯示），
-              這裡只留「一次」是什麼——光看數字看不出單位。
-              整條可以點：次數見底時，使用者第一個想知道的就是怎麼拿到更多 */}
-          <Pressable accessibilityRole="button" accessibilityLabel="看次數怎麼算"
-            onPress={() => nav.navigate('Quota')}
-            style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.xs,
-              marginTop: space.md, opacity: pressed ? 0.7 : 1 })}>
-            <Ionicons name="flash" size={13} color="rgba(255,255,255,0.55)" />
-            <T variant="caption" color="rgba(255,255,255,0.55)" style={{ flex: 1 }}>
-              每則 AI 回覆、每份分析各算一次
-            </T>
-            <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.55)" />
           </Pressable>
         </WineCard>
       </View>
