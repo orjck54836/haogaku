@@ -379,14 +379,17 @@ async function resetQuotaOnUpgrade(uid: string, prev: PlanId, next: PlanId) {
  * 滿滿 150 次——而且**切回去又是一份新的**。語音更嚴重：`ttsUsage` 按月算，
  * 換一個帳號等於整包 10 萬字元從頭開始，而語音才是成本大宗。
  *
- * ## 取兩邊的大的，不是覆蓋
+ * ## 取兩邊的大的，而且**兩邊都寫**
  *
- * 搬過去要用 `max(新帳號已用, 舊帳號已用)`。直接覆蓋的話，用量少的那一邊
+ * 合併值是 `max(新帳號已用, 舊帳號已用)`。直接覆蓋的話，用量少的那一邊
  * 會把多的洗掉，來回切就是無限次數——那正是這個函式要擋的事。
- * 取 max 是單調的：切幾次、往哪個方向切，已用量都只會往上，不會回頭。
+ * 取 max 是單調的：切幾次、往哪個方向切，已用量都只會往上。
  *
- * 舊帳號那份**故意留著不清**。清掉的話它下次被切回去時是空的，等於又送一份；
- * 留著並讓下一次交接再 max 一遍，兩邊就會收斂到同一個數字。
+ * **只寫新帳號不夠。** 兩個帳號今天各自用過的話（測試時很常見），舊帳號會
+ * 留著自己那個比較小的數字，切回去就看到不一樣的剩餘次數——使用者眼裡
+ * 就是「來回切對不上」。合併值寫回兩邊，兩個帳號才會永遠是同一個數。
+ * 這同時也是更嚴的防洗：離開的那個帳號扛著同一份用量，
+ * 切出去不會變成一份全新的免費額度。
  *
  * 跨日／跨月的舊數字不算：日期對不上代表那是上一期的用量，本來就該歸零。
  */
@@ -403,9 +406,11 @@ async function carryUsage(from: string, to: string) {
       };
       const count = Math.max(of(a, 'count'), of(b, 'count'));
       const reports = Math.max(of(a, 'reports'), of(b, 'reports'));
-      // 新帳號本來就不比舊的少時不用寫：這是最常見的情況（同一個人只是換個登入方式）
-      if (count <= of(b, 'count') && reports <= of(b, 'reports')) return;
-      tx.set(db.doc(`usage/${to}`), { date: day, count, reports }, { merge: true });
+      // 已經一樣的那一邊不用寫（最常見：同一個人只是換個登入方式，另一邊是空的）
+      for (const [uid, snap] of [[from, a], [to, b]] as const) {
+        if (of(snap, 'count') === count && of(snap, 'reports') === reports) continue;
+        tx.set(db.doc(`usage/${uid}`), { date: day, count, reports }, { merge: true });
+      }
     });
     await db.runTransaction(async tx => {
       const [a, b] = await Promise.all([
@@ -415,8 +420,10 @@ async function carryUsage(from: string, to: string) {
         return v && v.month === month ? Number(v.chars) || 0 : 0;
       };
       const chars = Math.max(of(a), of(b));
-      if (chars <= of(b)) return;
-      tx.set(db.doc(`ttsUsage/${to}`), { month, chars }, { merge: true });
+      for (const [uid, snap] of [[from, a], [to, b]] as const) {
+        if (of(snap) === chars) continue;
+        tx.set(db.doc(`ttsUsage/${uid}`), { month, chars }, { merge: true });
+      }
     });
     console.log(`usage carried ${from} → ${to}`);
   } catch (e) {
