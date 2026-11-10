@@ -35,7 +35,7 @@ export default function ReadingsScreen() {
   return (
     <Screen>
       <PageHeader ja="よみもの" title="日文小品"
-        subtitle={`${readings.length} 篇原創短文，每篇三到五分鐘。讀完 ${doneCount} 篇`} />
+        subtitle={`${readings.length} 篇短文，每篇三到五分鐘。讀完 ${doneCount} 篇`} />
 
       <View style={{ marginTop: space.xl }}>
         <Segmented<Filter> value={f} onChange={setF} options={[
@@ -43,6 +43,7 @@ export default function ReadingsScreen() {
           { value: 'story', label: '小說' },
           { value: 'essay', label: '隨筆' },
           { value: 'culture', label: '文化' },
+          { value: 'news', label: '時事' },
         ]} />
       </View>
 

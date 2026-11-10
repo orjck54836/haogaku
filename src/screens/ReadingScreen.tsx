@@ -11,6 +11,7 @@ import { levelShort, levelJlpt } from '../content/curriculum';
 import { readingXp } from '../lib/rank';
 import { useReviewPrompt } from '../lib/useReviewPrompt';
 import { photoFor } from '../ui/images';
+import FollowInvite from '../ui/FollowInvite';
 import { speakJa, stopSpeech } from '../lib/speech';
 import { StackProps } from '../navigation';
 
@@ -37,7 +38,8 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
   const [speaking, setSpeaking] = useState<number | null>(null);
   const [justDone, setJustDone] = useState(false);
   const xp = readingXp(r.level);
-  useReviewPrompt(justDone);
+  // reviewing：這次完成被評價詢問用掉了，底下就不掛 IG 邀請
+  const { reviewing } = useReviewPrompt(justDone);
   const photo = photoFor(r.photo);
   // 重讀不再給 XP，但也不該讓按鈕消失（讀完想再按一次確認讀過是很自然的動作）
   const earned = useRef(0);
@@ -155,9 +157,12 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
           </View>
 
           {justDone ? (
-            <View style={{ alignItems: 'center', marginTop: space.xl, gap: space.sm }}>
-              <Pill icon="checkmark-circle" label={earned.current ? `+${earned.current} XP` : '已讀過，這次不重複給 XP'}
-                color={t.gold} bg={t.goldSoft} />
+            <View style={{ marginTop: space.xl, gap: space.sm }}>
+              <View style={{ alignItems: 'center', gap: space.sm }}>
+                <Pill icon="checkmark-circle" label={earned.current ? `+${earned.current} XP` : '已讀過，這次不重複給 XP'}
+                  color={t.gold} bg={t.goldSoft} />
+              </View>
+              <FollowInvite placement="done" reviewing={reviewing} />
               <Button label="回讀物列表" variant="ghost" onPress={() => navigation.goBack()} />
             </View>
           ) : (

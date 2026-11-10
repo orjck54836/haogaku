@@ -12,6 +12,7 @@ import { rankOf } from '../lib/rank';
 import { ReviewState, emptyReview } from '../lib/review';
 import { isReadingLesson } from '../content/readings';
 import { track } from '../lib/analytics';
+import { practicedToday } from '../lib/reminders';
 import { PlanId, planById, guestLimits } from '../content/plans';
 import { SavedReport, addReport, trimReports, makeReport, retentionOf, fetchReports, pushReport, dropReport, pruneReports, ChatNote, addChatNote } from '../lib/reports';
 import type { ChatReport } from '../lib/ai';
@@ -470,6 +471,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       withProgress(p => ({
         ...p, resume: null, completed: p.completed.includes(id) ? p.completed : [...p.completed, id],
       }));
+      // 今天練到東西了：把今晚那一則「今天的日語還沒練」取消掉。
+      // 重做一次也算——重點是「他今天有打開來練」，不是這堂是不是第一次完成
+      practicedToday();
       if (first) {
         const done = ref.current.progress.completed.filter(x => !isReadingLesson(x)).length;
         track(isReadingLesson(id) ? 'reading_complete' : 'lesson_complete', { level: ref.current.profile.startLevel });
@@ -480,7 +484,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
     setResume: (lessonId, step) => withProgress(p => ({ ...p, resume: { lessonId, step } })),
     clearResume: () => withProgress(p => ({ ...p, resume: null })),
-    recordChat: () => withProgress(p => ({ ...p, chats: p.chats + 1 })),
+    recordChat: () => {
+      // 練過一場 AI 會話也是練：不算的話，今晚還是會跳「今天的日語還沒練」
+      practicedToday();
+      withProgress(p => ({ ...p, chats: p.chats + 1 }));
+    },
     // 後端回來的剩餘次數也要記下「這是哪一天的」：跨午夜的 timer 靠 quotaDay 判斷
     // 該不該重讀，而冷啟動時 refreshQuota 要是失敗了（離線），它會一直是空字串，
     // 之後就算靠這條路把數字補上，午夜那一刻也不會再對一次

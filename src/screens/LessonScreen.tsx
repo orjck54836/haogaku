@@ -15,6 +15,7 @@ import { StackProps } from '../navigation';
 import { lessonXp, rankOf, weightLabel } from '../lib/rank';
 import { useReviewPrompt } from '../lib/useReviewPrompt';
 import { Seal } from '../ui/seal';
+import FollowInvite from '../ui/FollowInvite';
 
 /** 外層：AI 主題課先載入內容 */
 export default function LessonScreen(props: StackProps<'Lesson'>) {
@@ -72,8 +73,9 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   const xp = lessonXp(lesson, ref.topic);
   const s = lesson.steps[step];
 
-  // 上完一堂課是使用者心情最好的時刻，評價就在這時問（時機規則見 lib/review.ts）
-  useReviewPrompt(finished);
+  // 上完一堂課是使用者心情最好的時刻，評價就在這時問（時機規則見 lib/review.ts）。
+  // reviewing 代表這一次被評價用掉了，完成頁就不要再掛 IG 邀請
+  const { reviewing } = useReviewPrompt(finished);
 
   useEffect(() => { d.setResume(lesson.id, step); }, [step]);
   // 已在上課時，從「單元內容」點別張回來：跳到那一張
@@ -158,6 +160,8 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
             </View>
           ) : null}
         </View>
+        {/* 升段卡在 flex 容器裡、邀請在外面：有 LEVEL UP 的那一次要讓慶祝獨占中央 */}
+        {!leveledUp ? <FollowInvite placement="done" reviewing={reviewing} style={{ marginBottom: space.md }} /> : null}
         {nextRef ? <Button label={`下一堂：${nextRef.lesson.title}`} icon="arrow-forward" variant="accent" onPress={goNext} /> : null}
         <Button label={nextRef ? "先到這裡" : "完成"} variant={nextRef ? "ghost" : "primary"} style={{ marginTop: space.sm }} onPress={() => navigation.goBack()} />
       </SafeAreaView>

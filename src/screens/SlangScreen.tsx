@@ -3,6 +3,7 @@ import { View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Button, Pill, RoundButton } from '../ui';
 import SaveButton from '../ui/SaveButton';
+import FollowInvite from '../ui/FollowInvite';
 import { useTheme, space, radius, fonts } from '../theme';
 import { slang, todaySlangIndex } from '../content/slang';
 import { speakJa } from '../lib/speech';
@@ -60,6 +61,8 @@ export default function SlangScreen() {
       {i !== todayIndex
         ? <Button label="回到今日這一個" variant="ghost" style={{ marginTop: space.sm }} onPress={() => setI(todayIndex)} />
         : null}
+      {/* 擺在翻頁鈕之下：翻完這個詞、沒有別的事可做的時候才接導流 */}
+      <FollowInvite placement="slang" style={{ marginTop: space.section }} />
     </Screen>
   );
 }
