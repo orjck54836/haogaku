@@ -391,7 +391,7 @@ export default function ProfileScreen() {
         right={<T variant="caption" color={t.faint}>課程・留學代辦</T>} />
       <OfficialLinks />
 
-      <BrandFooter text={`皓學日語 v1.0.0 · FORMA Global${jsTag ? ` · ${jsTag}` : ''}`} />
+      <BrandFooter text={`皓學日語 v1.0.0`} />
     </Screen>
   );
 }
