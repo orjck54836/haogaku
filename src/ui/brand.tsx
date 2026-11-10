@@ -131,7 +131,7 @@ export function PageHeader({ title, ja, subtitle, right }: { title: string; ja?:
   );
 }
 
-export function BrandFooter({ text = '皓學日語' }: { text?: string }) {
+export function BrandFooter({ text = '皓學日語 v1.0.0' }: { text?: string }) {
   const t = useTheme();
   return (
     <View style={{ marginTop: space.section, alignItems: 'center', gap: space.sm, opacity: 0.6 }}>
