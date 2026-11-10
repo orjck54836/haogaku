@@ -121,3 +121,115 @@ export const signsLesson: Lesson = {
       explain: '手紙（てがみ）＝信件。' },
   ],
 };
+
+/**
+ * 濁音・半濁音。和 `kanaRows` 分開放，是因為那份是「五十音表」本身的語意
+ * （畫面上的 10×5 格），濁音拗音是加在它旁邊的另外兩張表。
+ * 字源欄留空：濁音只是在清音上加兩點，沒有獨立的萬葉假名來源可以聯想。
+ *
+ * 羅馬拼音不能重複：ぢ／づ 和 じ／ず 同音，但 `choiceFor` 用拼音當身分
+ * （過濾選項、React key），寫成一樣的會互相吃掉。
+ */
+export const dakutenRows: { row: string; kana: K[] }[] = [
+  { row: 'が行', kana: [['が','ガ','ga','',''],['ぎ','ギ','gi','',''],['ぐ','グ','gu','',''],['げ','ゲ','ge','',''],['ご','ゴ','go','','']] },
+  { row: 'ざ行', kana: [['ざ','ザ','za','',''],['じ','ジ','ji','',''],['ず','ズ','zu','',''],['ぜ','ゼ','ze','',''],['ぞ','ゾ','zo','','']] },
+  { row: 'だ行', kana: [['だ','ダ','da','',''],['ぢ','ヂ','ji (di)','',''],['づ','ヅ','zu (du)','',''],['で','デ','de','',''],['ど','ド','do','','']] },
+  { row: 'ば行', kana: [['ば','バ','ba','',''],['び','ビ','bi','',''],['ぶ','ブ','bu','',''],['べ','ベ','be','',''],['ぼ','ボ','bo','','']] },
+  { row: 'ぱ行', kana: [['ぱ','パ','pa','',''],['ぴ','ピ','pi','',''],['ぷ','プ','pu','',''],['ぺ','ペ','pe','',''],['ぽ','ポ','po','','']] },
+];
+
+/** 拗音。行名只給母音那個清音字（「きゃ行」在 34pt 的欄寬會換行） */
+export const yoonRows: { row: string; kana: K[] }[] = [
+  { row: 'き', kana: [['きゃ','キャ','kya','',''],['きゅ','キュ','kyu','',''],['きょ','キョ','kyo','','']] },
+  { row: 'し', kana: [['しゃ','シャ','sha','',''],['しゅ','シュ','shu','',''],['しょ','ショ','sho','','']] },
+  { row: 'ち', kana: [['ちゃ','チャ','cha','',''],['ちゅ','チュ','chu','',''],['ちょ','チョ','cho','','']] },
+  { row: 'に', kana: [['にゃ','ニャ','nya','',''],['にゅ','ニュ','nyu','',''],['にょ','ニョ','nyo','','']] },
+  { row: 'ひ', kana: [['ひゃ','ヒャ','hya','',''],['ひゅ','ヒュ','hyu','',''],['ひょ','ヒョ','hyo','','']] },
+  { row: 'み', kana: [['みゃ','ミャ','mya','',''],['みゅ','ミュ','myu','',''],['みょ','ミョ','myo','','']] },
+  { row: 'り', kana: [['りゃ','リャ','rya','',''],['りゅ','リュ','ryu','',''],['りょ','リョ','ryo','','']] },
+  { row: 'ぎ', kana: [['ぎゃ','ギャ','gya','',''],['ぎゅ','ギュ','gyu','',''],['ぎょ','ギョ','gyo','','']] },
+  { row: 'じ', kana: [['じゃ','ジャ','ja','',''],['じゅ','ジュ','ju','',''],['じょ','ジョ','jo','','']] },
+  { row: 'び', kana: [['びゃ','ビャ','bya','',''],['びゅ','ビュ','byu','',''],['びょ','ビョ','byo','','']] },
+  { row: 'ぴ', kana: [['ぴゃ','ピャ','pya','',''],['ぴゅ','ピュ','pyu','',''],['ぴょ','ピョ','pyo','','']] },
+];
+
+/**
+ * 濁音和拗音的課，用和清音同一套 learn→choice 的節奏，但**要分堂切小**：
+ * 濁音半濁音 25 個、拗音 33 個，一堂塞完是 50 個以上的 step，
+ * 中途離開就等於整堂重來。
+ */
+function buildExtraLessons(
+  rows: { row: string; kana: K[] }[], groups: number[][], script: 0 | 1,
+  idPrefix: string, label: string, noteFor: (row: string) => string,
+): Lesson[] {
+  const name = script === 0 ? '平假名' : '片假名';
+  return groups.map((g, gi) => {
+    const rs = g.map(i => rows[i]);
+    const pool = rs.flatMap(r => r.kana);
+    const steps: Step[] = [];
+    rs.forEach((r, ri) => {
+      r.kana.forEach(k => steps.push({
+        // zh 這一欄在假名課是「這個字屬於哪一行」，不是字義
+        type: 'learn', ja: k[script], reading: k[2], zh: label === '拗音' ? `${r.row}＋小字` : r.row, note: noteFor(r.row),
+      }));
+      r.kana.forEach((k, ki) => steps.push(choiceFor(k, pool, script, false, (gi + 1) * 100 + ri * 10 + ki)));
+    });
+    pool.slice(0, 4).forEach((k, ki) => steps.push(choiceFor(k, pool, script, true, (gi + 1) * 1000 + ki)));
+    return {
+      id: `${idPrefix}-${script === 0 ? 'h' : 'k'}-${gi + 1}`,
+      // 行名逐個寫成「だ行、ば行、ぱ行」會超出單行列表的寬度被截掉，只留最後一個「行」
+      title: `${name}${label}：${rs.map(r => r.row.replace('行', '')).join('・')}${rs[0].row.endsWith('行') ? '行' : ''}`,
+      subtitle: rs.map(r => r.kana.map(k => k[script]).join('')).join(' · '),
+      kind: 'kana' as const,
+      minutes: 4,
+      steps,
+    };
+  });
+}
+
+const dakutenNote = (row: string) =>
+  row === 'ぱ行'
+    ? 'は行右上加一個圈（半濁點），念 p'
+    : `${row[0]} 是${row === 'が行' ? 'か' : row === 'ざ行' ? 'さ' : row === 'だ行' ? 'た' : 'は'}行右上加兩點（濁點），聲帶要振動`;
+
+const yoonNote = (row: string) => `${row} ＋ 小寫的 や/ゆ/よ，兩個字拼成一個音節，不要念成兩拍`;
+
+export const dakutenLessons = (script: 0 | 1) =>
+  buildExtraLessons(dakutenRows, [[0, 1], [2, 3, 4]], script, 'kana-d', '濁音', dakutenNote);
+
+export const yoonLessons = (script: 0 | 1) =>
+  buildExtraLessons(yoonRows, [[0, 1, 2, 3], [4, 5, 6], [7, 8, 9, 10]], script, 'kana-y', '拗音', yoonNote);
+
+/**
+ * 促音和長音沒有自己的字可以認，只能用「差一拍就是另一個字」的對比題教——
+ * 這也是台灣人最容易漏掉的兩個音，中文沒有用長度區分意義的習慣。
+ */
+export const rhythmLesson: Lesson = {
+  id: 'kana-rhythm',
+  title: '拍子：停一拍、拉長一拍',
+  subtitle: 'きって／きて、おばさん／おばあさん',
+  kind: 'kana',
+  minutes: 4,
+  steps: [
+    { type: 'learn', ja: 'っ', reading: '促音', zh: '停一拍不發音', note: '寫成小一號的「つ」，自己佔一拍：きって 是 ki-t-te 三拍' },
+    { type: 'learn', ja: 'きって', reading: 'きって', zh: '郵票', note: '和「きて（請過來）」只差那一拍' },
+    { type: 'learn', ja: 'ー', reading: '長音', zh: '把前一個母音拉長一拍', note: '片假名用「ー」，平假名用多寫一個母音：おばあさん、こうこう' },
+    { type: 'learn', ja: 'ラーメン', reading: 'raamen', zh: '拉麵', note: 'ra-a-me-n 四拍，念成三拍日本人會聽不懂' },
+    { type: 'choice', label: '促音', line: '郵便局で「切手」を買います。', lineZh: '在郵局買郵票。',
+      question: '「郵票」的讀音是哪一個？', speak: 'きって',
+      options: [{ text: 'きて', hint: 'きて是「請過來」' }, { text: 'きって' }, { text: 'きいて', hint: 'きいて是「請聽」' }], answer: 1,
+      explain: 'きって（切手）＝郵票。小さい「っ」要停一拍，少了就變成「きて（請過來）」。' },
+    { type: 'choice', label: '促音', line: 'がっこう', speak: 'がっこう', question: '這個詞有幾拍？',
+      options: [{ text: '三拍', hint: '「っ」和長音各自佔一拍' }, { text: '四拍' }, { text: '五拍' }], answer: 1,
+      explain: 'ga-k-ko-o 四拍。「っ」算一拍，「こう」的 u 也算一拍。' },
+    { type: 'choice', label: '長音', line: '伯母／お祖母', question: '「奶奶」是哪一個？', speak: 'おばあさん',
+      options: [{ text: 'おばさん', hint: 'おばさん是阿姨、伯母' }, { text: 'おばあさん' }, { text: 'おっばさん', hint: '沒有這個詞' }], answer: 1,
+      explain: 'おばあさん＝奶奶、老太太；おばさん＝阿姨。差一拍就差一個輩分，叫錯會失禮。' },
+    { type: 'choice', label: '長音', line: 'ビール／ビル', question: '「啤酒」是哪一個？', speak: 'ビール',
+      options: [{ text: 'ビール' }, { text: 'ビル', hint: 'ビル是大樓' }, { text: 'ビッル', hint: '沒有這個詞' }], answer: 0,
+      explain: 'ビール＝啤酒，ビル＝大樓。片假名的長音一律寫「ー」。' },
+    { type: 'choice', label: '長音', line: '這個字怎麼念？', speak: 'こうこう', question: '「高校（高中）」的讀音是？',
+      options: [{ text: 'ここ', hint: 'ここ是「這裡」' }, { text: 'こうこう' }, { text: 'こっこ', hint: '沒有這個詞' }], answer: 1,
+      explain: 'こうこう。平假名的長音靠多寫一個母音表示，o 的長音通常寫成「う」。' },
+  ],
+};

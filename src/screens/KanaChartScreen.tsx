@@ -4,7 +4,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Screen, T, Segmented, Button, RoundButton } from '../ui';
 import { StrokePlayer, WritingPad } from '../ui/strokes';
 import { useTheme, space, radius, fonts } from '../theme';
-import { kanaRows } from '../content/kana';
+import { kanaRows, dakutenRows, yoonRows } from '../content/kana';
 import { kanaStrokes } from '../content/kanaStrokes';
 import { speakJa } from '../lib/speech';
 
@@ -53,17 +53,28 @@ function KanaDetail({ kana, roma, onClose }: { kana: string; roma: string; onClo
 export default function KanaChartScreen() {
   const t = useTheme();
   const [script, setScript] = useState<'0' | '1'>('0');
+  const [set, setSet] = useState<'sei' | 'daku' | 'yoon'>('sei');
   const [open, setOpen] = useState<{ kana: string; roma: string } | null>(null);
   const idx = Number(script) as 0 | 1;
+  const rows = set === 'daku' ? dakutenRows : set === 'yoon' ? yoonRows : kanaRows;
+  // 一列最多 5 格，拗音只有 3 格；格寬照 5 格算，兩張表的字才對得齊
+  const cols = 5;
 
   return (
     <Screen edges={['bottom']}>
       <Segmented value={script} onChange={setScript} options={[{ value: '0', label: '平假名' }, { value: '1', label: '片假名' }]} />
+      <View style={{ marginTop: space.sm }}>
+        <Segmented value={set} onChange={setSet} options={[
+          { value: 'sei' as const, label: '清音' },
+          { value: 'daku' as const, label: '濁音' },
+          { value: 'yoon' as const, label: '拗音' },
+        ]} />
+      </View>
       <T variant="caption" color={t.faint} style={{ marginTop: space.md, textAlign: 'center' }}>
-        點一下看筆順、練手寫
+        {set === 'sei' ? '點一下看筆順、練手寫' : '濁音拗音沒有筆畫資料，點一下聽發音'}
       </T>
       <View style={{ marginTop: space.md, gap: space.sm }}>
-        {kanaRows.map(r => (
+        {rows.map(r => (
           <View key={r.row} style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
             <T variant="caption" color={t.sub} style={{ width: 34 }}>{r.row}</T>
             {r.kana.map(k => {
@@ -76,12 +87,13 @@ export default function KanaChartScreen() {
                   onPress={() => (drawable ? setOpen({ kana: char, roma: k[2] }) : speakJa(char))}
                   style={({ pressed }) => ({ flex: 1, aspectRatio: 0.9, maxWidth: 64, backgroundColor: pressed ? t.primarySoft : t.surface,
                     borderWidth: 1, borderColor: t.line, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' })}>
-                  <T style={{ fontSize: 24, fontFamily: fonts.serifMedium }} color={t.heading}>{char}</T>
+                  {/* 拗音是兩個字，照 24pt 排會超出格寬 */}
+                  <T style={{ fontSize: char.length > 1 ? 18 : 24, fontFamily: fonts.serifMedium }} color={t.heading}>{char}</T>
                   <T variant="caption" color={t.faint}>{k[2].split(' ')[0]}</T>
                 </Pressable>
               );
             })}
-            {Array.from({ length: 5 - r.kana.length }).map((_, i) => <View key={i} style={{ flex: 1, maxWidth: 64 }} />)}
+            {Array.from({ length: cols - r.kana.length }).map((_, i) => <View key={i} style={{ flex: 1, maxWidth: 64 }} />)}
           </View>
         ))}
       </View>

@@ -1,5 +1,5 @@
 import { Lesson, LevelId, Unit } from './types';
-import { hiraganaLessons, katakanaLessons, travelKatakana, signsLesson } from './kana';
+import { hiraganaLessons, katakanaLessons, dakutenLessons, yoonLessons, rhythmLesson, travelKatakana, signsLesson } from './kana';
 import { subwayLesson, konbiniLesson, restaurantLesson, hotelLesson } from './scenes';
 import { grammarUnits, GRAMMAR_ID } from './grammar';
 import { onomatoUnits, ONOMATO_ID } from './onomatopoeia';
@@ -19,8 +19,13 @@ export const levelIndex = (id: LevelId) => levelOrder.indexOf(id);
 
 /** 五十音基礎 */
 export const basics: Unit[] = [
-  { id: 'u-hira', title: '平假名', description: '從字源聯想開始，日文的基礎', lessons: hiraganaLessons, hasKanaChart: true },
-  { id: 'u-kata', title: '片假名', description: '外來語、菜單和招牌都用得到', lessons: [...katakanaLessons, travelKatakana], hasKanaChart: true },
+  // 清音學完才接濁音拗音：這兩組都是在清音字上加記號，順序顛倒的話沒有東西可以加
+  { id: 'u-hira', title: '平假名', description: '從字源聯想開始，日文的基礎',
+    lessons: [...hiraganaLessons, ...dakutenLessons(0), ...yoonLessons(0)], hasKanaChart: true },
+  { id: 'u-kata', title: '片假名', description: '外來語、菜單和招牌都用得到',
+    lessons: [...katakanaLessons, ...dakutenLessons(1), ...yoonLessons(1), travelKatakana], hasKanaChart: true },
+  // 促音長音不分平／片假名：教的是拍子，兩種寫法在同一堂裡對照才看得出差別
+  { id: 'u-rhythm', title: '促音與長音', description: '差一拍就是另一個字', lessons: [rhythmLesson] },
   { id: 'u-signs', title: '看懂日本', description: '車站招牌與漢字陷阱', lessons: [signsLesson] },
 ];
 export const BASICS_ID = 'basics';
