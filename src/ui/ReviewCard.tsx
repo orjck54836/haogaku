@@ -69,9 +69,9 @@ export default function ReviewCard({ placement, style }: Props) {
    * 好評的文案**不要承諾會跳出什麼**。
    *
    * `requestReview()` 只是「請求」，系統有權不顯示（一年三次的上限、剛顯示過），
-   * 而退回商店頁那條路現在也走不通：`appStoreUrl` 在 app.config.ts 裡是註解掉的
-   * （動它會改掉 fingerprint，送審中的 build 就收不到 EAS Update，理由寫在那裡）。
-   * 所以點完五顆星很可能畫面上什麼都不會發生——這時說「正在開啟 App Store」就是說謊。
+   * 叫不出來時才退回 App Store 頁（`appStoreUrl`，見 app.config.ts）。
+   * 兩條路哪一條會發生、甚至會不會發生，畫面這邊都不知道——
+   * 文案寫死「正在開啟 App Store」，碰上系統安靜吞掉請求的那次就是說謊。
    */
   const thanks = picked >= GOOD_STARS ? '謝謝你的支持！'
     : picked ? '謝謝，想聽聽你覺得可以更好的地方' : null;
