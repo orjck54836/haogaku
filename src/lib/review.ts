@@ -85,7 +85,19 @@ async function openNativeReview(): Promise<void> {
     return;
   }
   try {
-    if (await SR.hasAction()) {
+    /**
+     * 要問 `isAvailableAsync()`，**不是 `hasAction()`**。
+     *
+     * `hasAction()` 的實作是 `!!storeUrl() || await isAvailableAsync()`——
+     * 它回答的是「有沒有任何一種辦法」，而 `appStoreUrl` 一填就恆為 true。
+     * 用它當條件的話，原生視窗叫不出來時程式還是會走進 requestReview()
+     * 然後直接 return，底下的退回商店頁永遠執行不到。
+     *
+     * `isAvailableAsync()` 問的才是「原生視窗行不行」。它在 TestFlight 版一律回 false
+     * （Apple 只讓正式下載的版本顯示那個視窗），所以改用它之後，
+     * TestFlight 測試員點五星會開 App Store 頁——**看得到反應，測得出來**。
+     */
+    if (await SR.isAvailableAsync()) {
       await SR.requestReview();
       return;
     }
