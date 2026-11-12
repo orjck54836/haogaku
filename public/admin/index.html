@@ -100,6 +100,28 @@
         不含 Cloud Functions 常駐實例的固定成本（約 NT$300〜600／月）。
       </p>
     </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="row between">
+        <strong>訂閱事件</strong>
+        <span class="faint">最近 50 筆・只增不改</span>
+      </div>
+      <table>
+        <thead><tr><th>時間</th><th>使用者</th><th>事件</th><th>方案</th><th>到期</th><th>來源</th><th>交易</th></tr></thead>
+        <tbody id="subEvents"></tbody>
+      </table>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="row between">
+        <strong>App 錯誤與購買失敗</strong>
+        <span class="faint">最近 50 筆・點訊息看完整紀錄</span>
+      </div>
+      <table>
+        <thead><tr><th>時間</th><th>使用者</th><th>類型</th><th>版本</th><th>訊息</th></tr></thead>
+        <tbody id="clientLogs"></tbody>
+      </table>
+    </div>
   </div>
 
   <p id="error" class="err"></p>
@@ -109,9 +131,12 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, collection, query, where, getDocs }
+import { getFirestore, collection, query, where, getDocs, orderBy, limit }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { firebaseConfig } from './firebase-config.js';
+// 絕對路徑：hosting 開了 cleanUrls，這頁同時能用 /admin 和 /admin/ 打開。
+// 寫成 './' 的話，沒有結尾斜線時會去抓 /firebase-config.js（404），
+// 整段 module 載不起來，畫面停在「請登入」而且按鈕沒有反應
+import { firebaseConfig } from '/admin/firebase-config.js';
 
 /**
  * 單價表。只有這裡寫金額——Firestore 存的是 token 和字元。
@@ -168,7 +193,57 @@ function costOf(d) {
   return { ai, tts };
 }
 
+/**
+ * 寫進 innerHTML 之前一律先過這個。
+ *
+ * clientLogs 是**使用者的手機寫進來的**（規則只鎖欄位和長度，內容隨便他填），
+ * 直接拼進 HTML 的話，任何登入者都能送一段 <script> 在管理者的瀏覽器裡跑——
+ * 而這個頁面登入的是讀得到全站營運資料的帳號。
+ */
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const when = ms => ms ? new Date(Number(ms)).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false }) : '—';
+
+const EVENT_LABEL = {
+  activated: '開通', renewed: '續訂', upgraded: '升級', downgraded: '降級', schedule_changed: '下期變更',
+  expired: '到期／退款', transferred_in: '交接進來', transferred_out: '交接出去', reset: '測試重置', verify_failed: '驗證失敗',
+};
+
+/** 訂閱事件和手機回報。和成本分開載入：其中一個讀不到不該讓整頁空白 */
+async function loadLogs() {
+  try {
+    const snap = await getDocs(query(collection(db, 'subscriptionEvents'), orderBy('at', 'desc'), limit(50)));
+    $('subEvents').innerHTML = snap.empty
+      ? '<tr><td colspan="7" class="faint">還沒有任何訂閱事件</td></tr>'
+      : snap.docs.map(d => d.data()).map(e => `<tr>
+          <td>${esc(when(e.at))}</td>
+          <td class="uid">${esc(e.uid)}</td>
+          <td><strong>${esc(EVENT_LABEL[e.type] ?? e.type)}</strong></td>
+          <td>${esc(e.prevPlan ?? '')}${e.prevPlan && e.plan ? ' → ' : ''}${esc(e.plan ?? '')}${e.error ? `<br><span class="err">${esc(e.error)}</span>` : ''}</td>
+          <td>${esc(e.expiresAt ? when(e.expiresAt) : '—')}</td>
+          <td>${esc(e.intent ?? '')}${e.environment ? `<br><span class="faint">${esc(e.environment)}</span>` : ''}</td>
+          <td class="uid">${esc(e.originalTransactionId ?? e.transactionId ?? '')}</td>
+        </tr>`).join('');
+  } catch (e) {
+    $('subEvents').innerHTML = `<tr><td colspan="7" class="err">讀取失敗：${esc(e?.message ?? e)}</td></tr>`;
+  }
+  try {
+    const snap = await getDocs(query(collection(db, 'clientLogs'), orderBy('createdAt', 'desc'), limit(50)));
+    $('clientLogs').innerHTML = snap.empty
+      ? '<tr><td colspan="5" class="faint">還沒有任何回報</td></tr>'
+      : snap.docs.map(d => d.data()).map(l => `<tr>
+          <td>${esc(when(l.createdAt))}</td>
+          <td class="uid">${esc(l.uid)}</td>
+          <td>${l.kind === 'purchase' ? '購買' : '錯誤'}</td>
+          <td class="faint">${esc(l.app)}<br>${esc(l.os)}</td>
+          <td><details><summary>${esc(l.message)}</summary><pre style="white-space:pre-wrap;font-size:12px;margin:8px 0 0">${esc(l.detail)}</pre></details></td>
+        </tr>`).join('');
+  } catch (e) {
+    $('clientLogs').innerHTML = `<tr><td colspan="5" class="err">讀取失敗：${esc(e?.message ?? e)}</td></tr>`;
+  }
+}
+
 async function load() {
+  loadLogs();
   try {
     const from = taipeiDay(days - 1);
     const snap = await getDocs(query(collection(db, 'costs'), where('date', '>=', from)));
