@@ -50,6 +50,3 @@ public/admin/firebase-config.js
 
 # firebase deploy 的本機快取
 .firebase/
-
-# 本機 build（eas build --local）的產物
-/build
