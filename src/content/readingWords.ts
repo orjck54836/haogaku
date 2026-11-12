@@ -89,3 +89,25 @@ export function kanaFor(readingId: string, ja: string): string | undefined {
   }
   return undefined;
 }
+
+/**
+ * 這一行要送去 TTS 的字串：**純漢字的詞換成標注的假名**，畫面上的字不動。
+ *
+ * 整句唸的時候 TTS 還是會猜錯——「店の棚が空になって」裡的「空」被唸成そら（天空），
+ * 而字幕標的是から（空的）。前後文對人類夠用，對 TTS 不夠。
+ *
+ * 只換**完全沒有假名**的詞（空・店・令和・米騒動）。帶送假名的詞
+ * （食べて・入れやすい・呼ばれました）本來就不會唸錯——送假名已經把讀音定死了，
+ * 換掉只會讓整句變成一長串平假名，反而更難斷詞。
+ *
+ * 換過之後語音快取的 key 跟著變，舊的錯音檔不會被拿來用。
+ */
+const ALL_KANJI = /^[一-龯々〆ヶ]+$/;
+
+export function speechTextFor(readingId: string, lineIndex: number, line: string): string {
+  const ws = wordsForLine(readingId, lineIndex);
+  if (!ws.length) return line;
+  return segmentLine(line, ws)
+    .map(s => (s.word && s.word.kana && ALL_KANJI.test(s.word.w) ? s.word.kana : s.text))
+    .join('');
+}

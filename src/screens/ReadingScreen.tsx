@@ -7,7 +7,7 @@ import SaveButton from '../ui/SaveButton';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
 import { readingById, genreLabels, readingLessonId } from '../content/readings';
-import { wordsForLine, segmentLine, kanaFor, ReadingWord } from '../content/readingWords';
+import { wordsForLine, segmentLine, kanaFor, speechTextFor, ReadingWord } from '../content/readingWords';
 import { levelShort, levelJlpt } from '../content/curriculum';
 import { readingXp } from '../lib/rank';
 import { useReviewPrompt } from '../lib/useReviewPrompt';
@@ -147,7 +147,7 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
               const shown = showAll || open[i];
               return (
                 <Pressable key={i} accessibilityRole="button" accessibilityLabel={`播放：${l.ja}`}
-                  onPress={() => say(i, l.ja)}
+                  onPress={() => say(i, speechTextFor(r.id, i, l.ja))}
                   style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
                   <View style={{ flexDirection: 'row', gap: space.sm }}>
                     {/* 一行只有一個 <T>：拆成多個會在全形句號後面留下換行變成的半形空格 */}
