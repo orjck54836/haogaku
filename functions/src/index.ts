@@ -91,6 +91,26 @@ const GUEST_ALLOWANCE: Allowance = { aiPerDay: 1, reportsPerDay: 0, ttsCharsPerM
  */
 const entCache = new Map<string, { at: number; a: Allowance }>();
 
+/**
+ * 續訂的緩衝：自動續訂中的訂閱，過了 `expiresAt` 之後再認一天。
+ *
+ * `expiresAt` 是 Apple 那一期的到期時間，而**續訂不會通知我們**——新的到期日要等手機
+ * 下一次呼叫 verifyPurchase 才寫得進來，手機又是「看到過期了」才會去驗。中間那一段
+ * 後端手上只有舊的到期日，於是正在付費的人會在續訂的那一刻被當成免費版：
+ * App 開在前景跨過到期時間的話，下一句會話直接回「今天的 AI 次數已用完」，
+ * 要切出去再回來才會好。
+ *
+ * 只給 `autoRenew` 的人：已經取消的訂閱到期就是到期，沒有「等一下會續」這回事。
+ * 最壞情況是扣款失敗的人多用一天，成本上限是一天的額度。
+ */
+const RENEW_GRACE_MS = 24 * 3600_000;
+
+function entitlementLive(d: FirebaseFirestore.DocumentData | undefined): boolean {
+  if (!d?.expiresAt) return true;
+  const exp = Number(d.expiresAt);
+  return exp > Date.now() || (d.autoRenew === true && exp + RENEW_GRACE_MS > Date.now());
+}
+
 async function allowanceOf(uid: string, guest: boolean): Promise<Allowance> {
   if (guest) return GUEST_ALLOWANCE;
   // 10 秒：這個快取是為了省常駐實例上的重複讀取，但它同時也是「剛付完錢的人要等多久
@@ -104,8 +124,7 @@ async function allowanceOf(uid: string, guest: boolean): Promise<Allowance> {
   try {
     const d = (await db.doc(`entitlements/${uid}`).get()).data();
     const p = d?.plan;
-    const live = !d?.expiresAt || Number(d.expiresAt) > Date.now();
-    if (live && (p === 'plus' || p === 'pro')) plan = p;
+    if (entitlementLive(d) && (p === 'plus' || p === 'pro')) plan = p;
   } catch (e) {
     console.warn('entitlement lookup failed, 退回免費方案', e);
   }
@@ -1094,7 +1113,9 @@ export const verifyPurchase = onCall(
     // 不然「還原購買」重打幾次就能無限洗掉次數
     const prevSnap = await entRef.get();
     const prevData = prevSnap.data();
-    const prevLive = !prevData?.expiresAt || Number(prevData.expiresAt) > Date.now();
+    // 用同一條緩衝判斷：續訂那一次舊的到期日剛過，只比時間的話會被看成「免費 → 付費」，
+    // 於是每個月續訂都順便把當天用量歸零。續訂不是升級
+    const prevLive = entitlementLive(prevData);
     const prevPlan: PlanId =
       prevLive && (prevData?.plan === 'plus' || prevData?.plan === 'pro') ? prevData.plan : 'free';
 

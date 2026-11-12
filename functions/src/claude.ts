@@ -49,11 +49,18 @@ export async function askJSON(client: AnthropicLike, o: AskOptions): Promise<any
       // 先回報用量再解析：解析失敗會退到下一種設定再打一次，但這次的 token 已經花掉了，
       // 不記的話帳面成本會比帳單少一截，而且少的剛好是出問題的那些次
       o.onUsage?.({ inTok: Number(res.usage?.input_tokens) || 0, outTok: Number(res.usage?.output_tokens) || 0 });
-      return parseJSON(text);
+      try {
+        return parseJSON(text);
+      } catch (e) {
+        // 被 max_tokens 截斷的 JSON 換設定重打也一樣會被截斷：同一個上限、同一份 prompt。
+        // 照下面的規則退下去的話，一次失敗會變成四次計費，使用者等四倍的時間，結果還是失敗
+        if (res.stop_reason === 'max_tokens') throw Object.assign(new Error('AI 回覆超過長度上限'), { truncated: true });
+        throw e;
+      }
     } catch (e: any) {
       lastError = e;
       // 參數不支援（400）或格式錯誤 → 換下一種設定；其他錯誤（金鑰、額度、網路）直接回報
-      if (e?.status && e.status !== 400) throw e;
+      if (e?.truncated || (e?.status && e.status !== 400)) throw e;
       console.warn('askJSON attempt failed, trying simpler settings:', e?.message ?? e);
     }
   }
