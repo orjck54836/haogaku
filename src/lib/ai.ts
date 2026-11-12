@@ -37,7 +37,11 @@ const pick = (s: Scenario): ScenarioInput => ({ id: s.id, title: s.title });
 
 function friendly(e: any): Error {
   const code: string = e?.code ?? '';
-  if (code.includes('resource-exhausted')) return new Error(e.message || '今天的 AI 次數已用完，明天再來吧');
+  // quota 旗標：畫面要分得出「額度用完」和「壞掉了」。前者不是失敗，
+  // 會話照樣該算完成（見 ChatScreen 的 finish）；只比對訊息文字的話改一次文案就斷
+  if (code.includes('resource-exhausted')) {
+    return Object.assign(new Error(e.message || '今天的 AI 次數已用完，明天再來吧'), { quota: true });
+  }
   if (code.includes('unauthenticated')) return new Error('請先登入再使用 AI 功能');
   if (code.includes('invalid-argument')) return new Error(e.message || '輸入內容有誤');
   return new Error('AI 暫時無法回應，請稍後再試');

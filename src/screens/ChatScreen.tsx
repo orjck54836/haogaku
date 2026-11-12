@@ -207,8 +207,11 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     }
   }
 
+  /** 這場已經算過完成了（額度不夠產分析的那條路），再按一次不能再拿一次 XP */
+  const credited = useRef(false);
+
   async function finish() {
-    if (reporting || userTurns === 0) return;
+    if (reporting || userTurns === 0 || credited.current) return;
     setReporting(true);
     try {
       leaving.current = true;
@@ -221,6 +224,28 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
       if (route.params.lessonId) d.completeLesson(route.params.lessonId);
       navigation.replace('Report', { report, scenarioId: scenario.id, lessonId: route.params.lessonId });
     } catch (e: any) {
+      /**
+       * 額度不夠產分析，**不等於這場沒練**。
+       *
+       * 原本 XP 和完成紀錄全部排在分析成功之後，於是訪客（分析上限是 0）永遠完成不了
+       * AI 會話這一堂；免費版把當天 5 次聊完再按結束，整場也是白練。
+       * 分析是加值，完成是他自己練出來的——照算，只說清楚這次沒有分析。
+       */
+      if (e?.quota) {
+        credited.current = true;
+        d.recordChat();
+        d.addXp(CHAT_XP);
+        if (route.params.lessonId) d.completeLesson(route.params.lessonId);
+        // 沒有分析可以當記憶，至少留下「聊到哪」給下一場
+        const tail = [...history].reverse().find(m => m.role === 'user')?.content ?? '';
+        d.saveChatNote(scenario.id, userTurns, tail);
+        track('chat_finish', { scenario: scenario.id, turns: userTurns, report: false });
+        stopSpeech();
+        stopRef.current?.();
+        Alert.alert('這場會話已經記下來了', `XP 和完成紀錄照算，只是這次沒有分析。\n\n${e.message}`,
+          [{ text: '好', onPress: () => navigation.goBack() }]);
+        return;
+      }
       leaving.current = false;
       Alert.alert('分析失敗', e.message);
     } finally {
