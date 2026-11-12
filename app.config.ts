@@ -21,7 +21,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: '皓學日語',
   slug: config.slug ?? 'haogaku-app',
-  version: '1.0.0',
+  // 版號**只寫在 app.json**。這裡原本也寫了一份，改版號時只改 app.json
+  // 會被這裡蓋掉，build 出來還是舊版號——而 App Store 不收重複的版號，
+  // 要一路跑到上傳失敗才看得出來。上面的 ...config 已經把 app.json 的帶進來了
   // 固定淺色：品牌是米白＋酒紅，不跟系統深色模式
   userInterfaceStyle: 'light',
   ios: {
