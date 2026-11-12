@@ -8,8 +8,8 @@ import { judgeStroke, strokeLength, reasonText } from '../lib/handwriting';
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const BOX = 100;
-/** 遮罩筆畫的粗細：要蓋得住明體最粗的地方，又不能寬到提前露出旁邊那一筆 */
-const MASK_W = 22;
+/** 遮罩筆畫的粗細：要蓋得住明體最粗的地方，又不能寬到提前露出旁邊那一筆（「め」的撇和圈只差幾格） */
+const MASK_W = 20;
 
 /**
  * 手標的折線補成曲線（Catmull-Rom 轉三次貝茲）。
@@ -46,7 +46,10 @@ export function maskPath(pts: Stroke) {
     return [b[0] + ((b[0] - a[0]) / d) * by, b[1] + ((b[1] - a[1]) / d) * by];
   };
   const n = pts.length;
-  return smoothPath([ext(pts[1], pts[0], 4), ...pts, ext(pts[n - 2], pts[n - 1], 10)]);
+  // 延長量跟著筆畫長度縮放：短筆（「め」的第一撇）給固定 10 會一路蓋到下面那一圈，
+  // 看起來像第一筆就把整個左半邊寫完了
+  const len = strokeLength(pts);
+  return smoothPath([ext(pts[1], pts[0], Math.min(4, len * 0.1)), ...pts, ext(pts[n - 2], pts[n - 1], Math.min(10, len * 0.2))]);
 }
 
 const rawPath = (pts: Stroke) =>
