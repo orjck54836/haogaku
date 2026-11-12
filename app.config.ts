@@ -36,6 +36,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       ITSAppUsesNonExemptEncryption: false,
       // 沒有這段，iOS 會在開啟相簿的瞬間直接閃退（而且審查也會退件）
       NSPhotoLibraryUsageDescription: '皓學日語需要讀取相簿，讓你挑一張照片當大頭照。',
+      // App Store 頁面的「語言」欄是從 binary 裡讀的，不是在 App Store Connect 填的：
+      // 包裡沒有任何 .lproj 時就退回開發地區，而 Expo 範本預設是 en，商店頁就寫「英文」。
+      // 這裡改開發地區，下面的 locales 再產出 zh-Hant.lproj，兩邊都指向繁中
+      CFBundleDevelopmentRegion: 'zh-Hant',
+      CFBundleLocalizations: ['zh-Hant'],
     },
     // expo-store-review 在原生評分視窗叫不出來時（例如 iOS 一年三次的上限已滿）
     // 會用這個網址退回商店頁。id 和 eas.json 的 ascAppId 是同一個。
@@ -43,6 +48,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // 加這一行會讓 fingerprint 變掉（app.config.ts 是指紋的輸入），所以當初先關著，
     // 等「反正要重新 build」的那一次再打開——就是加評價星星卡送 TestFlight 這一次。
     appStoreUrl: 'https://apps.apple.com/tw/app/id6830791694',
+  },
+  // 產出 zh-Hant.lproj。只放 App 名稱就夠——商店判斷語言看的是 .lproj 存不存在，
+  // 介面文字本來就寫死繁中，不走系統的在地化
+  locales: {
+    'zh-Hant': { CFBundleDisplayName: '皓學日語' },
   },
   android: {
     ...config.android,
