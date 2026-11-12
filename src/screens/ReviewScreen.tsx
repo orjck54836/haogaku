@@ -5,7 +5,7 @@ import { Screen, T, Card, Button, ProgressBar, Pill, IconName } from '../ui';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData, Word } from '../state/data';
 import { slang } from '../content/slang';
-import { speakJa } from '../lib/speech';
+import { speakJa, speakWord } from '../lib/speech';
 import { StackProps } from '../navigation';
 import { REVIEW_XP } from '../lib/rank';
 
@@ -137,7 +137,7 @@ function Session({ mode, due, allWords, onClose, onAgain }: {
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: space.lg }} keyboardShouldPersistTaps="handled">
           {mode === 'card' ? (
             <Pressable accessibilityRole="button" accessibilityLabel="翻面"
-              onPress={() => { setShown(true); speakJa(w.ja); }}>
+              onPress={() => { setShown(true); speakWord(w.ja, w.kana); }}>
               <Card style={{ alignItems: 'center', paddingVertical: space.section }}>
                 <T style={{ fontSize: 32, lineHeight: 48, fontFamily: fonts.serifMedium, textAlign: 'center' }} color={t.heading}>{w.ja}</T>
                 {shown ? <>
@@ -181,7 +181,7 @@ function Session({ mode, due, allWords, onClose, onAgain }: {
                     const isBad = picked === n && o !== w.ja;
                     return (
                       <Pressable key={o + n} accessibilityRole="button" disabled={picked !== null}
-                        onPress={() => { setPicked(n); setShown(true); grade(o === w.ja); speakJa(w.ja); }}
+                        onPress={() => { setPicked(n); setShown(true); grade(o === w.ja); speakWord(w.ja, w.kana); }}
                         style={({ pressed }) => ({
                           flexDirection: 'row', alignItems: 'center', borderRadius: radius.lg, padding: space.lg,
                           backgroundColor: isRight ? t.successSoft : isBad ? t.dangerSoft : t.surface2,
@@ -199,7 +199,7 @@ function Session({ mode, due, allWords, onClose, onAgain }: {
                   <TextInput value={typed} onChangeText={setTyped} editable={!shown}
                     placeholder="用日文打出來" placeholderTextColor={t.faint}
                     autoCorrect={false} autoCapitalize="none" accessibilityLabel="默寫答案"
-                    onSubmitEditing={() => { if (!shown && typed.trim()) { setShown(true); grade(normalize(typed) === normalize(w.ja)); speakJa(w.ja); } }}
+                    onSubmitEditing={() => { if (!shown && typed.trim()) { setShown(true); grade(normalize(typed) === normalize(w.ja)); speakWord(w.ja, w.kana); } }}
                     style={{
                       backgroundColor: t.surface2, borderRadius: radius.lg, paddingHorizontal: space.lg, paddingVertical: 16,
                       fontSize: 20, fontFamily: fonts.serifMedium, color: t.heading,
@@ -228,15 +228,15 @@ function Session({ mode, due, allWords, onClose, onAgain }: {
               <Button label="還不熟" variant="secondary" style={{ flex: 1 }} onPress={() => { grade(false); next(); }} />
               <Button label="記得" style={{ flex: 1 }} onPress={() => { grade(true); next(); }} />
             </View>
-          ) : <Button label="看答案" variant="dark" onPress={() => { setShown(true); speakJa(w.ja); }} />
+          ) : <Button label="看答案" variant="dark" onPress={() => { setShown(true); speakWord(w.ja, w.kana); }} />
         ) : shown ? (
           <Button label={i + 1 < queue.length ? '下一個' : '看結果'} onPress={next} />
         ) : mode === 'write' ? (
           <View style={{ flexDirection: 'row', gap: space.md }}>
             <Button label="想不起來" variant="secondary" style={{ flex: 1 }}
-              onPress={() => { setShown(true); grade(false); speakJa(w.ja); }} />
+              onPress={() => { setShown(true); grade(false); speakWord(w.ja, w.kana); }} />
             <Button label="對答案" style={{ flex: 1 }} disabled={!typed.trim()}
-              onPress={() => { setShown(true); grade(normalize(typed) === normalize(w.ja)); speakJa(w.ja); }} />
+              onPress={() => { setShown(true); grade(normalize(typed) === normalize(w.ja)); speakWord(w.ja, w.kana); }} />
           </View>
         ) : <Button label="選一個答案" disabled onPress={() => {}} />}
       </Screen>

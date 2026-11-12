@@ -74,3 +74,18 @@ export function segmentLine(line: string, ws: ReadingWord[]): Segment[] {
   if (plain) out.push({ text: plain });
   return out;
 }
+
+/**
+ * 這篇文章裡這個詞的假名讀音，查不到回 undefined。
+ *
+ * 文末「帶走這些詞」那份清單的 `reading` 是**羅馬字**（hotondo），
+ * 送去 TTS 會被當成英文唸，所以播放一律回頭查這裡的假名。
+ */
+export function kanaFor(readingId: string, ja: string): string | undefined {
+  for (const [key, ws] of Object.entries(words)) {
+    if (!key.startsWith(`${readingId}|`)) continue;
+    const hit = ws.find(w => w.w === ja);
+    if (hit?.kana) return hit.kana;
+  }
+  return undefined;
+}

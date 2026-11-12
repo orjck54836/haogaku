@@ -7,13 +7,13 @@ import SaveButton from '../ui/SaveButton';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
 import { readingById, genreLabels, readingLessonId } from '../content/readings';
-import { wordsForLine, segmentLine, ReadingWord } from '../content/readingWords';
+import { wordsForLine, segmentLine, kanaFor, ReadingWord } from '../content/readingWords';
 import { levelShort, levelJlpt } from '../content/curriculum';
 import { readingXp } from '../lib/rank';
 import { useReviewPrompt } from '../lib/useReviewPrompt';
 import { photoFor } from '../ui/images';
 import FollowInvite from '../ui/FollowInvite';
-import { speakJa, stopSpeech } from '../lib/speech';
+import { speakJa, speakWord, stopSpeech } from '../lib/speech';
 import { StackProps } from '../navigation';
 
 /**
@@ -193,13 +193,13 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
               <View key={w.ja}>
                 {i > 0 ? <Rule /> : null}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}>
-                  <Pressable accessibilityRole="button" accessibilityLabel={`播放 ${w.ja}`} onPress={() => speakJa(w.ja)}
+                  <Pressable accessibilityRole="button" accessibilityLabel={`播放 ${w.ja}`} onPress={() => speakWord(w.ja, kanaFor(r.id, w.ja))}
                     style={({ pressed }) => ({ flex: 1, opacity: pressed ? 0.6 : 1 })}>
                     <T style={{ fontSize: 18, lineHeight: 26, fontFamily: fonts.serifMedium }} color={t.heading}>{w.ja}</T>
                     <T variant="caption" color={t.faint} style={{ marginTop: 1 }}>{w.reading}</T>
                   </Pressable>
                   <T variant="small" color={t.sub} style={{ maxWidth: 130, textAlign: 'right' }}>{w.zh}</T>
-                  <SaveButton ja={w.ja} zh={w.zh} source={`讀物・${r.titleZh}`} compact />
+                  <SaveButton ja={w.ja} kana={kanaFor(r.id, w.ja)} zh={w.zh} source={`讀物・${r.titleZh}`} compact />
                 </View>
               </View>
             ))}
@@ -253,8 +253,9 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
                 <RoundButton icon="volume-high" size={38} bg={t.primarySoft} fg={t.primary}
                   accessibilityLabel={`播放 ${picked.word.w}`}
-                  onPress={() => { stopSpeech(); speakJa(picked.word.w); }} />
-                <SaveButton ja={picked.word.w} zh={picked.word.zh} source={`讀物・${r.titleZh}`} compact />
+                  onPress={() => { stopSpeech(); speakWord(picked.word.w, picked.word.kana); }} />
+                <SaveButton ja={picked.word.w} kana={picked.word.kana} zh={picked.word.zh}
+                  source={`讀物・${r.titleZh}`} compact />
                 <RoundButton icon="close" size={38} bg={t.bg} fg={t.sub}
                   accessibilityLabel="關閉" onPress={() => setPicked(null)} />
               </View>

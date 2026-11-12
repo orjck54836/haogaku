@@ -181,6 +181,21 @@ export async function speakJa(raw: string, voice: Voice = 'female'): Promise<voi
   if (my === token) await speakOnDevice(text);
 }
 
+/**
+ * 唸一個**單詞**。有假名讀音就唸假名，不要唸漢字字形。
+ *
+ * 單獨一個漢字詞沒有上下文，TTS 只能猜，而且常常猜錯：
+ * 實際踩到的是「空」——字幕標的是から（空的），語音唸成そら（天空）。
+ * 同類的還有「角」（かど／つの）、「生」（なま／せい）、「人気」（にんき／ひとけ）。
+ * 句子不會有這個問題（前後文夠 TTS 判斷），所以整句照樣送原文。
+ *
+ * **唸出來的必須和畫面上標的讀音一致**。標了から卻唸そら，
+ * 學習者會把錯的讀音記起來——這比沒有語音更糟。
+ */
+export function speakWord(ja: string, kana?: string, voice: Voice = 'female'): Promise<void> {
+  return speakJa(kana?.trim() ? kana : ja, voice);
+}
+
 function stopPlayback() {
   Speech.stop();
   if (player) { try { player.remove(); } catch { /* 忽略 */ } player = null; }

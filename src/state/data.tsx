@@ -193,7 +193,7 @@ type DataCtx = Store & {
   saveChatNote: (scenarioId: string, turns: number, tail: string) => void;
   removeReport: (id: string) => void;
   isSaved: (ja: string) => boolean;
-  toggleWord: (w: { ja: string; zh?: string; source: string }) => void;
+  toggleWord: (w: { ja: string; kana?: string; zh?: string; source: string }) => void;
   /** 手打新增。已經收藏過的回 false，讓畫面知道要說「已經在單字本裡了」 */
   addWord: (w: Omit<Word, 'savedAt' | 'box' | 'due'>) => boolean;
   /** 補上 AI 產生的內容（例句失敗後重試用），不動複習進度 */

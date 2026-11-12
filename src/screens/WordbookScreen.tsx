@@ -8,7 +8,7 @@ import { TopBar, WineCard } from '../ui/brand';
 import { PlanButton } from '../ui/PlanButton';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
-import { speakJa } from '../lib/speech';
+import { speakJa, speakWord } from '../lib/speech';
 import { aiExample } from '../lib/ai';
 import { RootStack } from '../navigation';
 
@@ -186,7 +186,7 @@ export default function WordbookScreen() {
                 <View key={w.ja}>
                   {i > 0 ? <Rule /> : null}
                   <Pressable accessibilityRole="button" accessibilityLabel={`播放 ${w.ja}`}
-                    onPress={() => speakJa(w.ja)} onLongPress={() => confirmRemove(w.ja)}
+                    onPress={() => speakWord(w.ja, w.kana)} onLongPress={() => confirmRemove(w.ja)}
                     style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingVertical: space.md, gap: space.md, opacity: pressed ? 0.7 : 1 })}>
                     <View style={{ flex: 1 }}>
                       {/* 日文用明體，和課程內頁、流行語同一種排法 */}
@@ -204,7 +204,7 @@ export default function WordbookScreen() {
                       </View>
                     </View>
                     <RoundButton icon="volume-high" size={38} bg="#FFFFFF" fg={t.primary}
-                      accessibilityLabel={`播放 ${w.ja}`} onPress={() => speakJa(w.ja)} />
+                      accessibilityLabel={`播放 ${w.ja}`} onPress={() => speakWord(w.ja, w.kana)} />
                   </Pressable>
 
                   {/* 例句的開關和列表都在 Pressable 外面：
