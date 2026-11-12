@@ -30,22 +30,11 @@ const LESSON_MODEL = 'claude-sonnet-5-5';  // 課程內容用：品質優先（�
  * 日上限 600 次乘上 30 天的最壞情況是月費的三倍以上。改成每月字元之後，
  * 額度就是成本本身，最壞情況算得出來也守得住。
  *
- * AI 文字維持「每日次數」：一則回覆約 NT$0.008，便宜到不必精算，
- * 而且日額度會讓人每天回來。
+ * AI 文字維持「每日次數」：日額度會讓人每天回來。
  *
- * ## 每個方案的最壞月成本（NT$32/USD）
- *
- *            AI 文字              語音                    合計    月費   毛利
- *   訪客     5×30×0.008 = 1.2    3k 字 Neural2 = 1.5      2.7     0      —
- *   免費     10×30×0.008 = 2.4   8k 字 Neural2 = 4.1      6.5     0      —
- *   標準     60×30×0.008 = 14    40k 字 HD = 38           52      150    65%
- *   無限     150×30×0.008 = 36   100k 字 HD = 96          132     350    62%
- *
- * 常駐實例（minInstances: 1）約 NT$300〜600/月是固定成本，和用量無關：
- * **約 5 個標準方案訂戶就打平**，之後每一個都是淨賺。
- *
- * 這些是依單價推的估算。上架後拿真實的 Google Cloud 帳單校正一次，
- * 特別是語音那一欄——它佔成本的四分之三。
+ * 各方案用滿的月成本、入袋和毛利**只寫在 CLAUDE.md 的「語音算字元，不算次數」那張表**。
+ * 這裡原本也抄了一份，額度調過兩輪之後數字全部對不上（還寫著訪客 5 次、毛利 65%），
+ * 而看這個檔的人會以為它是對的。同一張表只留一處。
  */
 type PlanId = 'free' | 'plus' | 'pro';
 type Allowance = {
@@ -348,7 +337,7 @@ async function useQuota(uid: string, guest: boolean, limit: number, reportLimit?
  * API 的錢我們還是付了（約 NT$0.001），但那是成本問題，不該轉嫁到額度上。
  * 日期對不上（跨過午夜）就不退：那一天的計數已經重置，再減會變成偷加額度。
  */
-async function refundQuota(uid: string) {
+async function refundQuota(uid: string, report = false) {
   const ref = db.doc(`usage/${uid}`);
   await db.runTransaction(async tx => {
     const snap = await tx.get(ref);
@@ -357,7 +346,12 @@ async function refundQuota(uid: string) {
     const count = (data.count as number) ?? 0;
     // merge：這筆文件現在還存著分析的計數（reports），整筆覆蓋會把它洗掉，
     // 等於每退一次額度就送一份免費的會話分析
-    if (count > 0) tx.set(ref, { date: data.date, count: count - 1 }, { merge: true });
+    // 分析那一次同時扣了兩個計數器，退的時候也要兩個一起退，
+    // 只退 count 的話「每天幾份分析」會被一次失敗的呼叫吃掉
+    const reports = (data.reports as number) ?? 0;
+    if (count > 0) {
+      tx.set(ref, { date: data.date, count: count - 1, ...(report && reports > 0 ? { reports: reports - 1 } : {}) }, { merge: true });
+    }
   }).catch(e => console.warn('refundQuota failed', e));
 }
 
@@ -454,6 +448,10 @@ async function askClaude(uid: string, kind: CostKind, system: string, messages: 
       onUsage: u => recordAi(uid, kind, MODEL, u) });
   } catch (e) {
     console.error('Claude request failed', e);
+    // 三個呼叫端（會話、分析、例句）都是先扣額度才進來的。沒拿到回覆就把那一次還回去：
+    // 免費版一天只有 5 次，上游出一次狀況就少一次，等於拿我們的故障去罰使用者。
+    // 刷不到東西——失敗的那一次本來就什麼都沒回
+    await refundQuota(uid, kind === 'report');
     throw new HttpsError('internal', 'AI 暫時無法回應，請再試一次');
   }
 }
@@ -657,10 +655,18 @@ export const aiSpeak = onCall({ region: 'asia-east1', timeoutSeconds: 30, memory
 // ---------- AI 主題課程（後備：只有沒預先產生的新主題才會用到） ----------
 
 export const aiLesson = onCall({ ...opts, timeoutSeconds: 120 }, async req => {
-  const { uid } = requireUser(req);
+  const { uid, guest } = requireUser(req);
   const topicId = str(req.data?.topicId, 40, '主題');
   if (!/^[a-z0-9-]+$/.test(topicId)) throw new HttpsError('invalid-argument', '主題有誤');
-  const title = str(req.data?.title, 40, '主題名稱');
+  /**
+   * 只收後端認得的主題，標題也用後端自己那一份——理由和 aiChat 的 parseScenario 一樣。
+   * 原本 title／focus 照用手機送來的字、而且完全不扣額度：等於任何人（含訪客）
+   * 都能拿我們的金鑰叫 Sonnet 產 6000 token，快取 key 又是內容雜湊，換一個字就是一次新的。
+   * 498 堂都已經內建在 app 裡，正常使用根本走不到這裡，所以收緊不影響任何人。
+   */
+  const def = SCENARIOS[topicId];
+  if (!def) throw new HttpsError('invalid-argument', '找不到這個主題，請更新 App 後再試');
+  const title = def.title;
   const focus = str(req.data?.focus, 200, '主題內容');
   const kind: GenKind = req.data?.kind === 'native' || req.data?.kind === 'practice' ? req.data.kind : 'basic';
   const level = parseLevel(req.data?.level);
@@ -671,12 +677,18 @@ export const aiLesson = onCall({ ...opts, timeoutSeconds: 120 }, async req => {
   const cached = await ref.get();
   if (cached.exists) return { steps: cached.data()!.steps };
 
+  // 快取沒中才扣（和 aiExample 同一個順序：沒花錢的那次不該扣）。
+  // focus 還是手機送的，所以要有額度擋著——不然換個 focus 就能無限產生
+  const a = await allowanceOf(uid, guest);
+  await useQuota(uid, guest, a.aiPerDay);
+
   let steps: any[];
   try {
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
     steps = await generateLesson(client, LESSON_MODEL, title, focus, kind, level, u => recordAi(uid, 'lesson', LESSON_MODEL, u));
   } catch (e) {
     console.error('aiLesson failed', e);
+    await refundQuota(uid);
     throw new HttpsError('internal', '課程產生失敗，請再試一次');
   }
   await ref.set({ steps, topicId, title, kind, level, createdAt: Date.now(), reviewed: false });
@@ -1051,7 +1063,6 @@ export const verifyPurchase = onCall(
         const info = decodeApplePayload(item.signedTransactionInfo);
         const plan = PRODUCT_PLAN[String(info.productId)];
         if (!plan) continue;
-        const expiresAt = Number(info.expiresDate ?? 0);
         const originalTransactionId = String(info.originalTransactionId ?? item.originalTransactionId ?? '');
         /**
          * 同一個訂閱群組裡**降級是排程的**：按下標準版之後，這一期結束前
@@ -1062,6 +1073,13 @@ export const verifyPurchase = onCall(
          */
         const renewal = item.signedRenewalInfo ? decodeApplePayload(item.signedRenewalInfo) : null;
         const autoRenew = Number(renewal?.autoRenewStatus ?? 1) === 1;
+        /**
+         * 扣款寬限期（status 4）要用 `gracePeriodExpiresDate`。
+         * 這時交易自己的 expiresDate **已經過了**——照寫的話 allowanceOf 一比就判成過期，
+         * isLiveStatus 特地放行的寬限期等於沒有作用，使用者在 Apple 還在重試扣款時就被降回免費。
+         */
+        const grace = Number(item.status) === 4 ? Number(renewal?.gracePeriodExpiresDate ?? 0) : 0;
+        const expiresAt = Math.max(Number(info.expiresDate ?? 0), grace);
         const nextPlan = (autoRenew && PRODUCT_PLAN[String(renewal?.autoRenewProductId ?? '')]) || (autoRenew ? plan : 'free');
         // 同時有兩個有效訂閱（升級的那一刻可能發生）時取到期日最晚的
         if (!best || expiresAt > best.expiresAt) {
@@ -1288,8 +1306,14 @@ export const resetPlan = onCall(
     claims.forEach(d => batch.delete(d.ref));
     // 當天的 AI 次數跟著歸零：不然測升級時分不出「resetQuotaOnUpgrade 生效了」
     // 和「本來就沒用過」。ttsUsage 是按月的，一起清掉才是真正的「剛綁定」
-    batch.delete(db.doc(`usage/${uid}`));
-    batch.delete(db.doc(`ttsUsage/${uid}`));
+    //
+    // **只在這次真的把付費資格打掉時才清。** 重置完 entitlement 仍然標著 Sandbox，
+    // 所以這支可以一直重複呼叫——每次都清用量的話，有過沙盒資格的帳號就是無限次 AI。
+    const wasPaid = (cur?.plan === 'plus' || cur?.plan === 'pro') && Number(cur?.expiresAt) > Date.now();
+    if (wasPaid) {
+      batch.delete(db.doc(`usage/${uid}`));
+      batch.delete(db.doc(`ttsUsage/${uid}`));
+    }
     await batch.commit();
 
     entCache.delete(uid);   // 只清得掉這個實例的，別的實例靠 allowanceOf 的 10 秒 TTL
