@@ -313,6 +313,13 @@ eas update --branch production --message "說明"
   舊 binary 自然收不到那包更新——不然會把需要新原生模組的 JS 推到沒有那個模組的
   binary 上，變成啟動即死（和「新裝的原生模組不要頂層 import」同一個坑）。
 
+- **`.gitignore` 也算進指紋**（因為專案裡有 `ios/` 資料夾，指紋把它當 bare 專案算）。
+  改一行 `.gitignore`，runtime 版本就變，那次更新會發布成功但**沒有任何 build 收得到**——
+  實際踩過：只是加了 `*.ipa`，更新就送到一個不存在的 runtime 上。
+  要忽略本機檔案寫在 `.git/info/exclude`。發布完對一下輸出的 `Runtime version`
+  和上一次是不是同一個；想先確認就跑 `npx expo-updates fingerprint:generate --platform ios`。
+- **非互動模式要帶 `--environment production`**。EAS 上 production 環境的變數和本機 `.env` 是同一組九個。
+
 設定在 `app.json` 的 `updates`／`runtimeVersion`，channel 在 `eas.json`，
 理由寫在 `app.config.ts` 檔頭。
 
