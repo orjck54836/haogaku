@@ -50,3 +50,6 @@ public/admin/firebase-config.js
 
 # firebase deploy 的本機快取
 .firebase/
+
+# 本機打出來的安裝檔（一個 48MB，進版控只會把 repo 撐爆）
+*.ipa

@@ -1,4 +1,5 @@
 import { Linking } from 'react-native';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { linkById } from '../content/links';
 import { today } from './date';
 
@@ -70,6 +71,9 @@ type StoreReviewModule = typeof import('expo-store-review');
 
 function loadStoreReview(): StoreReviewModule | null {
   try {
+    // 先探再 require（CLAUDE.md「新裝的原生模組不要頂層 import」）：只包 try/catch
+    // 擋不住套件在載入時自己丟出去的那種錯
+    if (!requireOptionalNativeModule('ExpoStoreReview')) return null;
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     return require('expo-store-review') as StoreReviewModule;
   } catch {
