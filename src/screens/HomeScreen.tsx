@@ -8,6 +8,7 @@ import {
 } from '../ui';
 import { TopBar, WineCard, BrandFooter } from '../ui/brand';
 import { TopicThumb } from '../ui/seal';
+import ReviewCard from '../ui/ReviewCard';
 import { PlanButton } from '../ui/PlanButton';
 import { photoFor, uiPhotos } from '../ui/images';
 import { useTheme, space, radius, fonts, type } from '../theme';
@@ -151,6 +152,9 @@ export default function HomeScreen() {
 
         {/* 讀物。課程是一句一句練，讀物是一次讀一段——
             放在流行語前面，因為它需要的時間比較長，該在使用者還有耐心的位置 */}
+        {/* 夾在兩段內容中間：頁尾會被整個滑過去（方案入口和排行榜都踩過） */}
+        <ReviewCard placement="list" style={{ marginTop: space.section }} />
+
         <SectionTitle title="日文小品" ja="よみもの" action={`全部 ${readings.length} 篇`}
           onAction={() => goTab('Readings')} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.xl }}

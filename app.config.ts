@@ -40,10 +40,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // expo-store-review 在原生評分視窗叫不出來時（例如 iOS 一年三次的上限已滿）
     // 會用這個網址退回商店頁。id 和 eas.json 的 ascAppId 是同一個。
     //
-    // **先關著，下一次重新 build 時再打開。** app.config.ts 是 fingerprint 的輸入，
-    // 加這一行會讓 runtimeVersion 變掉，已經送審的 build 8（指紋 35fb503c…）
-    // 就收不到任何 EAS Update——為了一個 fallback 擋掉所有線上修正不划算。
-    // appStoreUrl: 'https://apps.apple.com/tw/app/id6830791694',
+    // 加這一行會讓 fingerprint 變掉（app.config.ts 是指紋的輸入），所以當初先關著，
+    // 等「反正要重新 build」的那一次再打開——就是加評價星星卡送 TestFlight 這一次。
+    appStoreUrl: 'https://apps.apple.com/tw/app/id6830791694',
   },
   android: {
     ...config.android,

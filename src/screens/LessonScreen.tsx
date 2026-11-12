@@ -14,6 +14,7 @@ import { speakJa, stopSpeech } from '../lib/speech';
 import { StackProps } from '../navigation';
 import { lessonXp, rankOf, weightLabel } from '../lib/rank';
 import { useReviewPrompt } from '../lib/useReviewPrompt';
+import ReviewCard from '../ui/ReviewCard';
 import { Seal } from '../ui/seal';
 import FollowInvite from '../ui/FollowInvite';
 
@@ -161,6 +162,8 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
           ) : null}
         </View>
         {/* 升段卡在 flex 容器裡、邀請在外面：有 LEVEL UP 的那一次要讓慶祝獨占中央 */}
+        {/* 有 LEVEL UP 的那一次讓慶祝獨占中央，評價和 IG 都讓位 */}
+        {!leveledUp && reviewing ? <ReviewCard placement="done" style={{ marginBottom: space.md }} /> : null}
         {!leveledUp ? <FollowInvite placement="done" reviewing={reviewing} style={{ marginBottom: space.md }} /> : null}
         {nextRef ? <Button label={`下一堂：${nextRef.lesson.title}`} icon="arrow-forward" variant="accent" onPress={goNext} /> : null}
         <Button label={nextRef ? "先到這裡" : "完成"} variant={nextRef ? "ghost" : "primary"} style={{ marginTop: space.sm }} onPress={() => navigation.goBack()} />

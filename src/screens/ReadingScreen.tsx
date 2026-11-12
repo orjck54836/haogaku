@@ -11,6 +11,7 @@ import { wordsForLine, segmentLine, kanaFor, speechTextFor, ReadingWord } from '
 import { levelShort, levelJlpt } from '../content/curriculum';
 import { readingXp } from '../lib/rank';
 import { useReviewPrompt } from '../lib/useReviewPrompt';
+import ReviewCard from '../ui/ReviewCard';
 import { photoFor } from '../ui/images';
 import FollowInvite from '../ui/FollowInvite';
 import { speakJa, speakWord, stopSpeech } from '../lib/speech';
@@ -217,6 +218,7 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
                 <Pill icon="checkmark-circle" label={earned.current ? `+${earned.current} XP` : '已讀過，這次不重複給 XP'}
                   color={t.gold} bg={t.goldSoft} />
               </View>
+              {reviewing ? <ReviewCard placement="done" /> : null}
               <FollowInvite placement="done" reviewing={reviewing} />
               <Button label="回讀物列表" variant="ghost" onPress={() => navigation.goBack()} />
             </View>

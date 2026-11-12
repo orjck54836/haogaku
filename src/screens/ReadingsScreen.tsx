@@ -5,6 +5,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Pill, Segmented } from '../ui';
 import { PageHeader } from '../ui/brand';
+import ReviewCard from '../ui/ReviewCard';
 import { photoFor } from '../ui/images';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
@@ -48,10 +49,14 @@ export default function ReadingsScreen() {
       </View>
 
       <View style={{ gap: space.lg, marginTop: space.xl }}>
-        {list.map(r => (
-          <ReadingRow key={r.id} r={r} today={r.id === todayId}
-            done={progress.completed.includes(readingLessonId(r.id))}
-            onPress={() => nav.navigate('Reading', { readingId: r.id })} />
+        {list.map((r, i) => (
+          <View key={r.id} style={{ gap: space.lg }}>
+            <ReadingRow r={r} today={r.id === todayId}
+              done={progress.completed.includes(readingLessonId(r.id))}
+              onPress={() => nav.navigate('Reading', { readingId: r.id })} />
+            {/* 夾在內容流裡，不放最上面：第一眼要看到的是讀物本身 */}
+            {i === 1 ? <ReviewCard placement="list" /> : null}
+          </View>
         ))}
       </View>
     </Screen>

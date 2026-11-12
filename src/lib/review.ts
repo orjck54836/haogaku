@@ -1,4 +1,4 @@
-import { Alert, Linking, Platform } from 'react-native';
+import { Linking } from 'react-native';
 import { linkById } from '../content/links';
 import { today } from './date';
 
@@ -8,10 +8,14 @@ import { today } from './date';
  * 兩段式，不是直接跳原生評分視窗。理由很實際：
  * iOS 一年只允許跳三次原生視窗（而且是系統在數，不是我們），
  * 跳給一個正在不爽的人等於浪費掉一次額度，還會換來一顆星。
- * 所以先自己問一句「用得還習慣嗎」：
- *   說喜歡 → 才叫原生視窗（那時幾乎篤定是好評）
- *   說普通 → 不叫評分，改導去 LINE 聽他要說什麼（負評變成客服對話）
- *   說晚點 → 什麼都不做，過一陣子再問
+ * 所以第一段自己問，使用者點幾顆星決定後面怎麼走：
+ *   4〜5 星 → 才叫原生視窗（那時幾乎篤定是好評）
+ *   1〜3 星 → 不叫評分，改導去 LINE 聽他要說什麼（負評變成客服對話）
+ *   不理它 → 什麼都不做，過一陣子再問
+ *
+ * **不要用任何好處換評價**（AI 次數、解鎖、點數都算）。
+ * App Store 審查指南 1.1.6／5.6.1 和 Google Play 都明文禁止，
+ * 被抓到是帳號層級的處分，不是退一次件而已。
  *
  * 時機的三條規則，都是為了不要在人家學到一半時打斷：
  * 1. 至少完成 5 堂課或讀物——沒用過幾次就問，答案沒有意義
@@ -100,43 +104,24 @@ function feedbackUrl(): string | null {
 /** 詢問的結果。asked 的累加由呼叫端做——這裡不知道目前是第幾次 */
 export type AskResult = { lastAskedAt: string; done?: boolean };
 
+/** 顯示出來就算問過一次。卡片是常駐版位，不記的話每次進畫面都會再出現 */
+export function markAsked(): AskResult {
+  return { lastAskedAt: today() };
+}
+
+/** 給好評的門檻。4 星以上才值得花掉一次原生視窗的額度 */
+export const GOOD_STARS = 4;
+
 /**
- * 跳出詢問。回傳要寫回 ReviewState 的欄位——
- * 這個函式不碰儲存，由呼叫端決定怎麼存，才不用把 data context 拉進 lib。
+ * 使用者點了幾顆星。回傳要寫回 ReviewState 的欄位。
+ *
+ * 不論幾星都 `done: true`：他已經表達過了，再問第二次只會惹人厭，
+ * 而「一輩子 3 次」那個額度要留給還沒表態的人。
  */
-export function askForReview(): Promise<AskResult> {
-  return new Promise(resolve => {
-    const asked: AskResult = { lastAskedAt: today() };
-    const fb = feedbackUrl();
-
-    const buttons: any[] = [
-      {
-        text: '很喜歡', onPress: () => {
-          openNativeReview();
-          resolve({ ...asked, done: true });
-        },
-      },
-    ];
-
-    if (fb) {
-      buttons.push({
-        text: '有地方想建議', onPress: () => {
-          Linking.openURL(fb).catch(() => {});
-          // 願意留意見的人已經表達過了，不要再用評分視窗煩他
-          resolve({ ...asked, done: true });
-        },
-      });
-    }
-
-    buttons.push({ text: '以後再說', style: 'cancel', onPress: () => resolve(asked) });
-
-    Alert.alert(
-      '用得還習慣嗎？',
-      Platform.OS === 'ios'
-        ? '皓學日語是小團隊做的。如果這個 app 有幫到你，一則 App Store 評價對我們幫助很大。'
-        : '皓學日語是小團隊做的。如果這個 app 有幫到你，一則商店評價對我們幫助很大。',
-      buttons,
-      { cancelable: true, onDismiss: () => resolve(asked) },
-    );
-  });
+export function submitStars(stars: number): AskResult {
+  const res: AskResult = { lastAskedAt: today(), done: true };
+  if (stars >= GOOD_STARS) { openNativeReview(); return res; }
+  const fb = feedbackUrl();
+  if (fb) Linking.openURL(fb).catch(() => {});
+  return res;
 }
