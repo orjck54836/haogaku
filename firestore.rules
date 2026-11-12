@@ -101,6 +101,40 @@ service cloud.firestore {
         && request.resource.data.text.size() <= 1000;
     }
 
+    // 訂閱事件（開通、續訂、升降級、過期、交接、驗證失敗），只增不改。
+    //
+    // entitlements 只有「現在是什麼方案」，每次驗證都覆蓋；Cloud Logging 30 天就清掉。
+    // 沒有這份的話，一個月前的扣款爭議查不到任何東西。只有後端寫得進去、只有 admin 讀得到——
+    // 這是跨所有使用者的營收紀錄，和 costs 同一個等級。
+    match /subscriptionEvents/{id} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow write: if false;
+    }
+
+    // 手機端回報的錯誤和購買失敗紀錄（見 src/lib/errlog.ts）。
+    //
+    // 和內容檢舉同一個做法：只開 create，本人也讀不回去、改不掉。
+    // 欄位和長度都鎖死，擋住有人改 client 拿這裡當免費的儲存空間。
+    match /clientLogs/{id} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow update, delete: if false;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['uid', 'kind', 'message', 'detail', 'app', 'os', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.kind in ['purchase', 'error']
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 300
+        && request.resource.data.detail is string
+        && request.resource.data.detail.size() <= 6000
+        && request.resource.data.app is string
+        && request.resource.data.app.size() <= 40
+        && request.resource.data.os is string
+        && request.resource.data.os.size() <= 40
+        && request.resource.data.createdAt is number;
+    }
+
     // 哪一筆 Apple 訂閱已經綁給哪個 uid（文件 id 是 originalTransactionId）。
     //
     // 沒有這份的話，一個人買一份訂閱，拿同一組 Apple ID 在 N 個帳號上各驗一次，

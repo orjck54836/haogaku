@@ -374,6 +374,29 @@ async function refundQuota(uid: string, report = false) {
   }).catch(e => console.warn('refundQuota failed', e));
 }
 
+/**
+ * ## 訂閱事件紀錄
+ *
+ * `entitlements/{uid}` 只存「現在是什麼方案」，每次驗證都覆蓋；console.log 進的
+ * Cloud Logging 預設 30 天就清掉。所以「這個人什麼時候買的、續訂過幾次、
+ * 哪一天被交接走」事後完全查不到——偏偏扣款爭議都是隔了一陣子才來問的。
+ *
+ * 這裡另外記一份**只增不改**的帳：`subscriptionEvents`，一個變動一筆。
+ * 沒有變動的驗證（每次冷啟動的對帳）不寫，不然一個人一個月會有上百筆一樣的。
+ *
+ * 寫入是射後不理，理由和成本記錄一樣：帳記不進去不該讓購買失敗。
+ *
+ * **刪帳號時不跟著刪**（見 purgeAccount）：這是交易紀錄，退款和對帳要用。
+ */
+type SubEventType =
+  | 'activated' | 'renewed' | 'upgraded' | 'downgraded' | 'schedule_changed'
+  | 'expired' | 'transferred_in' | 'transferred_out' | 'reset' | 'verify_failed';
+
+function recordSubEvent(uid: string, type: SubEventType, data: Record<string, unknown>) {
+  db.collection('subscriptionEvents').add({ uid, type, at: Date.now(), ...data })
+    .catch(e => console.warn('recordSubEvent failed', e));
+}
+
 /** 方案高低，只用來判斷「這次是不是升級」 */
 const PLAN_RANK: Record<PlanId, number> = { free: 0, plus: 1, pro: 2 };
 
@@ -914,6 +937,17 @@ export const purgeAccount = onCall(
       await batch.commit();
     });
 
+    // 手機回報的錯誤和購買失敗紀錄：是這個人的診斷資料，帳號沒了就不該留。
+    // subscriptionEvents 刻意不刪——那是交易紀錄，退款爭議和對帳要用，
+    // 和上面 contentReports 留著是同一個理由（隱私權政策要寫到這件事）
+    await attempt('clientLogs', async () => {
+      const snap = await db.collection('clientLogs').where('uid', '==', uid).get();
+      if (snap.empty) return;
+      const batch = db.batch();
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    });
+
     // 大頭照。路徑固定（見 storage.rules），沒上傳過就當成已經刪掉
     await attempt('avatar', () =>
       getStorage().bucket().file(`avatars/${uid}.jpg`).delete({ ignoreNotFound: true }));
@@ -1068,7 +1102,20 @@ export const verifyPurchase = onCall(
     /** 'purchase' / 'restore' 代表這是使用者主動按出來的，背景對帳不帶（見下面的 suppress） */
     const intent = optStr(req.data?.intent, 16, 'intent');
 
-    const { res, env } = await lookupSubscription(transactionId);
+    let looked: Awaited<ReturnType<typeof lookupSubscription>>;
+    try {
+      looked = await lookupSubscription(transactionId);
+    } catch (e: any) {
+      // 只記使用者自己按出來的：這是「Apple 說成交、我們說失敗」的現場，客服最需要的一筆。
+      // 背景對帳的失敗（離線、Apple 暫時掛掉）每次冷啟動都可能來一次，記了只是雜訊
+      if (intent) {
+        recordSubEvent(uid, 'verify_failed', {
+          intent, transactionId, error: String(e?.code ?? e?.message ?? e).slice(0, 300),
+        });
+      }
+      throw e;
+    }
+    const { res, env } = looked;
 
     // 一個 App 可能有多個訂閱群組，每組回最後一筆交易。挑出還有效、而且我們認得的那個方案
     let best: {
@@ -1119,7 +1166,19 @@ export const verifyPurchase = onCall(
     const prevPlan: PlanId =
       prevLive && (prevData?.plan === 'plus' || prevData?.plan === 'pro') ? prevData.plan : 'free';
 
+    // 文件上寫的方案，不管過期沒有。記事件要用這個：prevPlan 過期就算 free，
+    // 拿它比的話「付費 → 過期」那一次會被看成「本來就是免費」，永遠記不到
+    const rawPrev: PlanId = prevData?.plan === 'plus' || prevData?.plan === 'pro' ? prevData.plan : 'free';
+    const base = { intent: intent || 'background', transactionId, environment: env };
+
     if (!best) {
+      // 寫回 free 之後 rawPrev 就是 free，所以這筆只會記一次
+      if (rawPrev !== 'free') {
+        recordSubEvent(uid, 'expired', {
+          ...base, prevPlan: rawPrev, plan: 'free', prevExpiresAt: Number(prevData?.expiresAt ?? 0),
+          originalTransactionId: prevData?.originalTransactionId ?? null,
+        });
+      }
       // 查得到交易但沒有有效訂閱：過期或已退款。把資格收回來，不要留著舊的
       await entRef.set({
         plan: 'free', expiresAt: 0, nextPlan: 'free', autoRenew: false, store: 'apple', environment: env,
@@ -1176,6 +1235,7 @@ export const verifyPurchase = onCall(
      * next」的防線剛好被交接繞過。所以要拿**舊 owner 的方案**當比較基準。
      */
     let transferredFrom: PlanId | null = null;
+    let fromUid: string | null = null;
     if (best.originalTransactionId) {
       const claimRef = db.doc(`subscriptionClaims/${best.originalTransactionId}`);
       const prevOwner = await db.runTransaction(async tx => {
@@ -1203,6 +1263,7 @@ export const verifyPurchase = onCall(
         return owner ?? null;
       });
       if (prevOwner) {
+        fromUid = prevOwner;
         // 只清得掉這個實例的；舊 owner 要是正好打在別的實例上，靠 allowanceOf 的 10 秒 TTL 過期
         entCache.delete(prevOwner);
         // 額度跟著訂閱走：不搬的話換個帳號就是一份全新的次數和語音字元
@@ -1237,6 +1298,29 @@ export const verifyPurchase = onCall(
      */
     const effectivePrev: PlanId = transferredFrom ?? prevPlan;
     await resetQuotaOnUpgrade(uid, effectivePrev, best.plan);
+
+    // 記事件。沒有任何變動（單純的對帳）就不寫
+    const detail = {
+      ...base, plan: best.plan, prevPlan: rawPrev, expiresAt: best.expiresAt,
+      nextPlan: best.nextPlan, autoRenew: best.autoRenew,
+      productId: best.productId, originalTransactionId: best.originalTransactionId,
+    };
+    if (fromUid) {
+      recordSubEvent(uid, 'transferred_in', { ...detail, fromUid });
+      recordSubEvent(fromUid, 'transferred_out', {
+        ...base, toUid: uid, plan: 'free', prevPlan: transferredFrom ?? 'free',
+        originalTransactionId: best.originalTransactionId,
+      });
+    } else if (rawPrev === 'free') {
+      recordSubEvent(uid, 'activated', detail);
+    } else if (PLAN_RANK[best.plan] !== PLAN_RANK[rawPrev]) {
+      recordSubEvent(uid, PLAN_RANK[best.plan] > PLAN_RANK[rawPrev] ? 'upgraded' : 'downgraded', detail);
+    } else if (best.expiresAt > Number(prevData?.expiresAt ?? 0)) {
+      recordSubEvent(uid, 'renewed', detail);
+    } else if (best.nextPlan !== prevData?.nextPlan || best.autoRenew !== prevData?.autoRenew) {
+      // 按了取消、或排了下一期要換方案：資格還沒變，但這是之後會發生什麼的線索
+      recordSubEvent(uid, 'schedule_changed', { ...detail, prevNextPlan: prevData?.nextPlan ?? null, prevAutoRenew: prevData?.autoRenew ?? null });
+    }
 
     console.log(`verifyPurchase ${uid}: ${best.plan} 到 ${new Date(best.expiresAt).toISOString()}`
       + `${best.nextPlan === best.plan ? '' : `，下一期改成 ${best.nextPlan}`} (${env})`);
@@ -1338,6 +1422,11 @@ export const resetPlan = onCall(
     await batch.commit();
 
     entCache.delete(uid);   // 只清得掉這個實例的，別的實例靠 allowanceOf 的 10 秒 TTL
+
+    recordSubEvent(uid, 'reset', {
+      environment: 'Sandbox', prevPlan: cur?.plan ?? 'free', plan: 'free',
+      originalTransactionId: cur?.originalTransactionId ?? null, suppressedUntil: suppress?.until ?? 0,
+    });
 
     console.log(`resetPlan ${uid}: 清掉 entitlement(${cur?.plan}) + claim ${claims.size} 筆`
       + `${suppress ? `，忽略 ${suppress.tx} 到 ${new Date(suppress.until).toISOString()}` : ''}`);
