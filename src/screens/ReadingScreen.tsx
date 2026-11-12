@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { View, Image, Pressable, ScrollView } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { View, Image, Pressable, ScrollView, Text } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { T, Card, Button, Pill, Rule, SectionTitle, RoundButton } from '../ui';
@@ -7,6 +7,7 @@ import SaveButton from '../ui/SaveButton';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData } from '../state/data';
 import { readingById, genreLabels, readingLessonId } from '../content/readings';
+import { wordsForLine, segmentLine, ReadingWord } from '../content/readingWords';
 import { levelShort, levelJlpt } from '../content/curriculum';
 import { readingXp } from '../lib/rank';
 import { useReviewPrompt } from '../lib/useReviewPrompt';
@@ -23,7 +24,9 @@ import { StackProps } from '../navigation';
  *    整篇可以一次打開（右上角），單行也可以點開——先猜再對答案。
  * 2. **一行一個點擊區**。點日文就唸那一行，不做整篇朗讀——
  *    學習者需要的是反覆聽某一句，不是聽一段廣播。
- * 3. 單字集中在文末，不做行內標記。行內塞收藏鈕會把日文排版切碎。
+ * 3. 單字集中在文末，不做行內標記。行內塞收藏鈕會把日文排版切碎——
+ *    所以行內的詞改成**點了才在底部出現一張小卡**，排版本身不動，
+ *    收藏鈕也只在那張卡上（見 picked）。
  */
 export default function ReadingScreen({ route, navigation }: StackProps<'Reading'>) {
   const t = useTheme();
@@ -36,6 +39,22 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
   const [showAll, setShowAll] = useState(false);
   const [open, setOpen] = useState<Record<number, boolean>>({});
   const [speaking, setSpeaking] = useState<number | null>(null);
+  /** 點開的詞。帶行索引是因為同一個詞可能出現在好幾行，只有被點的那一個該亮起來 */
+  const [picked, setPicked] = useState<{ i: number; word: ReadingWord } | null>(null);
+  /**
+   * 詞的點擊要吃掉整行的播放。
+   *
+   * 行是一個大的 Pressable（點了唸整句），詞是巢狀在裡面的 Text。
+   * RN 的巢狀 Text onPress **不保證**會擋住外層 Pressable，兩個都觸發的話
+   * 點一個詞會順便把整句唸出來。用時間戳記擋：詞剛被點過就略過那一次播放。
+   */
+  const wordTap = useRef(0);
+
+  /** 斷詞結果和文章綁在一起，不必每次 render 重算（一篇 8〜12 行，每行都要掃一遍） */
+  const segments = useMemo(
+    () => r.lines.map((l, i) => segmentLine(l.ja, wordsForLine(r.id, i))),
+    [r.id, r.lines],
+  );
   const [justDone, setJustDone] = useState(false);
   const xp = readingXp(r.level);
   // reviewing：這次完成被評價詢問用掉了，底下就不掛 IG 邀請
@@ -45,9 +64,17 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
   const earned = useRef(0);
 
   function say(i: number, ja: string) {
+    // 剛點過詞就不播：那一下的意圖是查意思，不是聽整句
+    if (Date.now() - wordTap.current < 400) return;
     setSpeaking(i);
     stopSpeech();
     speakJa(ja);
+  }
+
+  function pickWord(i: number, word: ReadingWord) {
+    wordTap.current = Date.now();
+    // 再點同一個就收起來：小卡擋住了下面兩行，要有一個不用找關閉鈕的收法
+    setPicked(p => (p && p.i === i && p.word.w === word.w ? null : { i, word }));
   }
 
   function finish() {
@@ -105,6 +132,16 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
             </Pressable>
           </View>
 
+          {/* 行內點字沒有任何視覺標示（底線太吵），所以要有一句話告訴使用者這件事存在。
+              放在文章正上方而不是頁尾：看到的時候正要開始讀，才用得上。
+              沒有標注的舊文章不顯示，免得提示了卻點不動 */}
+          {segments.some(s => s.some(x => x.word)) ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: space.md }}>
+              <Ionicons name="hand-left-outline" size={13} color={t.faint} />
+              <T variant="caption" color={t.faint}>{'點日文裡的單字可以看意思'}</T>
+            </View>
+          ) : null}
+
           <View style={{ marginTop: space.xl, gap: space.lg }}>
             {r.lines.map((l, i) => {
               const shown = showAll || open[i];
@@ -113,8 +150,26 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
                   onPress={() => say(i, l.ja)}
                   style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
                   <View style={{ flexDirection: 'row', gap: space.sm }}>
+                    {/* 一行只有一個 <T>：拆成多個會在全形句號後面留下換行變成的半形空格 */}
                     <T style={{ flex: 1, fontSize: 19, lineHeight: 34, fontFamily: fonts.serifRegular }} color={t.heading}>
-                      {l.ja}
+                      {segments[i].map((s, k) => {
+                        if (!s.word) return s.text;
+                        const on = picked?.i === i && picked.word.w === s.word.w;
+                        return (
+                          <Text key={k} suppressHighlighting accessibilityRole="button"
+                            accessibilityLabel={`${s.text}：看意思`}
+                            onPress={() => pickWord(i, s.word!)}
+                            style={{
+                              color: on ? '#FFFFFF' : t.heading,
+                              backgroundColor: on ? t.primary : undefined,
+                            }}>
+                            {/* 可點的詞**不加底線**。實測平均有 53% 的字是可點的，
+                                再淡的底線都會變成整行畫線，日文排版整個被切碎。
+                                改成點了才反白，發現性交給上面那一行提示。 */}
+                            {s.text}
+                          </Text>
+                        );
+                      })}
                     </T>
                     <Ionicons name="volume-high-outline" size={16} color={speaking === i ? t.primary : t.faint}
                       style={{ marginTop: 9 }} />
@@ -171,6 +226,42 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
           )}
         </View>
       </ScrollView>
+
+      {/* 點開的詞。
+          **浮在底部，不是 Modal**：查一個詞的時候原句要留在視線裡，
+          全螢幕蓋掉的話使用者得先關掉才能把句子讀完，等於每查一個詞斷一次。
+          位置固定在底部而不是跟著字跑，是因為跟著字跑時最後一行的卡會超出畫面。 */}
+      {picked ? (
+        <View style={{ position: 'absolute', left: space.md, right: space.md, bottom: insets.bottom + space.md }}>
+          <Card raised style={{ padding: space.md }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.sm }}>
+              <View style={{ flex: 1 }}>
+                <T style={{ fontSize: 22, lineHeight: 32, fontFamily: fonts.serifMedium }} color={t.heading}>
+                  {picked.word.w}
+                </T>
+                {/* 假名詞的讀音就是詞形本身，印第二次只是讓卡片多一行沒有資訊的字 */}
+                {picked.word.kana && picked.word.kana !== picked.word.w ? (
+                  <T variant="caption" color={t.faint} style={{ marginTop: 1 }}>{picked.word.kana}</T>
+                ) : null}
+                {/* 日中同形詞（災害、理由、電車…約佔一成）的中譯就是原文本身，
+                    印出來等於同一個詞看三次。這種詞真正有價值的是讀音，
+                    所以中文那一行收掉——但假名也被收掉時要留著，免得卡片只剩一個詞 */}
+                {picked.word.zh !== picked.word.w || picked.word.kana === picked.word.w ? (
+                  <T style={{ fontSize: 16, lineHeight: 24, marginTop: 6 }} color={t.sub}>{picked.word.zh}</T>
+                ) : null}
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                <RoundButton icon="volume-high" size={38} bg={t.primarySoft} fg={t.primary}
+                  accessibilityLabel={`播放 ${picked.word.w}`}
+                  onPress={() => { stopSpeech(); speakJa(picked.word.w); }} />
+                <SaveButton ja={picked.word.w} zh={picked.word.zh} source={`讀物・${r.titleZh}`} compact />
+                <RoundButton icon="close" size={38} bg={t.bg} fg={t.sub}
+                  accessibilityLabel="關閉" onPress={() => setPicked(null)} />
+              </View>
+            </View>
+          </Card>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
