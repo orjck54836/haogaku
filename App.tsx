@@ -14,6 +14,10 @@ import { firebaseConfigured } from './src/lib/firebase';
 import AppNavigator from './src/navigation';
 import { track, flushAnalytics, loadAnalyticsChoice } from './src/lib/analytics';
 import { syncReminders } from './src/lib/reminders';
+import { initErrorLog } from './src/lib/errlog';
+
+// 放在模組層而不是 useEffect：第一次 render 就丟錯的話，effect 根本還沒跑到
+initErrorLog();
 
 function SetupNeeded() {
   return (

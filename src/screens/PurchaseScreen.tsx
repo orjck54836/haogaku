@@ -13,6 +13,7 @@ import { legalLinks } from '../content/links';
 import { track } from '../lib/analytics';
 import { iapSupported, fetchPrices, purchaseSubscription, restoreSubscription, recoverPurchase, VerifyFailed, PurchaseScheduled, VerifyResult } from '../lib/iap';
 import { iapLogText, ilog, errText } from '../lib/iaplog';
+import { reportLog } from '../lib/errlog';
 import { useAuth } from '../state/auth';
 import { StackProps } from '../navigation';
 
@@ -231,6 +232,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
     d.setProfile({ plan: res.plan });
     void d.refreshPlan().then(() => d.refreshQuota()).catch(() => {});
     track('purchase_mismatch', { plan: plan.id, got: res.plan });
+    reportLog('purchase', `付款完成但方案對不上：買 ${plan.id}，後端回 ${res.plan}`, iapLogText());
     Alert.alert('付款完成了，但還沒開通',
       `你的付款已經送出，但 Apple 目前回報的還是${planById(res.plan).name}。`
       + '不要重複購買——通常過幾分鐘就會生效，重開 App 或按「還原購買」會自動開通。',
@@ -332,6 +334,11 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
        * 「這筆訂閱綁在別的帳號上」是錯的：重開 App 和還原購買都救不了，
        * 他需要知道要換回哪一個帳號。
        */
+      // 走到這裡才是真的出事（取消、排程、已訂閱、等核准都在上面處理掉了）。
+      // 把整段步驟紀錄送回後端：那段紀錄只在這台手機的記憶體裡，
+      // 之後他來問「我付了錢沒開通」時，我們手上才有 StoreKit 那一半的經過。
+      // 放在補救之前送——補救可能要再等 45 秒，中間 app 被關掉就什麼都沒留下
+      reportLog('purchase', `購買失敗 ${plan.id} ${errText(e)}`, iapLogText());
       if (e instanceof VerifyFailed && e.final) { finalFail(e); return; }
       console.warn('purchase failed', e);
       /**
@@ -429,6 +436,7 @@ export default function PurchaseScreen({ route, navigation }: StackProps<'Purcha
       }
     } catch (e) {
       console.warn('restore failed', e);
+      reportLog('purchase', `還原失敗 ${errText(e)}`, iapLogText());
       /**
        * 後端的最終答案在這裡也要講清楚，**不要都說成「稍後再試」**。
        *
