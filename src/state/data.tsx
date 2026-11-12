@@ -167,6 +167,13 @@ function publishLeader(uid: string, s: Store) {
 
 type DataCtx = Store & {
   loaded: boolean;
+  /**
+   * 手機上沒有快取、雲端又讀不到。這時**不能當成新使用者**：照常進引導頁的話，
+   * 走完那一步會把一份空白資料整份寫上雲端，蓋掉他原本的進度和單字本
+   * （重裝、換手機後第一次開啟剛好斷線，就是這個狀況）。畫面要停在重試，不要往下走。
+   */
+  loadFailed: boolean;
+  retryLoad: () => void;
   setProfile: (p: Partial<Profile>) => void;
   /** 重新跟後端對一次方案資格。購買完、或 App 回到前景時呼叫 */
   refreshPlan: () => Promise<PlanId>;
@@ -213,7 +220,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [store, setStore] = useState<Store>(emptyStore);
   const [entitlement, setEntitlement] = useState<Entitlement>(freeEntitlement);
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reload, setReload] = useState(0);
   const ref = useRef<Store>(emptyStore);
+  /**
+   * 手機上這份資料最後一次被改動的時間，跟著存進 AsyncStorage。
+   *
+   * 載入時拿它和雲端的 `updatedAt` 比，**新的那份贏**。以前是雲端無條件蓋過本機，
+   * 但雲端那份有可能比較舊：寫入有 1.5 秒 debounce、Firestore 沒有離線持久化，
+   * 所以「離線練完就關掉」或「上完課馬上滑掉 app」的那些變動只存在手機上，
+   * 下次開啟就被雲端的舊資料洗掉。
+   */
+  const localAt = useRef(0);
+  /**
+   * 這個帳號的雲端文件有沒有成功讀過一次。**沒讀過之前不寫 users/{uid}**：
+   * 不知道雲端有什麼就整份覆蓋，等於拿手機上（可能是空的、可能是舊的）那份去賭。
+   */
+  const cloudReady = useRef(false);
   const uidRef = useRef<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -223,27 +246,52 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const uid = user?.uid ?? null;
     uidRef.current = uid;
     setLoaded(false);
+    setLoadFailed(false);
+    // 上一個帳號還沒送出的那次寫入不能留到現在才跑：那時 ref 裡已經是別人的資料
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    localAt.current = 0;
+    cloudReady.current = false;
     if (!uid) { ref.current = emptyStore; setStore(emptyStore); setEntitlement(freeEntitlement); return; }
 
     (async () => {
       let local: Store | null = null;
       try {
         const raw = await AsyncStorage.getItem(localKey(uid));
-        if (raw) local = merge(JSON.parse(raw));
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          local = merge(parsed);
+          // 舊版存的快取沒有這個欄位，當成 0：那些人維持原本「雲端為準」的行為
+          localAt.current = Number(parsed?.updatedAt) || 0;
+        }
       } catch { /* 忽略 */ }
       if (!cancelled && local) { ref.current = local; setStore(local); }
 
       try {
         const snap = await getDoc(doc(db, 'users', uid));
         if (cancelled) return;
+        cloudReady.current = true;
         if (snap.exists()) {
-          const cloud = merge(snap.data() as Partial<Store>);
-          ref.current = cloud; setStore(cloud);
-          AsyncStorage.setItem(localKey(uid), JSON.stringify(cloud)).catch(() => {});
+          const cloudAt = Number(snap.data().updatedAt) || 0;
+          if (local && localAt.current > cloudAt) {
+            // 手機上那份比較新（上次的寫入沒送到）：留著它，並且補送上去
+            pushCloud(uid);
+          } else {
+            const cloud = merge(snap.data() as Partial<Store>);
+            ref.current = cloud; setStore(cloud);
+            localAt.current = cloudAt;
+            saveLocal(uid, cloud);
+          }
         } else if (local) {
-          setDoc(doc(db, 'users', uid), { ...local, updatedAt: Date.now() }).catch(() => {});
+          pushCloud(uid);
         }
-      } catch { /* 離線時使用快取 */ }
+      } catch (e: any) {
+        if (cancelled) return;
+        // 權限被拒不是斷線：之後的寫入一樣會被規則擋下，蓋不到任何東西，照舊往下走就好
+        if (e?.code === 'permission-denied') cloudReady.current = true;
+        // 沒有快取又讀不到雲端：停在重試畫面，不要把他當新使用者（見 loadFailed 的說明）
+        else if (!local) { setLoadFailed(true); return; }
+        // 有快取的離線啟動照常用快取；雲端等 reconcile() 讀到之後才寫
+      }
 
       // 分析紀錄在子集合，要另外讀一次；失敗（離線）時保留手機上的快取
       try {
@@ -257,7 +305,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           if (!cloud.length && local.length) local.forEach(r => pushReport(uid, r));
           const next = { ...ref.current, reports: trimReports(merged, plan) };
           ref.current = next; setStore(next);
-          AsyncStorage.setItem(localKey(uid), JSON.stringify(next)).catch(() => {});
+          saveLocal(uid, next);
           // 超出額度的舊紀錄留在雲端會一直計費，而且使用者看不到也刪不掉
           if (cloud.length > next.reports.length) pruneReports(uid, next.reports);
         }
@@ -278,7 +326,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (!cancelled) syncAllRef.current();
     })();
     return () => { cancelled = true; };
-  }, [user?.uid]);
+  }, [user?.uid, reload]);
 
   /**
    * App 從背景回來時再對一次方案。
@@ -290,7 +338,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user?.uid) return;
     const sub = AppState.addEventListener('change', st => {
-      if (st === 'active') syncAllRef.current();
+      if (st === 'active') {
+        // 啟動時離線、雲端一直沒讀到的人：回前景是最自然的重試時機
+        if (!cloudReady.current && uidRef.current) void syncCloud(uidRef.current);
+        syncAllRef.current();
+      } else {
+        // 切到背景之後 JS 的 timer 隨時會被凍住，而 app 在背景被系統收掉是常態——
+        // 等那 1.5 秒的 debounce 等於賭它不會被收。趁還在跑先送出去
+        flushPending();
+      }
     });
     return () => sub.remove();
   }, [user?.uid]);
@@ -330,19 +386,71 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setStore(next);
     const uid = uidRef.current;
     if (!uid) return;
-    AsyncStorage.setItem(localKey(uid), JSON.stringify(next)).catch(() => {});
+    localAt.current = Date.now();
+    saveLocal(uid, next);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      const cur = ref.current;
-      // reports 不進這份文件：commit 是整份重寫，分析跟著走的話每加一次 XP
-      // 都會重傳全部紀錄。它有自己的子集合，寫入只在產生那一次（lib/reports.ts）
-      const { reports, ...rest } = cur;
-      setDoc(doc(db, 'users', uid), { ...rest, updatedAt: Date.now() }).catch(() => {});
-      // 排行榜跟著同一個 debounce 走：每加一次 XP 就寫一次雲端太浪費，
-      // 而且榜單本來就不需要即時。退出排行榜的人要把既有的那筆刪掉，
-      // 只停止更新的話他會永遠卡在榜上最後一次的分數。
-      publishLeader(uid, cur);
-    }, 1500);
+    timer.current = setTimeout(() => { timer.current = null; void syncCloud(uid); }, 1500);
+  }
+
+  /** 存手機快取。updatedAt 一起存，下次載入才比得出手機和雲端誰新 */
+  function saveLocal(uid: string, s: Store) {
+    AsyncStorage.setItem(localKey(uid), JSON.stringify({ ...s, updatedAt: localAt.current })).catch(() => {});
+  }
+
+  /** 把目前這份寫上雲端。呼叫前要確定 cloudReady（或剛讀過雲端） */
+  function pushCloud(uid: string) {
+    const cur = ref.current;
+    // reports 不進這份文件：commit 是整份重寫，分析跟著走的話每加一次 XP
+    // 都會重傳全部紀錄。它有自己的子集合，寫入只在產生那一次（lib/reports.ts）
+    const { reports, ...rest } = cur;
+    // 用 Date.now() 而不是 localAt：寫成功之後雲端要比手機「新一點」，
+    // 下次載入才會走雲端那條路（內容一樣，但那條路才收得到別台裝置的變動）
+    setDoc(doc(db, 'users', uid), { ...rest, updatedAt: Date.now() }).catch(() => {});
+    // 排行榜跟著同一個 debounce 走：每加一次 XP 就寫一次雲端太浪費，
+    // 而且榜單本來就不需要即時。退出排行榜的人要把既有的那筆刪掉，
+    // 只停止更新的話他會永遠卡在榜上最後一次的分數。
+    publishLeader(uid, cur);
+  }
+
+  /**
+   * 啟動時沒讀到雲端的人，寫之前先補讀一次。
+   * 規則和啟動時一樣：雲端比較新就收下來（別台裝置的進度），手機比較新就留著等下面推上去。
+   */
+  async function reconcile(uid: string): Promise<boolean> {
+    if (cloudReady.current) return true;
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      if (uidRef.current !== uid) return false;
+      if (snap.exists()) {
+        const cloudAt = Number(snap.data().updatedAt) || 0;
+        if (cloudAt > localAt.current) {
+          // 分析紀錄不在這份文件裡，留手機上那份
+          const cloud = { ...merge(snap.data() as Partial<Store>), reports: ref.current.reports };
+          ref.current = cloud; setStore(cloud);
+          localAt.current = cloudAt;
+          saveLocal(uid, cloud);
+        }
+      }
+      cloudReady.current = true;
+      return true;
+    } catch {
+      return false;   // 還是離線：這次不寫，下一次 commit 或回前景再試
+    }
+  }
+
+  async function syncCloud(uid: string) {
+    if (!(await reconcile(uid))) return;
+    // 等的期間換了帳號：ref 裡已經是別人的資料，不能寫到這個 uid 底下
+    if (uidRef.current !== uid) return;
+    pushCloud(uid);
+  }
+
+  /** 有還沒送出的變動就立刻送，不等 debounce */
+  function flushPending() {
+    if (!timer.current) return;
+    clearTimeout(timer.current);
+    timer.current = null;
+    if (uidRef.current) void syncCloud(uidRef.current);
   }
 
   useEffect(() => { setSpeechRate(store.profile.speechRate); }, [store.profile.speechRate]);
@@ -447,6 +555,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value: DataCtx = {
     ...store,
     loaded,
+    loadFailed,
+    retryLoad: () => setReload(n => n + 1),
     entitlement,
     // 方案變動時順手砍一次：降級後畫面不該還看得到超出額度的分析
     refreshPlan,

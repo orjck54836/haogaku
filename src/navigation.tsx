@@ -4,7 +4,8 @@ import { NavigationContainer, NavigationContainerRef } from '@react-navigation/n
 import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme, useNavTheme, fonts } from './theme';
+import { useTheme, useNavTheme, fonts, space } from './theme';
+import { T, Button } from './ui';
 import { useAuth } from './state/auth';
 import { useData } from './state/data';
 import type { ReportBody } from './lib/reports';
@@ -104,11 +105,30 @@ function Loading() {
   return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg }}><ActivityIndicator color={t.primary} /></View>;
 }
 
+/**
+ * 讀不到學習紀錄時停在這裡，**不要放行到引導頁**。
+ * 這個人很可能是重裝或換手機的老使用者，只是這一刻連不上——讓他重新走一次引導，
+ * 存檔時會把雲端原本那份整個蓋掉（見 state/data.tsx 的 loadFailed）。
+ */
+function LoadFailed({ onRetry }: { onRetry: () => void }) {
+  const t = useTheme();
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xl, backgroundColor: t.bg }}>
+      <Ionicons name="cloud-offline-outline" size={40} color={t.faint} />
+      <T variant="heading" style={{ marginTop: space.lg, textAlign: 'center' }}>讀不到你的學習紀錄</T>
+      <T variant="small" color={t.sub} style={{ marginTop: space.sm, textAlign: 'center', lineHeight: 21 }}>
+        {'目前連不上網路。你的進度和單字本都還在，連上之後再試一次就會回來。'}
+      </T>
+      <Button label="再試一次" icon="refresh" onPress={onRetry} style={{ marginTop: space.xl, alignSelf: 'stretch' }} />
+    </View>
+  );
+}
+
 export default function AppNavigator() {
   const navTheme = useNavTheme();
   const t = useTheme();
   const { user, ready } = useAuth();
-  const { loaded, profile } = useData();
+  const { loaded, loadFailed, retryLoad, profile } = useData();
 
   /**
    * screen_view 集中在這裡送，不要散到每個畫面的 useEffect——
@@ -132,6 +152,8 @@ export default function AppNavigator() {
 
   if (!ready) return <Loading />;
   if (!user) return <LoginScreen />;
+  // 要排在 loaded 前面：讀不到資料時 loaded 會一直是 false，不攔就是永遠轉圈
+  if (loadFailed) return <LoadFailed onRetry={retryLoad} />;
   if (!loaded) return <Loading />;
   if (!profile.onboarded) return <OnboardingScreen />;
 
