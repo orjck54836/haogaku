@@ -19,8 +19,10 @@
  * 那裡沒有 console。所以紀錄要留在記憶體裡、而且畫面上拿得到。
  * （console.log 還是照發一份，開著 Metro 的時候比較順手。）
  *
- * 不寫檔、不上傳：這是一次購買當下的診斷，重開 App 就不需要了，
- * 而且裡面會有 transactionId，沒必要讓它離開這台手機。
+ * 平常只留在記憶體裡、不寫檔。**購買或還原失敗時**會整段送回後端
+ * （PurchaseScreen → lib/errlog.ts 的 clientLogs，保存 90 天）：那是「我付了錢沒開通」
+ * 事後唯一查得到 StoreKit 那一半經過的地方。裡面會有 transactionId，
+ * 所以 clientLogs 只有 admin 讀得到，隱私權政策也寫了這一項。
  */
 
 /** 只留最後這麼多筆。purchaseSubscription 的輪詢會一直長，不設上限會無限吃記憶體 */

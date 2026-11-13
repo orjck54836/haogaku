@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { addDoc, collection } from 'firebase/firestore';
+import { addDoc, collection, Timestamp } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
 /**
@@ -36,6 +36,12 @@ const PENDING_KEY = 'client-logs-pending-v1';
 const MAX_PER_SESSION = 12;
 /** 沒送出去的最多留幾筆。只是為了「下次開 app 補送」，留多了沒有意義 */
 const MAX_PENDING = 6;
+/**
+ * 保存 90 天（Firestore 的 TTL 看 `expireAt` 自動刪）。
+ * 夠涵蓋「上個月付了錢沒開通」這種事後才來問的，又不會讓 detail 那 6k 字無限累積。
+ * 規則上限是 120 天，改這裡不要超過
+ */
+const KEEP_MS = 90 * 24 * 3600_000;
 
 let sent = 0;
 const seen = new Set<string>();
@@ -64,6 +70,8 @@ async function send(e: Entry): Promise<boolean> {
     await addDoc(collection(db, 'clientLogs'), {
       uid, kind: e.kind, message: e.message, detail: e.detail,
       app: appVersion, os: osLabel, createdAt: e.createdAt,
+      // 從送出的時間起算，不是從 createdAt：補送的那幾筆可能是好幾天前的
+      expireAt: Timestamp.fromMillis(Date.now() + KEEP_MS),
     });
     return true;
   } catch {
@@ -133,4 +141,28 @@ export function initErrorLog() {
     } catch { /* 回報本身壞掉也要讓原本的處理照常跑 */ }
     prev?.(err, isFatal);
   });
+
+  /**
+   * 沒人接的 Promise rejection。
+   *
+   * 上面的 global handler **接不到這一種**：`await` 裡丟出來、沒有 catch 的錯
+   * 不會變成 uncaught exception，在正式版就是安靜地消失。而這個 App 大部分的錯
+   * （Firestore、fetch、callable）都長這樣。RN 只在開發模式開了 Hermes 的追蹤
+   * （node_modules/react-native/Libraries/Core/polyfillPromise.js），正式版要自己開。
+   *
+   * 非 Hermes 的引擎沒有這個 API，就安靜地不追蹤——不值得為它多裝一個 polyfill。
+   */
+  try {
+    (globalThis as any).HermesInternal?.enablePromiseRejectionTracker?.({
+      allRejections: true,
+      onUnhandled: (_id: number, err: any) => {
+        try {
+          const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+          reportLog('error', `[promise] ${msg}`, String(err?.stack ?? ''));
+        } catch { /* 忽略 */ }
+      },
+      // 晚一點才被接住的不算錯，但已經送出去的收不回來；那種情況很少，不值得延遲回報
+      onHandled: () => {},
+    });
+  } catch { /* 忽略 */ }
 }

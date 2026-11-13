@@ -101,10 +101,18 @@
       </p>
     </div>
 
+    <form id="search" class="row" style="margin-top:24px">
+      <input id="q" class="uid" placeholder="uid、transactionId 或 originalTransactionId" autocomplete="off"
+        style="flex:1;min-width:240px;font-size:14px;border:1px solid var(--line);border-radius:999px;padding:8px 15px;background:var(--panel);color:var(--ink)">
+      <button type="submit">查詢</button>
+      <button type="button" id="clearQ">清除</button>
+    </form>
+    <p class="faint" id="qNote" style="margin:8px 0 0">下面三塊預設列最新 50 筆。客訴或退款要查單一個人時，貼 uid 或交易編號。</p>
+
     <div class="panel" style="margin-top:16px">
       <div class="row between">
         <strong>訂閱事件</strong>
-        <span class="faint">最近 50 筆・只增不改</span>
+        <span class="faint" data-scope>最近 50 筆・只增不改</span>
       </div>
       <table>
         <thead><tr><th>時間</th><th>使用者</th><th>事件</th><th>方案</th><th>到期</th><th>來源</th><th>交易</th></tr></thead>
@@ -114,8 +122,19 @@
 
     <div class="panel" style="margin-top:16px">
       <div class="row between">
+        <strong>Apple 通知</strong>
+        <span class="faint" data-scope>最近 50 筆・Apple 告訴我們的原始紀錄</span>
+      </div>
+      <table>
+        <thead><tr><th>收到時間</th><th>使用者</th><th>類型</th><th>商品</th><th>金額</th><th>狀態</th><th>交易</th></tr></thead>
+        <tbody id="storeNotes"></tbody>
+      </table>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="row between">
         <strong>App 錯誤與購買失敗</strong>
-        <span class="faint">最近 50 筆・點訊息看完整紀錄</span>
+        <span class="faint" data-scope>最近 50 筆・點訊息看完整紀錄</span>
       </div>
       <table>
         <thead><tr><th>時間</th><th>使用者</th><th>類型</th><th>版本</th><th>訊息</th></tr></thead>
@@ -205,32 +224,81 @@ const when = ms => ms ? new Date(Number(ms)).toLocaleString('zh-TW', { timeZone:
 
 const EVENT_LABEL = {
   activated: '開通', renewed: '續訂', upgraded: '升級', downgraded: '降級', schedule_changed: '下期變更',
-  expired: '到期／退款', transferred_in: '交接進來', transferred_out: '交接出去', reset: '測試重置', verify_failed: '驗證失敗',
+  expired: '到期', transferred_in: '交接進來', transferred_out: '交接出去', reset: '測試重置', verify_failed: '驗證失敗',
+  refunded: '退款', billing_failed: '扣款失敗', refund_reversed: '退款撤回',
 };
+/** 要一眼看到的事件：涉及錢、或付了錢沒拿到東西 */
+const LOUD = new Set(['refunded', 'billing_failed', 'verify_failed']);
 
-/** 訂閱事件和手機回報。和成本分開載入：其中一個讀不到不該讓整頁空白 */
-async function loadLogs() {
+/** Apple 的價格單位是 milliunits（NT$150 = 150000） */
+const money = (p, c) => typeof p === 'number' ? `${(p / 1000).toLocaleString('zh-TW')} ${esc(c ?? '')}` : '—';
+
+/**
+ * 查詢某個人／某筆交易。
+ *
+ * **只用等號查、不下 orderBy，排序在這裡做。** 等號查詢吃 Firestore 的單欄自動索引，
+ * 加了 orderBy 就要另外建複合索引——後台多一個要部署的東西，而一個人的紀錄本來就不多。
+ * 同一個字串分別拿去比 uid、transactionId、originalTransactionId，合併去重。
+ */
+async function findBy(coll, fields, q) {
+  const snaps = await Promise.all(fields.map(f => getDocs(query(collection(db, coll), where(f, '==', q), limit(200)))));
+  const seen = new Map();
+  for (const s of snaps) for (const d of s.docs) seen.set(d.id, d.data());
+  return [...seen.values()];
+}
+
+async function rows(coll, timeField, fields, q) {
+  if (!q) return (await getDocs(query(collection(db, coll), orderBy(timeField, 'desc'), limit(50)))).docs.map(d => d.data());
+  return (await findBy(coll, fields, q)).sort((x, y) => Number(y[timeField] ?? 0) - Number(x[timeField] ?? 0));
+}
+
+/** 訂閱事件、Apple 通知、手機回報。和成本分開載入：其中一個讀不到不該讓整頁空白 */
+async function loadLogs(q = '') {
+  document.querySelectorAll('[data-scope]').forEach(el => {
+    el.dataset.orig ??= el.textContent;
+    el.textContent = q ? `查詢：${q}` : el.dataset.orig;
+  });
+
   try {
-    const snap = await getDocs(query(collection(db, 'subscriptionEvents'), orderBy('at', 'desc'), limit(50)));
-    $('subEvents').innerHTML = snap.empty
-      ? '<tr><td colspan="7" class="faint">還沒有任何訂閱事件</td></tr>'
-      : snap.docs.map(d => d.data()).map(e => `<tr>
+    const list = await rows('subscriptionEvents', 'at', ['uid', 'transactionId', 'originalTransactionId'], q);
+    $('subEvents').innerHTML = !list.length
+      ? `<tr><td colspan="7" class="faint">${q ? '查無紀錄' : '還沒有任何訂閱事件'}</td></tr>`
+      : list.map(e => `<tr>
           <td>${esc(when(e.at))}</td>
           <td class="uid">${esc(e.uid)}</td>
-          <td><strong>${esc(EVENT_LABEL[e.type] ?? e.type)}</strong></td>
+          <td><strong class="${LOUD.has(e.type) ? 'err' : ''}">${esc(EVENT_LABEL[e.type] ?? e.type)}</strong>${e.price != null ? `<br><span class="faint">${money(e.price, e.currency)}</span>` : ''}</td>
           <td>${esc(e.prevPlan ?? '')}${e.prevPlan && e.plan ? ' → ' : ''}${esc(e.plan ?? '')}${e.error ? `<br><span class="err">${esc(e.error)}</span>` : ''}</td>
-          <td>${esc(e.expiresAt ? when(e.expiresAt) : '—')}</td>
-          <td>${esc(e.intent ?? '')}${e.environment ? `<br><span class="faint">${esc(e.environment)}</span>` : ''}</td>
+          <td>${esc(e.revocationDate ? `退款 ${when(e.revocationDate)}` : e.expiresAt ? when(e.expiresAt) : '—')}</td>
+          <td>${esc(e.source ?? e.intent ?? '')}${e.source && e.intent && e.intent !== 'background' ? `<br><span class="faint">${esc(e.intent)}</span>` : ''}${e.environment ? `<br><span class="faint">${esc(e.environment)}</span>` : ''}</td>
           <td class="uid">${esc(e.originalTransactionId ?? e.transactionId ?? '')}</td>
         </tr>`).join('');
   } catch (e) {
     $('subEvents').innerHTML = `<tr><td colspan="7" class="err">讀取失敗：${esc(e?.message ?? e)}</td></tr>`;
   }
+
   try {
-    const snap = await getDocs(query(collection(db, 'clientLogs'), orderBy('createdAt', 'desc'), limit(50)));
-    $('clientLogs').innerHTML = snap.empty
-      ? '<tr><td colspan="5" class="faint">還沒有任何回報</td></tr>'
-      : snap.docs.map(d => d.data()).map(l => `<tr>
+    const list = await rows('storeNotifications', 'receivedAt', ['uid', 'transactionId', 'originalTransactionId'], q);
+    $('storeNotes').innerHTML = !list.length
+      ? `<tr><td colspan="7" class="faint">${q ? '查無紀錄' : '還沒有收到 Apple 的通知（App Store Connect 上的網址設好了嗎？）'}</td></tr>`
+      : list.map(n => `<tr>
+          <td>${esc(when(n.receivedAt))}</td>
+          <td class="uid">${n.uid ? esc(n.uid) : n.unclaimed ? '<span class="err">沒有帳號認領</span>' : '—'}</td>
+          <td><strong class="${/REFUND$|REVOKE|FAIL/.test(n.type ?? '') ? 'err' : ''}">${esc(n.type)}</strong>${n.subtype ? `<br><span class="faint">${esc(n.subtype)}</span>` : ''}</td>
+          <td class="uid">${esc(n.productId ?? '')}</td>
+          <td>${money(n.price, n.currency)}</td>
+          <td>${n.processed ? esc(n.resultPlan ? `→ ${n.resultPlan}` : '已處理') : '<span class="err">未處理完</span>'}${n.environment ? `<br><span class="faint">${esc(n.environment)}</span>` : ''}</td>
+          <td class="uid">${esc(n.originalTransactionId ?? '')}</td>
+        </tr>`).join('');
+  } catch (e) {
+    $('storeNotes').innerHTML = `<tr><td colspan="7" class="err">讀取失敗：${esc(e?.message ?? e)}</td></tr>`;
+  }
+
+  try {
+    // clientLogs 的交易編號只在 detail 的文字裡，查不到欄位，所以只用 uid 查
+    const list = await rows('clientLogs', 'createdAt', ['uid'], q);
+    $('clientLogs').innerHTML = !list.length
+      ? `<tr><td colspan="5" class="faint">${q ? '查無紀錄（這一塊只能用 uid 查）' : '還沒有任何回報'}</td></tr>`
+      : list.map(l => `<tr>
           <td>${esc(when(l.createdAt))}</td>
           <td class="uid">${esc(l.uid)}</td>
           <td>${l.kind === 'purchase' ? '購買' : '錯誤'}</td>
@@ -241,6 +309,9 @@ async function loadLogs() {
     $('clientLogs').innerHTML = `<tr><td colspan="5" class="err">讀取失敗：${esc(e?.message ?? e)}</td></tr>`;
   }
 }
+
+$('search').addEventListener('submit', ev => { ev.preventDefault(); loadLogs($('q').value.trim()); });
+$('clearQ').addEventListener('click', () => { $('q').value = ''; loadLogs(); });
 
 async function load() {
   loadLogs();

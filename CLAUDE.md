@@ -290,6 +290,34 @@ Google 按字元收費，播一個 5 字的單字和一句 60 字的例句成本
 `verifyPurchase` 擋匿名帳號：訂閱綁在訪客 uid 上，換一台手機就沒了。
 所以**審查員要測購買必須先綁定帳號**，送審備註要寫這件事。
 
+## 錯誤與付款紀錄
+
+四份紀錄，各管一段，對不上的時候擺在一起看（後台 `public/admin` 可以用 uid 或交易編號一次查三份）：
+
+| collection | 誰寫 | 記什麼 | 保存 |
+|---|---|---|---|
+| `storeNotifications` | Apple → `appStoreNotifications` | Apple 告訴我們什麼（含價錢、退款時間） | 永久，刪帳號不刪 |
+| `subscriptionEvents` | 後端 | 我們因此做了什麼（開通、續訂、退款、扣款失敗…） | 永久，刪帳號不刪 |
+| `clientLogs` | 手機 | JS 錯誤、沒接住的 Promise、購買失敗的 StoreKit 步驟紀錄 | 90 天（TTL） |
+| Cloud Logging | 後端 | `[ALERT]` 開頭的是要有人去看的 | 30 天 |
+
+- **Apple 的通知不驗簽章，改成拿裡面的 transactionId 回頭問 App Store Server API**，
+  內容一律以 API 回的為準。偽造的通知最多只能讓我們多對帳一次。理由寫在 `appStoreNotifications` 上面。
+- 方案判斷手機和通知共用 `syncEntitlement`，不要各寫一份。
+- 冷啟動對帳**不要拿掉**：通知可能沒設定、可能送丟。
+- 原生層閃退抓不到（沒裝 Sentry，理由見 `errlog.ts` 檔頭）。
+
+三個要在後台手動設定一次的東西（不是程式，部署不會帶上去）：
+
+1. **App Store Connect →「App 資訊」→「App Store 伺服器通知」**，正式和沙盒兩格都填
+   `https://asia-east1-haogaku-60c56.cloudfunctions.net/appStoreNotifications`，選 V2，
+   按「傳送測試通知」，後台的「Apple 通知」那塊會多一筆 TEST。
+2. **警報**：Google Cloud Console → Logging → Logs Explorer，查詢
+   `resource.type="cloud_run_revision" AND severity>=ERROR AND textPayload:"[ALERT]"`
+   →「建立警示」，通知管道選 email。`alertLog()` 只用在真的要人處理的錯，不要拿來記雜訊。
+3. **clientLogs 的 TTL**：Firestore → TTL →「建立政策」，collection group `clientLogs`、欄位 `expireAt`。
+   之前的舊紀錄沒有這個欄位，不會被刪。
+
 ## 中文排版：JSX 的換行會變成空格
 
 多行的 JSX 文字，原始碼換行會被當成一個半形空格。接在全形句號後面

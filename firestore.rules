@@ -112,6 +112,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Apple 的 App Store 伺服器通知原始紀錄（見 functions 的 appStoreNotifications）。
+    // 「Apple 告訴過我們什麼」，和 subscriptionEvents（我們因此做了什麼）分開存，
+    // 對不上的時候才分得出是哪一邊的問題。含價錢，和 subscriptionEvents 同一個等級。
+    match /storeNotifications/{id} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow write: if false;
+    }
+
     // 手機端回報的錯誤和購買失敗紀錄（見 src/lib/errlog.ts）。
     //
     // 和內容檢舉同一個做法：只開 create，本人也讀不回去、改不掉。
@@ -121,7 +130,7 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
       allow update, delete: if false;
       allow create: if request.auth != null
-        && request.resource.data.keys().hasOnly(['uid', 'kind', 'message', 'detail', 'app', 'os', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'kind', 'message', 'detail', 'app', 'os', 'createdAt', 'expireAt'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.kind in ['purchase', 'error']
         && request.resource.data.message is string
@@ -132,7 +141,12 @@ service cloud.firestore {
         && request.resource.data.app.size() <= 40
         && request.resource.data.os is string
         && request.resource.data.os.size() <= 40
-        && request.resource.data.createdAt is number;
+        && request.resource.data.createdAt is number
+        // 保存期限（Firestore TTL 看這個欄位刪除）。選填：舊版 App 不會送，
+        // 寫成必填的話舊版的回報會全部被擋掉。上限卡住，免得有人把自己的紀錄設成永久
+        && (!('expireAt' in request.resource.data)
+          || (request.resource.data.expireAt is timestamp
+            && request.resource.data.expireAt < request.time + duration.value(120, 'd')));
     }
 
     // 哪一筆 Apple 訂閱已經綁給哪個 uid（文件 id 是 originalTransactionId）。

@@ -1,4 +1,4 @@
-import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https';
+import { onCall, onRequest, HttpsError, CallableRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
@@ -94,7 +94,8 @@ const entCache = new Map<string, { at: number; a: Allowance }>();
 /**
  * 續訂的緩衝：自動續訂中的訂閱，過了 `expiresAt` 之後再認一天。
  *
- * `expiresAt` 是 Apple 那一期的到期時間，而**續訂不會通知我們**——新的到期日要等手機
+ * `expiresAt` 是 Apple 那一期的到期時間。續訂的伺服器通知（appStoreNotifications）可能晚到、
+ * 可能沒設定，沒到的時候新的到期日要等手機
  * 下一次呼叫 verifyPurchase 才寫得進來，手機又是「看到過期了」才會去驗。中間那一段
  * 後端手上只有舊的到期日，於是正在付費的人會在續訂的那一刻被當成免費版：
  * App 開在前景跨過到期時間的話，下一句會話直接回「今天的 AI 次數已用完」，
@@ -390,11 +391,27 @@ async function refundQuota(uid: string, report = false) {
  */
 type SubEventType =
   | 'activated' | 'renewed' | 'upgraded' | 'downgraded' | 'schedule_changed'
-  | 'expired' | 'transferred_in' | 'transferred_out' | 'reset' | 'verify_failed';
+  | 'expired' | 'transferred_in' | 'transferred_out' | 'reset' | 'verify_failed'
+  // 下面三個只有 Apple 的伺服器通知會產生（見 appStoreNotifications）。
+  // 退款原本只會在他下次開 App 時被記成 expired，和正常到期分不出來
+  | 'refunded' | 'billing_failed' | 'refund_reversed';
 
 function recordSubEvent(uid: string, type: SubEventType, data: Record<string, unknown>) {
   db.collection('subscriptionEvents').add({ uid, type, at: Date.now(), ...data })
     .catch(e => console.warn('recordSubEvent failed', e));
+}
+
+/**
+ * 需要有人去看的錯，一律從這裡出去。
+ *
+ * console.error 本身不會通知任何人，Cloud Logging 30 天就清掉。金鑰被拒這種錯
+ * 會讓**每一筆**購買都變成「付了錢沒開通」，卻安靜到沒人知道。
+ * 固定帶 `[ALERT]` 開頭，Cloud Monitoring 只要一條 log 警報規則就接得住
+ * （設定方式在 CLAUDE.md 的「錯誤與付款紀錄」）。不要拿它記一般的雜訊，
+ * 警報一吵就會被設成靜音。
+ */
+function alertLog(message: string, err?: unknown) {
+  console.error(`[ALERT] ${message}`, ...(err === undefined ? [] : [err]));
 }
 
 /** 方案高低，只用來判斷「這次是不是升級」 */
@@ -938,7 +955,7 @@ export const purgeAccount = onCall(
     });
 
     // 手機回報的錯誤和購買失敗紀錄：是這個人的診斷資料，帳號沒了就不該留。
-    // subscriptionEvents 刻意不刪——那是交易紀錄，退款爭議和對帳要用，
+    // subscriptionEvents、storeNotifications 刻意不刪——那是交易紀錄，退款爭議和對帳要用，
     // 和上面 contentReports 留著是同一個理由（隱私權政策要寫到這件事）
     await attempt('clientLogs', async () => {
       const snap = await db.collection('clientLogs').where('uid', '==', uid).get();
@@ -1057,7 +1074,7 @@ async function lookupSubscription(transactionId: string) {
    * 而不是「App 內購買金鑰」、issuer id 抄自別頁、或 .p8 存成帶 \n 的單行。
    */
   if ((last as { httpStatusCode?: number })?.httpStatusCode === 401) {
-    console.error(`App Store Server API 兩個環境都回 401：金鑰被拒絕（keyId=${keyId.slice(0, 4)}…）`);
+    alertLog(`App Store Server API 兩個環境都回 401：金鑰被拒絕（keyId=${keyId.slice(0, 4)}…），所有購買都開通不了`);
     throw new HttpsError('failed-precondition', '伺服器的 App Store 金鑰無效，購買已經送出但還沒開通');
   }
   throw new HttpsError('not-found', '找不到這筆交易');
@@ -1083,7 +1100,9 @@ async function lookupSubscription(transactionId: string) {
  *   1. 購買成功後（`finishTransaction` 之前）
  *   2. 按「還原購買」
  *   3. **每次冷啟動**——續訂、取消、退款都不會通知 App，
- *      不定期回來問一次，方案才不會停在上個月的狀態
+ *      不定期回來問一次，方案才不會停在上個月的狀態。
+ *      （後端另外收 Apple 的伺服器通知，見 appStoreNotifications；但通知可能沒設定、
+ *      可能送丟，冷啟動對帳還是要留著當保險。）
  */
 export const verifyPurchase = onCall(
   {
@@ -1099,23 +1118,43 @@ export const verifyPurchase = onCall(
     }
     const transactionId = str(req.data?.transactionId, 64, 'transactionId');
     if (!transactionId) throw new HttpsError('invalid-argument', '缺少 transactionId');
-    /** 'purchase' / 'restore' 代表這是使用者主動按出來的，背景對帳不帶（見下面的 suppress） */
+    /** 'purchase' / 'restore' 代表這是使用者主動按出來的，背景對帳不帶（見 syncEntitlement 的 suppress） */
     const intent = optStr(req.data?.intent, 16, 'intent');
 
-    let looked: Awaited<ReturnType<typeof lookupSubscription>>;
     try {
-      looked = await lookupSubscription(transactionId);
+      return await syncEntitlement(uid, transactionId, intent, 'app');
     } catch (e: any) {
-      // 只記使用者自己按出來的：這是「Apple 說成交、我們說失敗」的現場，客服最需要的一筆。
-      // 背景對帳的失敗（離線、Apple 暫時掛掉）每次冷啟動都可能來一次，記了只是雜訊
+      /**
+       * 包住**整段**，不是只包向 Apple 查詢那一步。
+       *
+       * 原本只有 lookupSubscription 失敗才記；但後面的 claim 交接 transaction、
+       * 寫 entitlements 失敗，對使用者來說一樣是「付了錢沒開通」，卻什麼都沒留下。
+       *
+       * 只記使用者自己按出來的：這是「Apple 說成交、我們說失敗」的現場，客服最需要的一筆。
+       * 背景對帳的失敗（離線、Apple 暫時掛掉）每次冷啟動都可能來一次，記了只是雜訊
+       */
       if (intent) {
-        recordSubEvent(uid, 'verify_failed', {
-          intent, transactionId, error: String(e?.code ?? e?.message ?? e).slice(0, 300),
-        });
+        const error = String(e?.code ?? e?.message ?? e).slice(0, 300);
+        recordSubEvent(uid, 'verify_failed', { intent, transactionId, error });
+        alertLog(`verifyPurchase 失敗（${intent}）uid=${uid} tx=${transactionId}：${error}`);
       }
       throw e;
     }
-    const { res, env } = looked;
+  },
+);
+
+/**
+ * 跟 Apple 查一次、把結果寫進 entitlements，並記下這次的變動。
+ *
+ * 手機（verifyPurchase）和 Apple 的伺服器通知（appStoreNotifications）共用這一段：
+ * 兩邊判斷「現在是什麼方案」的規則必須一模一樣，不然同一個人會因為是誰先問到
+ * 而落到不同的方案。`source` 記進事件，看得出這次是誰觸發的。
+ *
+ * `intent` 是空的就是背景對帳（伺服器通知也算），測試重置的 suppress 只擋這一種。
+ */
+async function syncEntitlement(uid: string, transactionId: string, intent: string, source: string) {
+  {
+    const { res, env } = await lookupSubscription(transactionId);
 
     // 一個 App 可能有多個訂閱群組，每組回最後一筆交易。挑出還有效、而且我們認得的那個方案
     let best: {
@@ -1169,7 +1208,7 @@ export const verifyPurchase = onCall(
     // 文件上寫的方案，不管過期沒有。記事件要用這個：prevPlan 過期就算 free，
     // 拿它比的話「付費 → 過期」那一次會被看成「本來就是免費」，永遠記不到
     const rawPrev: PlanId = prevData?.plan === 'plus' || prevData?.plan === 'pro' ? prevData.plan : 'free';
-    const base = { intent: intent || 'background', transactionId, environment: env };
+    const base = { intent: intent || 'background', source, transactionId, environment: env };
 
     if (!best) {
       // 寫回 free 之後 rawPrev 就是 free，所以這筆只會記一次
@@ -1325,6 +1364,203 @@ export const verifyPurchase = onCall(
     console.log(`verifyPurchase ${uid}: ${best.plan} 到 ${new Date(best.expiresAt).toISOString()}`
       + `${best.nextPlan === best.plan ? '' : `，下一期改成 ${best.nextPlan}`} (${env})`);
     return { plan: best.plan, expiresAt: best.expiresAt, nextPlan: best.nextPlan, active: true };
+  }
+}
+
+/**
+ * 跟 Apple 查一筆交易本體，用通知裡寫的環境查；那邊查不到再換另一邊。
+ */
+async function fetchAppleTransaction(transactionId: string, envHint: string) {
+  const { AppStoreServerAPIClient, Environment } = await import('@apple/app-store-server-library');
+  const envs = envHint === 'Sandbox'
+    ? [Environment.SANDBOX, Environment.PRODUCTION]
+    : [Environment.PRODUCTION, Environment.SANDBOX];
+  let last: unknown;
+  for (const env of envs) {
+    const client = new AppStoreServerAPIClient(
+      APPLE_IAP_PRIVATE_KEY.value(), APPLE_IAP_KEY_ID.value(), APPLE_IAP_ISSUER_ID.value(), APPLE_BUNDLE_ID, env);
+    try {
+      const r = await client.getTransactionInfo(transactionId);
+      if (r.signedTransactionInfo) return { info: decodeApplePayload(r.signedTransactionInfo), env: String(env) };
+    } catch (e) {
+      last = e;
+      const status = (e as { httpStatusCode?: number })?.httpStatusCode;
+      if (status === 404 || status === 401) continue;
+      throw e;
+    }
+  }
+  const err = new Error('transaction-not-found') as Error & { notFound?: boolean; cause?: unknown };
+  err.notFound = true;
+  err.cause = last;
+  throw err;
+}
+
+/**
+ * ## App Store 伺服器通知（V2）
+ *
+ * App Store Connect →「App 資訊」→「App Store 伺服器通知」，正式和沙盒兩格都填
+ * `https://asia-east1-haogaku-60c56.cloudfunctions.net/appStoreNotifications`。
+ *
+ * ### 為什麼要有它
+ *
+ * 沒有它的時候，`subscriptionEvents` 只在**使用者打開 App、手機來對帳**時才會寫。
+ * 退款、扣款失敗、App 沒開時的自動續訂，Apple 那邊發生了，我們這邊什麼都沒有；
+ * 退款會在他下次開 App 時被記成 `expired`，和正常到期分不出來，時間也不對。
+ * 而退款爭議、對帳，要的正是這些紀錄。不再打開 App 的人，紀錄會永遠停在「開通」。
+ *
+ * ### 為什麼不驗通知本身的簽章
+ *
+ * 要驗得把 Apple 的根憑證打包進 functions（SignedDataVerifier）。這裡改成
+ * **通知只當「該去問一次」的提醒，內容一律以 App Store Server API 回的為準**：
+ *
+ *   - 先拿通知裡的 transactionId 去 Apple 查交易本體。偽造的 id 查不到，直接 400，
+ *     什麼都不寫——所以 `storeNotifications` 裡每一筆至少是一筆真的交易。
+ *   - 方案和到期日走 `syncEntitlement`，和手機對帳同一條路，結果只看 Apple。
+ *   - 「退款」這種專屬事件要 Apple 回的交易上真的有 `revocationDate` 才記。
+ *
+ * 偽造一則通知最多只能讓我們多對帳一次，那和他自己冷啟動 App 是同一件事。
+ * 唯一沒驗到的是 `notificationType` 本身，所以存的時候照實標成通知「說」的類型。
+ *
+ * ### 回應碼
+ *
+ * Apple 收到非 2xx 會重送（間隔拉長，最多約 5 次）。所以**我們這邊暫時出錯回 500**
+ * 讓它再送；確定不是我們的、或格式壞掉的回 200／400，重送也沒有用。
+ * 重送靠 `notificationUUID` 去重：處理完才標 processed，中途失敗的下次會重做。
+ */
+export const appStoreNotifications = onRequest(
+  {
+    region: 'asia-east1', timeoutSeconds: 60, memory: '256MiB', maxInstances: 5,
+    secrets: [APPLE_IAP_KEY_ID, APPLE_IAP_ISSUER_ID, APPLE_IAP_PRIVATE_KEY],
+  },
+  async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).send('POST only'); return; }
+    const signed = req.body?.signedPayload;
+    if (typeof signed !== 'string' || signed.length > 200_000) { res.status(400).send('bad payload'); return; }
+
+    let n: any;
+    let tx: any = null;
+    try {
+      n = decodeApplePayload(signed);
+      if (n?.data?.signedTransactionInfo) tx = decodeApplePayload(n.data.signedTransactionInfo);
+    } catch {
+      res.status(400).send('bad payload'); return;
+    }
+    const uuid = String(n?.notificationUUID ?? '');
+    if (!/^[0-9a-fA-F-]{36}$/.test(uuid)) { res.status(400).send('bad uuid'); return; }
+    // 別的 App 的通知（網址填錯、或有人亂打）：回 200 讓 Apple 不要再送
+    if (n?.data?.bundleId && n.data.bundleId !== APPLE_BUNDLE_ID) { res.status(200).send('ignored'); return; }
+
+    const type = String(n.notificationType ?? '');
+    const subtype = String(n.subtype ?? '');
+    const label = subtype ? `${type}/${subtype}` : type;
+
+    // TEST 是 App Store Connect 上按「傳送測試通知」來的，沒有交易可查
+    if (type === 'TEST') {
+      await db.doc(`storeNotifications/${uuid}`).set({
+        type, receivedAt: Date.now(), environment: String(n?.data?.environment ?? ''), processed: true,
+      }, { merge: true });
+      console.log('appStoreNotifications: 收到測試通知');
+      res.status(200).send('ok'); return;
+    }
+
+    const transactionId = String(tx?.transactionId ?? '');
+    if (!/^\d{1,32}$/.test(transactionId)) {
+      // 少數類型的通知不帶交易，沒有東西可以對帳，記一行就好
+      console.warn(`appStoreNotifications: ${label} 沒有 transactionId，略過`);
+      res.status(200).send('no transaction'); return;
+    }
+
+    const ref = db.doc(`storeNotifications/${uuid}`);
+    try {
+      const prev = await ref.get();
+      if (prev.data()?.processed) { res.status(200).send('duplicate'); return; }
+
+      // 先跟 Apple 確認這筆交易真的存在，之後用的欄位全部取自 Apple 的回應
+      let apple: { info: any; env: string };
+      try {
+        apple = await fetchAppleTransaction(transactionId, String(n?.data?.environment ?? ''));
+      } catch (e: any) {
+        if (e?.notFound) { res.status(400).send('unknown transaction'); return; }
+        throw e;
+      }
+      const info = apple.info;
+      const originalTransactionId = String(info.originalTransactionId ?? '');
+      const productId = String(info.productId ?? '');
+      const uid = originalTransactionId
+        ? ((await db.doc(`subscriptionClaims/${originalTransactionId}`).get()).data()?.uid as string | undefined) ?? null
+        : null;
+
+      /**
+       * 原始紀錄先寫，處理完再標 processed。
+       *
+       * 這份是「Apple 告訴過我們什麼」的帳，和 subscriptionEvents（我們因此做了什麼）分開：
+       * 對不上的時候兩邊擺在一起看，才分得出是 Apple 沒通知還是我們沒處理好。
+       * 價錢是 Apple 的 milliunits（150 元 = 150000），照原樣存，不要自己換算。
+       */
+      await ref.set({
+        type, subtype, uid, transactionId, originalTransactionId, productId,
+        environment: apple.env,
+        price: typeof info.price === 'number' ? info.price : null,
+        currency: typeof info.currency === 'string' ? info.currency : null,
+        revocationDate: Number(info.revocationDate ?? 0) || null,
+        revocationReason: info.revocationReason ?? null,
+        signedDate: Number(n.signedDate ?? 0) || null,
+        receivedAt: Date.now(),
+        typeVerified: false,
+        processed: false,
+      }, { merge: true });
+
+      if (!uid) {
+        /**
+         * 還沒有任何帳號驗證過這筆訂閱。
+         *
+         * SUBSCRIBED 常常比手機的 verifyPurchase 先到，這是正常的競速——手機那邊會接著開通。
+         * 但**退款**對上沒認領的交易，多半是「付了錢一直沒開通、最後去跟 Apple 退款」，
+         * 那是要回頭查的一筆。我們不知道 uid，所以只能靠 originalTransactionId 去對 clientLogs。
+         */
+        if (type === 'REFUND' || type === 'REVOKE') {
+          alertLog(`收到 ${label} 但這筆交易沒有帳號認領過（originalTransactionId=${originalTransactionId}），可能是付了錢沒開通`);
+        }
+        await ref.set({ processed: true, unclaimed: true }, { merge: true });
+        res.status(200).send('unclaimed'); return;
+      }
+
+      // 方案和到期日：和手機對帳同一條路，只看 Apple 的回應
+      const result = await syncEntitlement(uid, transactionId, '', `apple:${label}`);
+      entCache.delete(uid);
+
+      const plan = PRODUCT_PLAN[productId] ?? null;
+      const money = {
+        source: `apple:${label}`, environment: apple.env, transactionId, originalTransactionId, productId, plan,
+        price: typeof info.price === 'number' ? info.price : null,
+        currency: typeof info.currency === 'string' ? info.currency : null,
+      };
+
+      // 專屬事件：只在 Apple 回的資料也這麼說的時候才記
+      if ((type === 'REFUND' || type === 'REVOKE') && Number(info.revocationDate) > 0) {
+        recordSubEvent(uid, 'refunded', {
+          ...money, kind: type === 'REVOKE' ? 'family_revoke' : 'refund',
+          revocationDate: Number(info.revocationDate), revocationReason: info.revocationReason ?? null,
+        });
+        alertLog(`退款 ${label} uid=${uid} ${productId} ${money.price ?? '?'} ${money.currency ?? ''}`);
+      } else if (type === 'REFUND_REVERSED' && !Number(info.revocationDate)) {
+        recordSubEvent(uid, 'refund_reversed', money);
+      } else if (type === 'DID_FAIL_TO_RENEW') {
+        // 3 = 扣款重試中、4 = 寬限期：這兩種才是真的扣款失敗，其他狀態就是通知過時了
+        const { res: statuses } = await lookupSubscription(transactionId);
+        const failing = (statuses.data ?? []).some(g => (g.lastTransactions ?? [])
+          .some(t => String(t.originalTransactionId) === originalTransactionId && [3, 4].includes(Number(t.status))));
+        if (failing) recordSubEvent(uid, 'billing_failed', { ...money, inGrace: subtype === 'GRACE_PERIOD' });
+      }
+
+      await ref.set({ processed: true, resultPlan: result.plan }, { merge: true });
+      console.log(`appStoreNotifications ${label} uid=${uid}: → ${result.plan}`);
+      res.status(200).send('ok');
+    } catch (e) {
+      // 回 500 讓 Apple 重送。processed 還是 false，重送進來會從頭再做一次
+      alertLog(`appStoreNotifications 處理 ${label} 失敗（uuid=${uuid} tx=${transactionId}），Apple 會重送`, e);
+      res.status(500).send('retry');
+    }
   },
 );
 
