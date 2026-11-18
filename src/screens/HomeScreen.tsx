@@ -262,8 +262,8 @@ export default function HomeScreen() {
           })}
         </ScrollView>
 
-        {/* 流行語一共 52 個、每天換一個。標題講總量，「今日」掛在卡片上，
-            這樣點進去看到 52 個才不會覺得跟標題對不起來 */}
+        {/* 流行語一共 100 個、每天換一個。標題講總量，「今日」掛在卡片上，
+            這樣點進去看到全部的數量才不會覺得跟標題對不起來 */}
         <SectionTitle title="流行語" ja="はやりことば" action={`全部 ${slang.length} 個`} onAction={() => nav.navigate('Slang')} />
         <Card onPress={() => nav.navigate('Slang')} accessibilityLabel={`今日的流行語 ${w.word}`} raised>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>

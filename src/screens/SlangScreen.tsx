@@ -18,7 +18,7 @@ export default function SlangScreen() {
     <Screen edges={['bottom']}>
       <Card raised style={{ paddingVertical: space.xxl }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          {/* 52 個全部都能翻，所以只有真的是今天那一個才掛「今日」 */}
+          {/* 全部都能翻，所以只有真的是今天那一個才掛「今日」 */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
             {i === todayIndex
               ? <Pill icon="today" label="今日" color={t.primary} bg={t.primarySoft} />

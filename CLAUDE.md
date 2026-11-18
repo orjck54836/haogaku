@@ -99,7 +99,7 @@ function loadX() {
 - **課程**：`src/content/generated/lessons.json`，**初級 249 堂＋進階 249 堂**，兩階都齊了。
   產生要 `ANTHROPIC_API_KEY`（console.anthropic.com 發的 `sk-ant-api03-`，
   Claude Code 的登入憑證不能用）：`npm run generate-lessons -- --levels=L3`
-- **流行語**：`src/content/slang.ts`，52 個，每天輪一個。
+- **流行語**：`src/content/slang.ts`，100 個，每天輪一個。
   含漢字的要填 `kana`（平假名讀音），假名詞不用——詞形本身就是讀音
 - **主題**：`src/content/topics.ts`。`topicNumber()` 的編號是畫面上的身分，
   順序改了編號就會變，**不要拿它當資料的 key**，key 一律用 `topic.id`
