@@ -11,7 +11,7 @@ import { setSpeechRate } from '../lib/speech';
 import { rankOf } from '../lib/rank';
 import { ReviewState, emptyReview } from '../lib/review';
 import { isReadingLesson } from '../content/readings';
-import { track } from '../lib/analytics';
+import { track, setUserProps } from '../lib/analytics';
 import { practicedToday } from '../lib/reminders';
 import { PlanId, planById, guestLimits } from '../content/plans';
 import { SavedReport, addReport, trimReports, makeReport, retentionOf, fetchReports, pushReport, dropReport, pruneReports, ChatNote, addChatNote } from '../lib/reports';
@@ -454,6 +454,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => { setSpeechRate(store.profile.speechRate); }, [store.profile.speechRate]);
+
+  // 分析報表的拆分維度。plan 用 profile.plan 就夠：這裡只拿來分群看，不拿來判斷權限
+  useEffect(() => {
+    if (!loaded) return;
+    const p = store.profile;
+    setUserProps({ level: p.startLevel, plan: p.plan, goal: p.goal, account: user?.isAnonymous ? 'guest' : 'member' });
+  }, [loaded, store.profile.startLevel, store.profile.plan, store.profile.goal, user?.isAnonymous]);
 
   /**
    * 載入完成後推一次排行榜。

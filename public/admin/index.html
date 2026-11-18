@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>皓學日語 — 成本後台</title>
+<title>皓學營運後台</title>
 <style>
   :root {
     --surface: #FCFCFB; --panel: #FFFFFF; --ink: #1A1614; --sub: #6B625C; --faint: #9A918B;
@@ -41,12 +41,26 @@
   .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; }
   .hide { display: none; }
   .err { color: #A8394A; }
+  h2 { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; margin: 36px 0 8px; scroll-margin-top: 16px; }
+  .toc a { color: var(--ink); text-decoration: none; border: 1px solid var(--line); border-radius: 999px;
+    padding: 5px 13px; font-size: 14px; background: var(--panel); }
+  .toc #statsAt { margin-left: auto; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-top: 12px; }
+  .bars { margin-top: 10px; display: grid; gap: 6px; }
+  .bar { display: grid; grid-template-columns: minmax(80px, 38%) 1fr 64px; align-items: center; gap: 8px; font-size: 13px; }
+  .bar .k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--sub); }
+  .bar .track { height: 10px; background: #F1ECE6; border-radius: 999px; overflow: hidden; }
+  .bar .fill { height: 100%; background: var(--ai); border-radius: 999px; }
+  .bar .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .scroll { overflow-x: auto; }
+  .scroll table { min-width: 640px; }
+  .link { cursor: pointer; text-decoration: underline dotted; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="row between">
-    <h1>成本後台</h1>
+    <h1>營運後台</h1>
     <div class="row">
       <span id="who" class="faint"></span>
       <button id="auth">登入</button>
@@ -56,7 +70,148 @@
   <p id="msg" class="muted">請用有管理權限的 Google 帳號登入。</p>
 
   <div id="app" class="hide">
-    <div class="row" style="margin-top:16px">
+    <nav class="row toc" style="margin-top:16px">
+      <a href="#sUsers">使用者</a><a href="#sTrend">趨勢與留存</a><a href="#sLearn">學習</a><a href="#sPaid">付費</a>
+      <a href="#sCost">成本</a><a href="#sLogs">紀錄</a><a href="#sReports">檢舉</a>
+      <span class="faint" id="statsAt"></span>
+      <button id="reloadStats" type="button">重新整理</button>
+    </nav>
+
+    <h2 id="sUsers">使用者</h2>
+    <p class="faint" style="margin:0">
+      「帳號」是打開過 App 的人（每人至少一個匿名帳號），不是下載數——下載數在
+      App Store Connect →「分析」。刪掉重裝的訪客會多算一個。
+    </p>
+    <div class="kpis">
+      <div class="panel kpi"><div class="label">總帳號</div><div class="value" id="uTotal">—</div><div class="note" id="uTotalNote"></div></div>
+      <div class="panel kpi"><div class="label">今天新增</div><div class="value" id="uToday">—</div><div class="note" id="uTodayNote"></div></div>
+      <div class="panel kpi"><div class="label">24 小時活躍</div><div class="value" id="uDau">—</div><div class="note" id="uDauNote"></div></div>
+      <div class="panel kpi"><div class="label">7 天活躍</div><div class="value" id="uWau">—</div><div class="note" id="uWauNote"></div></div>
+      <div class="panel kpi"><div class="label">30 天活躍</div><div class="value" id="uMau">—</div><div class="note" id="uMauNote"></div></div>
+      <div class="panel kpi"><div class="label">已綁定帳號</div><div class="value" id="uLinked">—</div><div class="note" id="uLinkedNote"></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="row between">
+        <strong>每日新增帳號（最近 90 天）</strong>
+        <span class="faint" id="signupMax"></span>
+      </div>
+      <div class="chart" id="signupChart"></div>
+      <div class="row between" style="margin-top:6px"><span class="faint" id="signupFrom"></span><span class="faint">今天</span></div>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--ai)"></i>已綁定</span>
+        <span><i class="dot" style="background:var(--tts)"></i>訪客</span>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <strong>還會回來嗎</strong>
+        <div id="retention" class="bars"></div>
+        <p class="faint" style="margin:10px 0 0">註冊滿 N 天的人裡，最後一次打開 App 距離註冊超過 N 天的比例。
+          Auth 只記得「最後一次」，所以是近似值，標準留存曲線看 GA4。</p>
+      </div>
+      <div class="panel">
+        <strong>登入方式</strong>
+        <div id="providers" class="bars"></div>
+      </div>
+    </div>
+
+    <h2 id="sTrend">趨勢與留存</h2>
+    <div class="row between">
+      <p class="faint" style="margin:0" id="trendNote">每天台北時間 23:50 自動存一份當天的快照。</p>
+      <button type="button" id="snapNow">立刻存今天的快照</button>
+    </div>
+
+    <div class="grid2">
+      <div class="panel">
+        <div class="row between"><strong>每日活躍（DAU）</strong><span class="faint" id="tDauMax"></span></div>
+        <div class="chart" id="tDau"></div>
+        <div class="row between" style="margin-top:6px"><span class="faint" data-tfrom></span><span class="faint">今天</span></div>
+      </div>
+      <div class="panel">
+        <div class="row between"><strong>每日新增</strong><span class="faint" id="tNewMax"></span></div>
+        <div class="chart" id="tNew"></div>
+        <div class="row between" style="margin-top:6px"><span class="faint" data-tfrom></span><span class="faint">今天</span></div>
+      </div>
+      <div class="panel">
+        <div class="row between"><strong>每日完成課程＋讀物</strong><span class="faint" id="tLessonMax"></span></div>
+        <div class="chart" id="tLesson"></div>
+        <div class="row between" style="margin-top:6px"><span class="faint" data-tfrom></span><span class="faint">今天</span></div>
+      </div>
+      <div class="panel">
+        <div class="row between"><strong>黏著度（DAU ÷ MAU）</strong><span class="faint" id="tStickyNow"></span></div>
+        <div class="chart" id="tSticky"></div>
+        <div class="row between" style="margin-top:6px"><span class="faint" data-tfrom></span><span class="faint">今天</span></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:12px">
+      <strong>新手漏斗（最近 30 天註冊的人）</strong>
+      <div id="funnel" class="bars"></div>
+      <p class="faint" style="margin:10px 0 0">「完成引導」和「上第一堂」只看註冊當天；
+        「第 N 天回來」是剛好在第 N 天打開，只計入已經滿 N 天的那幾批。</p>
+    </div>
+
+    <div class="panel" style="margin-top:12px">
+      <div class="row between"><strong>每批新用戶的留存</strong><span class="faint">一列是同一天註冊的人</span></div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>註冊日</th><th>人數</th><th>完成引導</th><th>上第一堂</th>
+            <th>第 1 天</th><th>第 3 天</th><th>第 7 天</th><th>第 14 天</th><th>第 30 天</th></tr></thead>
+          <tbody id="cohorts"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2 id="sLearn">學習</h2>
+    <div class="kpis">
+      <div class="panel kpi"><div class="label">今天有學習</div><div class="value" id="lToday">—</div><div class="note" id="lTodayNote"></div></div>
+      <div class="panel kpi"><div class="label">7 天內有學習</div><div class="value" id="l7">—</div><div class="note" id="l7Note"></div></div>
+      <div class="panel kpi"><div class="label">連續 3 天以上</div><div class="value" id="lStreak">—</div><div class="note" id="lStreakNote"></div></div>
+      <div class="panel kpi"><div class="label">完成課程（全站）</div><div class="value" id="lLessons">—</div><div class="note" id="lLessonsNote"></div></div>
+      <div class="panel kpi"><div class="label">讀完的讀物</div><div class="value" id="lReadings">—</div><div class="note" id="lReadingsNote"></div></div>
+      <div class="panel kpi"><div class="label">單字本總字數</div><div class="value" id="lWords">—</div><div class="note" id="lWordsNote"></div></div>
+      <div class="panel kpi"><div class="label">AI 會話（累計）</div><div class="value" id="lChats">—</div><div class="note" id="lChatsNote"></div></div>
+      <div class="panel kpi"><div class="label">今天用 AI 的人</div><div class="value" id="lAi">—</div><div class="note" id="lAiNote"></div></div>
+    </div>
+
+    <div class="grid2">
+      <div class="panel"><strong>學習目標</strong><div id="goals" class="bars"></div></div>
+      <div class="panel"><strong>選的程度</strong><div id="levels" class="bars"></div></div>
+      <div class="panel"><strong>XP 分布</strong><div id="xpDist" class="bars"></div></div>
+      <div class="panel"><strong>完成課程數分布</strong><div id="lessonDist" class="bars"></div></div>
+      <div class="panel"><strong>最多人完成的課</strong><div id="topLessons" class="bars"></div></div>
+      <div class="panel"><strong>最多人讀完的讀物</strong><div id="topReadings" class="bars"></div></div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
+      <div class="row between">
+        <strong>使用者清單</strong>
+        <span class="row">
+          <button type="button" data-ulist="top" aria-pressed="true">XP 最高</button>
+          <button type="button" data-ulist="newest" aria-pressed="false">最新註冊</button>
+        </span>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>使用者</th><th>暱稱</th><th>帳號</th><th>XP</th><th>課程</th><th>單字</th><th>連續</th><th>註冊</th><th>最後活躍</th></tr></thead>
+          <tbody id="userList"></tbody>
+        </table>
+      </div>
+      <p class="faint" style="margin:10px 0 0">點 uid 會帶進下方的查詢框，一次看他的訂閱、Apple 通知和錯誤紀錄。</p>
+    </div>
+
+    <h2 id="sPaid">付費</h2>
+    <div class="kpis">
+      <div class="panel kpi"><div class="label">付費訂戶（正式）</div><div class="value" id="pPaid">—</div><div class="note" id="pPaidNote"></div></div>
+      <div class="panel kpi"><div class="label">付費轉換率</div><div class="value" id="pConv">—</div><div class="note">付費訂戶 ÷ 已綁定帳號</div></div>
+      <div class="panel kpi"><div class="label">已關自動續訂</div><div class="value" id="pChurn">—</div><div class="note">這一期結束就會掉</div></div>
+      <div class="panel kpi"><div class="label">90 天扣款</div><div class="value" id="pRev">—</div><div class="note" id="pRevNote"></div></div>
+    </div>
+
+    <h2 id="sCost">成本</h2>
+    <div class="row">
       <button data-days="7" aria-pressed="false">最近 7 天</button>
       <button data-days="30" aria-pressed="true">最近 30 天</button>
       <button data-days="90" aria-pressed="false">最近 90 天</button>
@@ -101,7 +256,8 @@
       </p>
     </div>
 
-    <form id="search" class="row" style="margin-top:24px">
+    <h2 id="sLogs">紀錄</h2>
+    <form id="search" class="row">
       <input id="q" class="uid" placeholder="uid、transactionId 或 originalTransactionId" autocomplete="off"
         style="flex:1;min-width:240px;font-size:14px;border:1px solid var(--line);border-radius:999px;padding:8px 15px;background:var(--panel);color:var(--ink)">
       <button type="submit">查詢</button>
@@ -141,6 +297,20 @@
         <tbody id="clientLogs"></tbody>
       </table>
     </div>
+
+    <h2 id="sReports">內容檢舉</h2>
+    <div class="panel">
+      <div class="row between">
+        <strong>使用者回報的 AI 內容</strong>
+        <span class="faint" id="reportCount"></span>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>時間</th><th>使用者</th><th>情境</th><th>原因</th><th>內容</th></tr></thead>
+          <tbody id="contentReports"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <p id="error" class="err"></p>
@@ -152,6 +322,8 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, collection, query, where, getDocs, orderBy, limit }
   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFunctions, httpsCallable }
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js';
 // 絕對路徑：hosting 開了 cleanUrls，這頁同時能用 /admin 和 /admin/ 打開。
 // 寫成 './' 的話，沒有結尾斜線時會去抓 /firebase-config.js（404），
 // 整段 module 載不起來，畫面停在「請登入」而且按鈕沒有反應
@@ -172,6 +344,7 @@ const TTS_USD_PER_M = { hd: 30, std: 16 };   // 每 1M 字元
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const fns = getFunctions(app, 'asia-east1');
 
 const $ = id => document.getElementById(id);
 const nt = n => 'NT$' + (n < 10 ? n.toFixed(2) : Math.round(n).toLocaleString());
@@ -310,11 +483,279 @@ async function loadLogs(q = '') {
   }
 }
 
+// ---------- 趨勢與留存（dailyStats）----------
+
+const TREND_DAYS = 90;
+const RET_COLS = [1, 3, 7, 14, 30];
+
+async function loadTrend() {
+  try {
+    const from = taipeiDay(TREND_DAYS - 1);
+    const snap = await getDocs(query(collection(db, 'dailyStats'), where('date', '>=', from)));
+    renderTrend(new Map(snap.docs.map(d => [d.id, d.data()])));
+  } catch (e) {
+    $('trendNote').innerHTML = `<span class="err">快照讀取失敗：${esc(e?.message ?? e)}</span>`;
+  }
+}
+
+/** 一天一根的長條。值是 null 的日子（沒有快照）畫成空的，不要畫成 0——那是兩回事 */
+function dayBars(id, dayList, valueOf, { fmt = num, maxId, maxLabel = '單日最高' } = {}) {
+  const vals = dayList.map(valueOf);
+  const max = Math.max(1e-9, ...vals.filter(v => v != null));
+  if (maxId) $(maxId).textContent = vals.some(v => v != null) ? `${maxLabel} ${fmt(max)}` : '';
+  $(id).innerHTML = dayList.map((d, i) => {
+    const v = vals[i];
+    return `<div class="day" title="${d}　${v == null ? '沒有快照' : fmt(v)}">
+      ${v == null ? '' : `<div class="seg" style="height:${(v / max * 160).toFixed(1)}px;background:var(--ai)"></div>`}
+    </div>`;
+  }).join('');
+}
+
+function renderTrend(byDate) {
+  const dayList = Array.from({ length: TREND_DAYS }, (_, i) => taipeiDay(TREND_DAYS - 1 - i));
+  const have = dayList.filter(d => byDate.has(d));
+  $('trendNote').textContent = have.length
+    ? `已累積 ${have.length} 天的快照（從 ${have[0]} 開始）。每天台北時間 23:50 自動存一份。`
+    : '還沒有任何快照。今晚 23:50 會存第一份，或按右邊的按鈕先存今天的。';
+  document.querySelectorAll('[data-tfrom]').forEach(el => { el.textContent = dayList[0]; });
+
+  const g = (d, k) => byDate.get(d)?.[k] ?? null;
+  dayBars('tDau', dayList, d => g(d, 'dau'), { maxId: 'tDauMax' });
+  dayBars('tNew', dayList, d => g(d, 'newUsers'), { maxId: 'tNewMax' });
+  // 累計值相減：前一天也有快照才算得出來
+  const prevDay = d => taipeiDayOf(d, -1);
+  dayBars('tLesson', dayList, d => {
+    const a = byDate.get(d), b = byDate.get(prevDay(d));
+    return a && b ? Math.max(0, (a.sumLessons + a.sumReadings) - (b.sumLessons + b.sumReadings)) : null;
+  }, { maxId: 'tLessonMax' });
+  dayBars('tSticky', dayList, d => { const x = byDate.get(d); return x?.mau ? x.dau / x.mau * 100 : null; },
+    { fmt: v => `${Math.round(v)}%`, maxId: 'tStickyNow', maxLabel: '最高' });
+
+  // 漏斗與留存表：最近 30 批
+  const cohorts = dayList.slice(-30).reverse().filter(d => byDate.has(d));
+  const f = { new: 0, onboarded: 0, firstLesson: 0 };
+  const r = Object.fromEntries(RET_COLS.map(n => [n, { base: 0, back: 0 }]));
+  for (const d of cohorts) {
+    const x = byDate.get(d);
+    f.new += x.funnel?.new ?? 0; f.onboarded += x.funnel?.onboarded ?? 0; f.firstLesson += x.funnel?.firstLesson ?? 0;
+    for (const n of RET_COLS) { const v = x.ret?.[`d${n}`]; if (v) { r[n].base += v.base; r[n].back += v.back; } }
+  }
+  const rate = v => v.base ? v.back / v.base * 100 : 0;
+  bars('funnel', [
+    ['註冊', f.new ? 100 : 0], ['當天完成引導', f.new ? f.onboarded / f.new * 100 : 0],
+    ['當天上第一堂', f.new ? f.firstLesson / f.new * 100 : 0],
+    ['第 1 天回來', rate(r[1])], ['第 7 天回來', rate(r[7])], ['第 30 天回來', rate(r[30])],
+  ], { fmt: v => `${Math.round(v)}%` });
+  $('funnel').insertAdjacentHTML('beforeend', `<span class="faint">樣本：${f.new} 人註冊；第 1／7／30 天各有 ${r[1].base}／${r[7].base}／${r[30].base} 人滿期</span>`);
+
+  // 熱度用背景深淺，數字本身還是寫出來——只靠顏色的話色弱和列印都讀不到
+  const cell = (num, base) => {
+    if (num == null || !base) return '<td class="faint">—</td>';
+    const p = num / base;
+    return `<td style="background:rgba(168,57,74,${(p * 0.55).toFixed(2)})" title="${num}／${base}">${Math.round(p * 100)}%</td>`;
+  };
+  $('cohorts').innerHTML = cohorts.length ? cohorts.map(d => {
+    const x = byDate.get(d), base = x.funnel?.new ?? x.newUsers ?? 0;
+    return `<tr><td>${d}</td><td>${base}</td>
+      ${cell(x.funnel?.onboarded, base)}${cell(x.funnel?.firstLesson, base)}
+      ${RET_COLS.map(n => { const v = x.ret?.[`d${n}`]; return v ? cell(v.back, v.base) : '<td class="faint">—</td>'; }).join('')}
+    </tr>`;
+  }).join('') : '<tr><td colspan="9" class="faint">還沒有快照</td></tr>';
+}
+
+/** 某一天往前／後 n 天（台北日期字串進、字串出） */
+const taipeiDayOf = (d, n) => new Date(Date.parse(`${d}T12:00:00+08:00`) + n * 86400e3 + 8 * 3600e3).toISOString().slice(0, 10);
+
+$('snapNow').onclick = async () => {
+  const b = $('snapNow');
+  b.disabled = true; b.textContent = '存檔中…';
+  try {
+    const r = (await httpsCallable(fns, 'adminSnapshot', { timeout: 300000 })()).data;
+    b.textContent = `已存 ${r.date}（DAU ${r.dau}）`;
+    loadTrend();
+  } catch (e) {
+    b.textContent = '存檔失敗';
+    $('trendNote').innerHTML = `<span class="err">${esc(e?.message ?? e)}</span>`;
+  } finally {
+    setTimeout(() => { b.disabled = false; b.textContent = '立刻存今天的快照'; }, 4000);
+  }
+};
+
+// ---------- 使用者／學習／付費（adminStats）----------
+
+const pct = (a, b) => b ? `${Math.round(a / b * 100)}%` : '—';
+const ago = ms => {
+  if (!ms) return '—';
+  const m = (Date.now() - ms) / 60000;
+  if (m < 60) return `${Math.max(1, Math.round(m))} 分鐘前`;
+  if (m < 1440) return `${Math.round(m / 60)} 小時前`;
+  return `${Math.round(m / 1440)} 天前`;
+};
+const GOAL = { travel: '去日本旅行', study: '留學或打工度假', work: '日商工作', hobby: '興趣' };
+const LEVEL = { L2: '初級', L3: '進階', L1: '初級（舊）', L4: '進階（舊）' };
+const PROVIDER = { anonymous: '訪客（匿名）', 'google.com': 'Google', 'apple.com': 'Apple', password: 'Email' };
+const PLAN = { plus: '標準', pro: '無限' };
+
+/** 橫條清單。entries 是 [標籤, 數字]；total 給了就在右邊多一個百分比 */
+function bars(id, entries, { total, label = k => k, fmt = num } = {}) {
+  const max = Math.max(1, ...entries.map(e => e[1]));
+  $(id).innerHTML = entries.length ? entries.map(([k, v]) => `<div class="bar" title="${esc(k)}">
+      <span class="k">${esc(label(k))}</span>
+      <span class="track"><span class="fill" style="display:block;width:${(v / max * 100).toFixed(1)}%"></span></span>
+      <span class="v">${fmt(v)}${total ? `<span class="faint"> ${pct(v, total)}</span>` : ''}</span>
+    </div>`).join('') : '<span class="faint">還沒有資料</span>';
+}
+
+/** 分布的桶要照數字排，不能照人數排（「0」「1–99」「100–499」…） */
+const byBucket = m => Object.entries(m).sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+
+let stats = null, ulist = 'top';
+
+async function loadStats() {
+  $('statsAt').textContent = '載入中…';
+  try {
+    stats = (await httpsCallable(fns, 'adminStats', { timeout: 120000 })()).data;
+    renderStats();
+  } catch (e) {
+    $('statsAt').innerHTML = `<span class="err">統計載入失敗：${esc(e?.message ?? e)}</span>`;
+  }
+}
+$('reloadStats').onclick = loadStats;
+
+function renderStats() {
+  const { auth: a, learning: l, paid: p, ai, reports } = stats;
+  $('statsAt').textContent = `更新於 ${when(stats.generatedAt)}`;
+
+  const today = taipeiDay(0), yest = taipeiDay(1);
+  const s = d => (a.signup[d]?.anon ?? 0) + (a.signup[d]?.linked ?? 0);
+  let last7 = 0, last30 = 0;
+  for (let i = 0; i < 30; i++) { const v = s(taipeiDay(i)); last30 += v; if (i < 7) last7 += v; }
+
+  $('uTotal').textContent = num(a.total);
+  $('uTotalNote').textContent = `訪客 ${num(a.anon)}${a.disabled ? `・停用 ${a.disabled}` : ''}`;
+  $('uToday').textContent = num(s(today));
+  $('uTodayNote').textContent = `昨天 ${s(yest)}・7 天 ${last7}・30 天 ${last30}`;
+  $('uDau').textContent = num(a.active1);
+  $('uDauNote').textContent = `佔全部 ${pct(a.active1, a.total)}`;
+  $('uWau').textContent = num(a.active7);
+  $('uWauNote').textContent = `佔全部 ${pct(a.active7, a.total)}`;
+  $('uMau').textContent = num(a.active30);
+  $('uMauNote').textContent = `黏著度 DAU/MAU ${pct(a.active1, a.active30)}`;
+  $('uLinked').textContent = num(a.linked);
+  $('uLinkedNote').textContent = `綁定率 ${pct(a.linked, a.total)}`;
+
+  // 每日新增：堆疊已綁定（下）和訪客（上）
+  const N = 90;
+  const dayList = Array.from({ length: N }, (_, i) => taipeiDay(N - 1 - i));
+  const max = Math.max(1, ...dayList.map(s));
+  $('signupMax').textContent = `單日最高 ${max} 人・90 天共 ${dayList.reduce((t, d) => t + s(d), 0)} 人`;
+  $('signupFrom').textContent = dayList[0];
+  $('signupChart').innerHTML = dayList.map(d => {
+    const v = a.signup[d] ?? { anon: 0, linked: 0 };
+    const h = x => (x / max * 160).toFixed(1);
+    return `<div class="day" title="${d}　已綁定 ${v.linked}　訪客 ${v.anon}">
+      <div class="seg" style="height:${h(v.anon)}px;background:var(--tts)"></div>
+      <div class="seg" style="height:${h(v.linked)}px;background:var(--ai)"></div>
+    </div>`;
+  }).join('');
+
+  const r = a.retention;
+  bars('retention', [['撐過 1 天', r.d1], ['撐過 7 天', r.d7], ['撐過 30 天', r.d30]].map(([k, x]) => [k, x.base ? x.back / x.base * 100 : 0]),
+    { fmt: v => `${Math.round(v)}%` });
+  $('retention').insertAdjacentHTML('beforeend', `<span class="faint">樣本：${r.d1.base}／${r.d7.base}／${r.d30.base} 人</span>`);
+  bars('providers', Object.entries(a.providers).sort((x, y) => y[1] - x[1]), { total: a.total, label: k => PROVIDER[k] ?? k });
+
+  // 學習
+  $('lToday').textContent = num(l.studiedToday);
+  $('lTodayNote').textContent = `有學習資料的 ${num(l.docs)} 人中 ${pct(l.studiedToday, l.docs)}`;
+  $('l7').textContent = num(l.studied7);
+  $('l7Note').textContent = pct(l.studied7, l.docs);
+  $('lStreak').textContent = num(l.streak3);
+  $('lStreakNote').textContent = `目前最長連續 ${l.maxStreak} 天`;
+  $('lLessons').textContent = num(l.sumLessons);
+  $('lLessonsNote').textContent = `平均每人 ${(l.sumLessons / Math.max(1, l.docs)).toFixed(1)} 堂・碰過 ${l.lessonsTouched} 種`;
+  $('lReadings').textContent = num(l.sumReadings);
+  $('lReadingsNote').textContent = `平均每人 ${(l.sumReadings / Math.max(1, l.docs)).toFixed(1)} 篇`;
+  $('lWords').textContent = num(l.sumWords);
+  $('lWordsNote').textContent = `平均每人 ${(l.sumWords / Math.max(1, l.docs)).toFixed(1)} 個`;
+  $('lChats').textContent = num(l.sumChats);
+  $('lChatsNote').textContent = `完成引導 ${num(l.onboarded)} 人・填暱稱 ${num(l.withNickname)}・有頭像 ${num(l.withPhoto)}`;
+  $('lAi').textContent = num(ai.usersToday);
+  $('lAiNote').textContent = `今天 ${num(ai.callsToday)} 次・分析 ${num(ai.reportsToday)} 份`;
+
+  const onb = Math.max(1, l.onboarded);
+  bars('goals', Object.entries(l.goals).sort((x, y) => y[1] - x[1]), { total: onb, label: k => GOAL[k] ?? k });
+  bars('levels', Object.entries(l.levels).sort((x, y) => y[1] - x[1]), { total: onb, label: k => LEVEL[k] ?? k });
+  bars('xpDist', byBucket(l.xpBuckets), { total: l.docs, label: k => `${k} XP` });
+  bars('lessonDist', byBucket(l.lessonBuckets), { total: l.docs, label: k => `${k} 堂` });
+  bars('topLessons', l.topLessons, { label: k => k });
+  bars('topReadings', l.topReadings, { label: k => k });
+  renderUserList();
+
+  // 付費
+  $('pPaid').textContent = num(p.prod);
+  $('pPaidNote').textContent = [...Object.entries(p.plans).map(([k, v]) => `${PLAN[k] ?? k} ${v}`),
+    p.sandbox ? `沙盒 ${p.sandbox}（不計）` : ''].filter(Boolean).join('・') || '還沒有人訂閱';
+  $('pConv').textContent = pct(p.prod, a.linked);
+  $('pChurn').textContent = num(p.willChurn);
+  const rev = Object.entries(p.revenue);
+  if (!rev.length) { $('pRev').textContent = '—'; $('pRevNote').textContent = '還沒收到正式環境的扣款通知'; }
+  else {
+    // 主貨幣放大字，其他貨幣寫在下面。入袋 = 含稅價 ÷ 1.05 × 0.7（Apple 抽 30%，見 CLAUDE.md）
+    const [cur, v] = rev.sort((x, y) => y[1].gross - x[1].gross)[0];
+    $('pRev').textContent = `${num(v.gross - v.refund)} ${cur}`;
+    $('pRevNote').textContent = `${v.count} 筆・退款 ${num(v.refund)}・估入袋 ${num((v.gross - v.refund) / 1.05 * 0.7)}`
+      + rev.slice(1).map(([c, x]) => `・${num(x.gross - x.refund)} ${c}`).join('');
+  }
+
+  // 檢舉
+  $('reportCount').textContent = `共 ${reports.total} 筆・列最新 ${reports.latest.length} 筆`;
+  $('contentReports').innerHTML = reports.latest.length ? reports.latest.map(x => `<tr>
+      <td>${esc(when(x.at))}</td>
+      <td class="uid link" data-uid="${esc(x.uid)}">${esc(x.uid)}</td>
+      <td>${esc(x.scenario)}</td>
+      <td><strong class="err">${esc(x.reason)}</strong></td>
+      <td style="text-align:left"><details><summary>${esc(x.text.slice(0, 40))}…</summary><pre style="white-space:pre-wrap;font-size:12px;margin:8px 0 0">${esc(x.text)}</pre></details></td>
+    </tr>`).join('') : '<tr><td colspan="5" class="faint">還沒有任何檢舉</td></tr>';
+}
+
+function renderUserList() {
+  const list = stats.learning[ulist === 'top' ? 'topUsers' : 'newest'];
+  $('userList').innerHTML = list.length ? list.map(u => `<tr>
+      <td class="uid link" data-uid="${esc(u.uid)}">${esc(u.uid.slice(0, 10))}…</td>
+      <td>${esc(u.name || '—')}</td>
+      <td>${u.anon ? '<span class="faint">訪客</span>' : '已綁定'}</td>
+      <td>${num(u.xp)}</td><td>${u.lessons}</td><td>${u.words}</td><td>${u.streak || '—'}</td>
+      <td class="faint">${u.created ? esc(dayOfMs(u.created)) : '—'}</td>
+      <td>${esc(ago(u.last))}</td>
+    </tr>`).join('') : '<tr><td colspan="9" class="faint">還沒有使用者</td></tr>';
+}
+const dayOfMs = ms => new Date(ms + 8 * 3600e3).toISOString().slice(0, 10);
+
+for (const b of document.querySelectorAll('[data-ulist]')) {
+  b.onclick = () => {
+    ulist = b.dataset.ulist;
+    for (const x of document.querySelectorAll('[data-ulist]')) x.setAttribute('aria-pressed', String(x === b));
+    if (stats) renderUserList();
+  };
+}
+
+// 點任何 uid 就帶進查詢框：看到可疑的人，下一步幾乎都是查他的訂閱和錯誤紀錄
+document.addEventListener('click', ev => {
+  const uid = ev.target.closest?.('[data-uid]')?.dataset.uid;
+  if (!uid) return;
+  $('q').value = uid;
+  loadLogs(uid);
+  $('sLogs').scrollIntoView({ behavior: 'smooth' });
+});
+
 $('search').addEventListener('submit', ev => { ev.preventDefault(); loadLogs($('q').value.trim()); });
 $('clearQ').addEventListener('click', () => { $('q').value = ''; loadLogs(); });
 
 async function load() {
   loadLogs();
+  loadStats();
+  loadTrend();
   try {
     const from = taipeiDay(days - 1);
     const snap = await getDocs(query(collection(db, 'costs'), where('date', '>=', from)));
@@ -373,7 +814,7 @@ function render(rows) {
 
   $('userCount').textContent = `${users.length} 人`;
   $('users').innerHTML = users.length ? users.map(u => `<tr>
-    <td class="uid">${u.uid ?? '(未知)'}</td>
+    <td class="uid link" data-uid="${esc(u.uid)}">${esc(u.uid ?? "(未知)")}</td>
     <td>${u.chat}</td><td>${u.report}</td><td>${u.lesson}</td><td>${u.example}</td>
     <td>${num(u.in)}</td><td>${num(u.out)}</td><td>${num(u.chars)}</td>
     <td><strong>${nt(u.cost)}</strong></td>

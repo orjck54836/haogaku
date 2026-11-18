@@ -309,14 +309,30 @@ Google 按字元收費，播一個 5 字的單字和一句 60 字的例句成本
 
 三個要在後台手動設定一次的東西（不是程式，部署不會帶上去）：
 
-1. **App Store Connect →「App 資訊」→「App Store 伺服器通知」**，正式和沙盒兩格都填
-   `https://asia-east1-haogaku-60c56.cloudfunctions.net/appStoreNotifications`，選 V2，
-   按「傳送測試通知」，後台的「Apple 通知」那塊會多一筆 TEST。
-2. **警報**：Google Cloud Console → Logging → Logs Explorer，查詢
-   `resource.type="cloud_run_revision" AND severity>=ERROR AND textPayload:"[ALERT]"`
-   →「建立警示」，通知管道選 email。`alertLog()` 只用在真的要人處理的錯，不要拿來記雜訊。
+1. **App Store Connect → App →「一般」底下的「App 資訊」→ 往下捲到「App Store 伺服器通知」**，
+   正式和沙盒兩格都填 `https://asia-east1-haogaku-60c56.cloudfunctions.net/appStoreNotifications`，
+   版本選「第 2 版」。網頁上**沒有**測試按鈕：測試通知要打 App Store Server API 的
+   `requestTestNotification`，成功的話後台「Apple 通知」那塊會多一筆 TEST。
+2. **警報**：Google Cloud Console → Logging → Logs Explorer，在上方的查詢框貼
+   `resource.type="cloud_run_revision" AND "[ALERT]"` → 執行 →「動作」→「建立記錄快訊」，
+   通知管道選 email。不加 `severity`：沒把握 console.error 一定被標成 ERROR，
+   標錯了警報永遠不響；`[ALERT]` 只有 `alertLog()` 會寫，不會誤報。`alertLog()` 只用在真的要人處理的錯，不要拿來記雜訊。
 3. **clientLogs 的 TTL**：Firestore → TTL →「建立政策」，collection group `clientLogs`、欄位 `expireAt`。
    之前的舊紀錄沒有這個欄位，不會被刪。
+
+## 營運後台（使用者與留存）
+
+`public/admin` 除了成本和紀錄，還有使用者、學習、付費、趨勢與留存。數字來自兩支後端：
+
+- **`adminStats`**：當下即時算（Auth 帳號、users 學習資料、entitlements、檢舉）。
+  users 規則只開給本人，所以彙總在後端做、只回數字，不為後台把 users 開給 admin。
+- **`dailySnapshot`**：每天台北 23:50 存 `dailyStats/{日期}`（數字）和 `dailyActive/{日期}`（uid 名單，連 admin 都讀不到）。
+  Auth 只記得「最後一次」活躍，**沒存的那天事後補不回來**，所以排程不要停。
+  留存是拿第 C 天的新人名單和第 C+N 天的活躍名單取交集，寫回 C 那一天的文件。
+  後台的「立刻存今天的快照」只能存今天，過去的日子算不出來。
+
+「帳號數」不是下載數（下載只在 App Store Connect）。活躍用 `lastRefreshTime`，
+不是 `lastSignInTime`——匿名帳號的後者只在第一次登入時寫。
 
 ## 中文排版：JSX 的換行會變成空格
 

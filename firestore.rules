@@ -76,6 +76,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 每日快照（見 functions 的 dailySnapshot）。數字給後台讀，和 costs 同一個等級
+    match /dailyStats/{date} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow write: if false;
+    }
+    // 當天活躍和新註冊的 uid 名單，只拿來算留存。連 admin 都不開：
+    // 後台要的是比例，不需要知道是哪些人，名單留在後端就好
+    match /dailyActive/{date} {
+      allow read, write: if false;
+    }
+
     // 誰是 admin。寫入對所有人關閉：能自己把自己加進來的話，上面那條就形同虛設
     match /admins/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;

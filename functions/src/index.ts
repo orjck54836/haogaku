@@ -1,5 +1,6 @@
 import { onCall, onRequest, HttpsError, CallableRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
@@ -878,12 +879,41 @@ export const track = onCall(
     }).filter(Boolean);
     if (!events.length) return { ok: true, sent: 0 };
 
+    // 裝置：只收這幾個欄位、只收短字串。手機送什麼都照單全收的話，
+    // 改過的 client 可以往報表的維度裡塞任意文字
+    const DEVICE_KEYS = ['category', 'operating_system', 'operating_system_version', 'screen_resolution', 'language'];
+    const device: Record<string, string> = {};
+    for (const k of DEVICE_KEYS) {
+      const v = req.data?.device?.[k];
+      if (typeof v === 'string' && v) device[k] = v.slice(0, 40);
+    }
+
+    // 用戶屬性：GA4 的上限是名稱 24 字、值 36 字，超過的整筆被丟，所以這裡先截
+    const userProperties: Record<string, { value: string }> = {};
+    for (const [k, v] of Object.entries(req.data?.userProps ?? {}).slice(0, 10)) {
+      const key = k.slice(0, 24).replace(/[^a-z0-9_]/g, '');
+      if (key && typeof v === 'string' && v) userProperties[key] = { value: v.slice(0, 36) };
+    }
+
+    // 地區：MP 是從這台伺服器送出去的，不帶 ip_override 的話 GA4 只看得到 Google 機房，
+    // 「使用者在哪個縣市」整欄都是錯的。GA4 拿 IP 換成地區後就丟掉，不會出現在報表裡。
+    // Cloud Run 前面有一層代理，真正的來源在 x-forwarded-for 的第一個
+    const fwd = String(req.rawRequest?.headers?.['x-forwarded-for'] ?? '').split(',')[0].trim();
+    const ip = fwd || req.rawRequest?.ip || '';
+
     try {
       const res = await fetch(
         `https://www.google-analytics.com/mp/collect?measurement_id=${encodeURIComponent(id)}&api_secret=${encodeURIComponent(secret)}`,
         {
           method: 'POST',
-          body: JSON.stringify({ client_id: clientId, ...(uid ? { user_id: uid } : {}), events }),
+          body: JSON.stringify({
+            client_id: clientId,
+            ...(uid ? { user_id: uid } : {}),
+            ...(ip ? { ip_override: ip } : {}),
+            ...(Object.keys(device).length ? { device } : {}),
+            ...(Object.keys(userProperties).length ? { user_properties: userProperties } : {}),
+            events,
+          }),
         },
       );
       if (!res.ok) console.warn('GA4 collect failed', res.status);
@@ -1671,5 +1701,382 @@ export const resetPlan = onCall(
       /** 這一期被忽略到什麼時候（0 = 沒有要忽略的）。手機端要講得出「幾點之後才是真的」 */
       suppressedUntil: suppress?.until ?? 0,
     };
+  },
+);
+
+// ---------- 後台：營運統計 ----------
+
+type AuthRow = { uid: string; created: number; last: number; anon: boolean; disabled: boolean; providers: string[] };
+
+/**
+ * 列出全部 Auth 帳號。listUsers 不算 Firestore 讀取、不收錢，一頁 1000 筆。
+ *
+ * 「最後活躍」用 lastRefreshTime：App 開著時 SDK 約每小時換一次 token，
+ * 匿名帳號的 lastSignInTime 只在第一次登入時寫，拿它當活躍會把所有訪客都算成沒回來過。
+ */
+async function listAuthUsers(): Promise<AuthRow[]> {
+  const { getAuth } = await import('firebase-admin/auth');
+  const auth = getAuth();
+  const out: AuthRow[] = [];
+  let pageToken: string | undefined;
+  do {
+    const page = await auth.listUsers(1000, pageToken);
+    for (const u of page.users) {
+      const created = Date.parse(u.metadata.creationTime) || 0;
+      out.push({
+        uid: u.uid, created,
+        last: Date.parse(u.metadata.lastRefreshTime ?? '') || Date.parse(u.metadata.lastSignInTime) || created,
+        anon: u.providerData.length === 0,
+        disabled: u.disabled,
+        providers: u.providerData.map(p => p.providerId),
+      });
+    }
+    pageToken = page.pageToken;
+  } while (pageToken);
+  return out;
+}
+
+/**
+ * 後台（public/admin）的「使用者」那一大段。
+ *
+ * ## 為什麼要繞後端，不在網頁直接讀
+ *
+ * 帳號數只有 Auth 知道，而 Auth 的使用者清單只有 admin SDK 列得出來。
+ * `users/{uid}` 雖然在 Firestore，但規則只開給本人——為了後台把它開給 admin
+ * 等於多一條讀得到所有人單字本和自我介紹的路，在後端彙總完只回數字比較乾淨。
+ * 檢舉內容（contentReports）同理：規則對所有人關閉讀取，這裡是唯一看得到的地方。
+ *
+ * ## 「下載數」不在這裡
+ *
+ * 下載是 App Store 的數字（App Store Connect →「分析」）。這裡最接近的是
+ * Auth 帳號數：每個打開過 App 的人至少有一個匿名帳號。下載了沒打開的人不在裡面；
+ * 刪掉重裝的訪客會多一個 uid，所以兩邊各有偏差，不要拿來對帳。
+ *
+ * ## 活躍怎麼算
+ *
+ * 用 Auth 的 `lastRefreshTime`：App 開著時 Firebase 大約每小時換一次 token，
+ * 比 `lastSignInTime`（匿名帳號只登入一次）準得多。沒有逐日歷史，
+ * 所以只算得出「現在往回 1／7／30 天」，畫不出每日活躍曲線——那要看 GA4。
+ *
+ * ## 成本
+ *
+ * 每載一次讀 users 全部文件。一千人是一千次讀取（約 NT$0.02），
+ * 上萬人之後要改成排程彙總寫一份快照，這裡先不做。
+ */
+export const adminStats = onCall(
+  { region: 'asia-east1', timeoutSeconds: 120, memory: '512MiB', maxInstances: 2 },
+  async req => {
+    await requireAdmin(req);
+
+    const now = Date.now();
+    const DAY = 86_400_000;
+    const HIST_DAYS = 90;
+    const dayOf = (ms: number) => new Date(ms + 8 * 3600_000).toISOString().slice(0, 10);
+    const inc = (m: Record<string, number>, k: string, n = 1) => { m[k] = (m[k] ?? 0) + n; };
+
+    // ---- Auth ----
+    const signup: Record<string, { anon: number; linked: number }> = {};
+    const providers: Record<string, number> = {};
+    let total = 0, anon = 0, disabled = 0;
+    let active1 = 0, active7 = 0, active30 = 0;
+    // 回訪：建立滿 N 天的人裡，最後活躍時間距離建立超過 N 天的比例。
+    // 只看得到「最後一次」，所以是「至少撐過 N 天」的近似。
+    // 真正的逐日留存在 dailyStats（每晚的快照），這裡留著是因為快照要累積幾週才有東西看
+    const ret: Record<'d1' | 'd7' | 'd30', { base: number; back: number }> = {
+      d1: { base: 0, back: 0 }, d7: { base: 0, back: 0 }, d30: { base: 0, back: 0 },
+    };
+    const authMeta = new Map<string, { created: number; last: number; anon: boolean }>();
+
+    for (const u of await listAuthUsers()) {
+      total++;
+      if (u.disabled) disabled++;
+      const { created, last } = u;
+      const isAnon = u.anon;
+      if (isAnon) { anon++; inc(providers, 'anonymous'); }
+      else for (const p of u.providers) inc(providers, p);
+      authMeta.set(u.uid, { created, last, anon: isAnon });
+
+      if (created >= now - HIST_DAYS * DAY) {
+        const d = dayOf(created);
+        signup[d] ??= { anon: 0, linked: 0 };
+        signup[d][isAnon ? 'anon' : 'linked']++;
+      }
+      if (last >= now - DAY) active1++;
+      if (last >= now - 7 * DAY) active7++;
+      if (last >= now - 30 * DAY) active30++;
+      for (const [k, n] of [['d1', 1], ['d7', 7], ['d30', 30]] as const) {
+        if (created <= now - n * DAY) {
+          ret[k].base++;
+          if (last - created >= n * DAY) ret[k].back++;
+        }
+      }
+    }
+
+    // ---- 學習資料（users/{uid}）----
+    const goals: Record<string, number> = {};
+    const levels: Record<string, number> = {};
+    const lessonCount: Record<string, number> = {};
+    const readingCount: Record<string, number> = {};
+    const xpBuckets: Record<string, number> = {};
+    const lessonBuckets: Record<string, number> = {};
+    const XP_EDGES = [0, 1, 100, 500, 1000, 3000, 10000];
+    const LESSON_EDGES = [0, 1, 3, 10, 30, 100];
+    const bucket = (v: number, edges: number[]) => {
+      let i = edges.length - 1;
+      while (i > 0 && v < edges[i]) i--;
+      return i === edges.length - 1 ? `${edges[i]}+` : edges[i] === edges[i + 1] - 1 ? `${edges[i]}` : `${edges[i]}–${edges[i + 1] - 1}`;
+    };
+    let docs = 0, onboarded = 0, withNickname = 0, withPhoto = 0, leaderOut = 0;
+    let sumXp = 0, sumLessons = 0, sumReadings = 0, sumWords = 0, sumChats = 0;
+    let studiedToday = 0, studied7 = 0, streak3 = 0, maxStreak = 0;
+    const today = taipeiDate();
+    const weekAgo = dayOf(now - 6 * DAY);
+    const top: { uid: string; name: string; xp: number; lessons: number; words: number; streak: number; anon: boolean; created: number; last: number }[] = [];
+
+    const usersSnap = await db.collection('users').select('profile', 'progress.xp', 'progress.completed',
+      'progress.streak', 'progress.lastDay', 'progress.chats', 'words').get();
+    for (const d of usersSnap.docs) {
+      docs++;
+      const p = d.get('profile') ?? {};
+      const g = d.get('progress') ?? {};
+      if (p.onboarded) onboarded++;
+      if (p.nickname) withNickname++;
+      if (p.photo) withPhoto++;
+      if (p.leaderboard === false) leaderOut++;
+      if (p.onboarded) { inc(goals, p.goal ?? '未填'); inc(levels, p.startLevel ?? '未填'); }
+
+      const completed: string[] = Array.isArray(g.completed) ? g.completed : [];
+      let lessons = 0, readings = 0;
+      for (const id of completed) {
+        if (typeof id !== 'string') continue;
+        // 讀物也記在 completed，前綴 read-（見 readings.ts 的 isReadingLesson）
+        if (id.startsWith('read-')) { readings++; inc(readingCount, id.slice(5)); }
+        else { lessons++; inc(lessonCount, id); }
+      }
+      const xp = Number(g.xp) || 0;
+      const words = Array.isArray(d.get('words')) ? d.get('words').length : 0;
+      const streak = Number(g.streak) || 0;
+      sumXp += xp; sumLessons += lessons; sumReadings += readings; sumWords += words;
+      sumChats += Number(g.chats) || 0;
+      inc(xpBuckets, bucket(xp, XP_EDGES));
+      inc(lessonBuckets, bucket(lessons, LESSON_EDGES));
+      if (g.lastDay === today) studiedToday++;
+      if (typeof g.lastDay === 'string' && g.lastDay >= weekAgo) studied7++;
+      // streak 是最後一次學習時的值，中斷後要等下次學習才歸零，所以只算還在連續的人
+      const alive = g.lastDay === today || g.lastDay === dayOf(now - DAY);
+      if (alive && streak >= 3) streak3++;
+      if (alive) maxStreak = Math.max(maxStreak, streak);
+
+      const m = authMeta.get(d.id);
+      top.push({
+        uid: d.id, name: String(p.nickname ?? '').slice(0, 20), xp, lessons, words, streak: alive ? streak : 0,
+        anon: m?.anon ?? true, created: m?.created ?? 0, last: m?.last ?? 0,
+      });
+    }
+    top.sort((a, b) => b.xp - a.xp);
+
+    // ---- 付費 ----
+    const plans: Record<string, number> = {};
+    let paidProd = 0, paidSandbox = 0, willChurn = 0;
+    const entSnap = await db.collection('entitlements').get();
+    for (const d of entSnap.docs) {
+      const e = d.data();
+      const live = (e.plan === 'plus' || e.plan === 'pro') && Number(e.expiresAt) > now;
+      if (!live) continue;
+      if (e.environment === 'Sandbox') { paidSandbox++; continue; }
+      paidProd++;
+      inc(plans, e.plan);
+      if (e.autoRenew === false) willChurn++;
+    }
+
+    // 營收：Apple 通知裡的實際扣款（只算正式環境），退款從裡面扣掉
+    const revenue: Record<string, { gross: number; refund: number; count: number }> = {};
+    const revSnap = await db.collection('storeNotifications').where('receivedAt', '>=', now - HIST_DAYS * DAY).get();
+    for (const d of revSnap.docs) {
+      const n = d.data();
+      if (n.environment !== 'Production' || typeof n.price !== 'number') continue;
+      const cur = String(n.currency ?? '?');
+      revenue[cur] ??= { gross: 0, refund: 0, count: 0 };
+      if (n.type === 'SUBSCRIBED' || n.type === 'DID_RENEW') { revenue[cur].gross += n.price / 1000; revenue[cur].count++; }
+      else if (n.type === 'REFUND') revenue[cur].refund += n.price / 1000;
+    }
+
+    // ---- 今天的 AI 用量 ----
+    let aiToday = 0, aiCallsToday = 0, reportsToday = 0;
+    const usageSnap = await db.collection('usage').where('date', '==', today).get();
+    for (const d of usageSnap.docs) {
+      aiToday++;
+      aiCallsToday += Number(d.get('count')) || 0;
+      reportsToday += Number(d.get('reports')) || 0;
+    }
+
+    // ---- 檢舉 ----
+    const repSnap = await db.collection('contentReports').orderBy('createdAt', 'desc').limit(30).get()
+      .catch(() => null);
+    const reports = repSnap?.docs.map(d => {
+      const r = d.data();
+      const at = r.createdAt?.toMillis?.() ?? (Number(r.createdAt) || 0);
+      return { at, uid: r.uid ?? '', scenario: String(r.scenario ?? ''), reason: String(r.reason ?? ''), text: String(r.text ?? '').slice(0, 1000) };
+    }) ?? [];
+    const reportsTotal = (await db.collection('contentReports').count().get()).data().count;
+
+    const topN = (m: Record<string, number>, n: number) =>
+      Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n);
+
+    return {
+      generatedAt: now,
+      auth: { total, anon, linked: total - anon, disabled, providers, active1, active7, active30, signup, retention: ret },
+      learning: {
+        docs, onboarded, withNickname, withPhoto, leaderOut,
+        sumXp, sumLessons, sumReadings, sumWords, sumChats,
+        studiedToday, studied7, streak3, maxStreak,
+        goals, levels, xpBuckets, lessonBuckets,
+        topLessons: topN(lessonCount, 15), topReadings: topN(readingCount, 10),
+        lessonsTouched: Object.keys(lessonCount).length,
+        topUsers: top.slice(0, 30),
+        // 最新註冊的 30 人：剛上線時最想知道的是「新進來的人有沒有在學」
+        newest: [...top].sort((a, b) => b.created - a.created).slice(0, 30),
+      },
+      paid: { prod: paidProd, sandbox: paidSandbox, plans, willChurn, revenue },
+      ai: { usersToday: aiToday, callsToday: aiCallsToday, reportsToday },
+      reports: { total: reportsTotal, latest: reports },
+    };
+  },
+);
+
+/** 和 firestore.rules 的 costs 同一個條件：admins/{uid} 存在才算管理者 */
+async function requireAdmin(req: CallableRequest) {
+  const caller = req.auth?.uid;
+  if (!caller) throw new HttpsError('unauthenticated', '請先登入');
+  if (!(await db.doc(`admins/${caller}`).get()).exists) {
+    throw new HttpsError('permission-denied', '要在 Firestore 建一筆 admins/<你的 uid> 才讀得到');
+  }
+}
+
+// ---------- 後台：每日快照 ----------
+
+/** 第幾天的留存要算。快照存兩份名單，這幾個數字之後想加別的天數，只會從加的那天起有資料 */
+const RET_DAYS = [1, 3, 7, 14, 30] as const;
+
+/**
+ * 每天存一份使用者快照，後台的趨勢圖和留存表都從這裡來。
+ *
+ * ## 為什麼一定要每天存
+ *
+ * Auth 只記得每個人「最後一次」活躍的時間，沒有歷史。今天不存，
+ * 「今天有誰打開過」明天就問不出來了——過一天少一天，**事後補不回來**。
+ *
+ * ## 兩份文件
+ *
+ * - `dailyStats/{日期}`：數字（人數、學習量、漏斗、留存）。後台只讀這份，admin 可讀。
+ * - `dailyActive/{日期}`：當天活躍和當天新註冊的 **uid 名單**，只有後端讀寫。
+ *   留存要拿「第 C 天註冊的人」和「第 C+N 天活躍的人」取交集，只存人數是算不出來的。
+ *   名單分開放，後台載入趨勢時才不會把幾萬個 uid 拉下來。
+ *   一份文件上限 1MB，uid 28 字，大約撐到單日 3 萬活躍——到那時候要拆。
+ *
+ * ## 時間
+ *
+ * 台北時間 23:50 跑。「當天活躍」= 最後活躍落在今天的人：最後活躍是最大值，
+ * 今天開過的人一定落在今天，所以在當天結束前掃一次就抓得到全部，
+ * 只漏掉最後 10 分鐘。過了午夜才跑的話，凌晨又打開的人會被算到隔天、從昨天消失。
+ *
+ * 另一個漏洞：SDK 只在 token 過期（1 小時）才換，23:30 開過、00:15 又開的人，
+ * 第二天可能沒被算到。DAU 因此略為低估，趨勢比較不受影響。
+ */
+async function takeSnapshot(date: string) {
+  const DAY = 86_400_000;
+  const dayOf = (ms: number) => new Date(ms + 8 * 3600_000).toISOString().slice(0, 10);
+  const shift = (d: string, n: number) => dayOf(Date.parse(`${d}T12:00:00+08:00`) + n * DAY);
+  const weekStart = shift(date, -6), monthStart = shift(date, -29);
+
+  const users = await listAuthUsers();
+  const active: string[] = [], fresh: string[] = [];
+  let anon = 0, wau = 0, mau = 0, newLinked = 0;
+  for (const u of users) {
+    if (u.anon) anon++;
+    const last = dayOf(u.last);
+    // 快照可能晚跑或手動補跑：比今天還新的活躍不能算進今天
+    if (last === date) active.push(u.uid);
+    if (last >= weekStart && last <= date) wau++;
+    if (last >= monthStart && last <= date) mau++;
+    if (dayOf(u.created) === date) { fresh.push(u.uid); if (!u.anon) newLinked++; }
+  }
+
+  // 學習資料：今天學過的人、全站累計（隔天相減就是當天的量），和今天新人的漏斗
+  const freshSet = new Set(fresh);
+  let learners = 0, sumLessons = 0, sumReadings = 0, sumWords = 0, sumXp = 0;
+  let onboarded = 0, firstLesson = 0;
+  const snap = await db.collection('users').select('profile.onboarded', 'progress.xp', 'progress.completed',
+    'progress.lastDay', 'words').get();
+  for (const d of snap.docs) {
+    const completed: unknown[] = d.get('progress.completed') ?? [];
+    const readings = completed.filter(x => typeof x === 'string' && x.startsWith('read-')).length;
+    const lessons = completed.length - readings;
+    sumLessons += lessons; sumReadings += readings;
+    sumWords += (d.get('words') ?? []).length;
+    sumXp += Number(d.get('progress.xp')) || 0;
+    if (d.get('progress.lastDay') === date) learners++;
+    if (freshSet.has(d.id)) {
+      if (d.get('profile.onboarded')) onboarded++;
+      if (lessons + readings > 0) firstLesson++;
+    }
+  }
+
+  const usage = await db.collection('usage').where('date', '==', date).get();
+  let aiCalls = 0;
+  usage.forEach(d => { aiCalls += Number(d.get('count')) || 0; });
+
+  let paid = 0;
+  (await db.collection('entitlements').get()).forEach(d => {
+    const e = d.data();
+    if ((e.plan === 'plus' || e.plan === 'pro') && Number(e.expiresAt) > Date.now() && e.environment !== 'Sandbox') paid++;
+  });
+
+  const batch = db.batch();
+  batch.set(db.doc(`dailyActive/${date}`), { date, active, new: fresh });
+  batch.set(db.doc(`dailyStats/${date}`), {
+    date, takenAt: Date.now(),
+    total: users.length, anon, linked: users.length - anon,
+    newUsers: fresh.length, newLinked,
+    dau: active.length, wau, mau,
+    learners, aiUsers: usage.size, aiCalls, paid,
+    sumLessons, sumReadings, sumWords, sumXp,
+    // 漏斗只看註冊「當天」做到哪一步。隔天才完成引導的人不算——要比較的是第一印象
+    funnel: { new: fresh.length, onboarded, firstLesson },
+  }, { merge: true });   // merge：前幾天的快照會往這份寫 ret，重跑今天不能把它洗掉
+
+  // 留存：第 C 天註冊的人，今天（C+N）有沒有回來。寫回 C 那一天的文件，表格一列就是一批人
+  const activeSet = new Set(active);
+  for (const n of RET_DAYS) {
+    const cohort = shift(date, -n);
+    const prev = (await db.doc(`dailyActive/${cohort}`).get()).data();
+    if (!prev) continue;   // 那天沒有快照（功能上線前，或排程失敗）
+    const base: string[] = prev.new ?? [];
+    batch.set(db.doc(`dailyStats/${cohort}`), {
+      ret: { [`d${n}`]: { base: base.length, back: base.filter(u => activeSet.has(u)).length } },
+    }, { merge: true });
+  }
+  await batch.commit();
+  return { date, dau: active.length, newUsers: fresh.length };
+}
+
+export const dailySnapshot = onSchedule(
+  { schedule: '50 23 * * *', timeZone: 'Asia/Taipei', region: 'asia-east1', timeoutSeconds: 300, memory: '512MiB' },
+  async () => {
+    const r = await takeSnapshot(taipeiDate());
+    console.log(`dailySnapshot ${r.date}: DAU ${r.dau}、新增 ${r.newUsers}`);
+  },
+);
+
+/**
+ * 後台的「立刻存今天」。上線第一天用，或排程哪天失敗了想補當天。
+ * 只能存**今天**：過去的日子 Auth 已經沒有資料，硬存會是錯的數字。
+ * 今天稍早存過也沒關係，23:50 的排程會整份蓋過去。
+ */
+export const adminSnapshot = onCall(
+  { region: 'asia-east1', timeoutSeconds: 300, memory: '512MiB', maxInstances: 1 },
+  async req => {
+    await requireAdmin(req);
+    return takeSnapshot(taipeiDate());
   },
 );
