@@ -78,13 +78,13 @@ export default function ProfileScreen() {
   // 這台機器能用的登入方式。Apple 登入只在 iOS 出現
   type Linkable = 'apple.com' | 'google.com';
   const options: Linkable[] = Platform.OS === 'ios' ? ['apple.com', 'google.com'] : ['google.com'];
-  const link: Record<Linkable, () => Promise<void>> = { 'apple.com': a.signInApple, 'google.com': a.signInGoogle };
+  const link: Record<Linkable, () => Promise<unknown>> = { 'apple.com': a.signInApple, 'google.com': a.signInGoogle };
   // Apple 可能只給隱私信箱、也可能完全不給 email，所以沒有 email 時退回提供者名稱
   const identity = a.isGuest ? '訪客帳號'
     : a.linked.find(p => p.email)?.email
       ?? (a.linked.length ? a.linked.map(p => p.label).join('・') : '已登入');
 
-  async function run(key: string, fn: () => Promise<void>, failTitle = '操作失敗') {
+  async function run(key: string, fn: () => Promise<unknown>, failTitle = '操作失敗') {
     setBusy(key);
     try { await fn(); } catch (e: any) { Alert.alert(failTitle, e?.message ?? '請稍後再試'); }
     finally { setBusy(null); }

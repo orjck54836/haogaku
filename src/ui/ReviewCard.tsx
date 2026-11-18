@@ -4,10 +4,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { T } from './index';
 import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
-import { GOOD_STARS, markAsked, shouldAskReview, submitStars } from '../lib/review';
+import { markAsked, shouldAskReview, submitFeedback, hasFeedbackChannel } from '../lib/review';
+import { track } from '../lib/analytics';
 
 /**
- * 請使用者評分的星星卡。
+ * 問「喜歡皓學日語嗎」的卡片，喜歡才叫原生評分視窗。
  *
  * ## 為什麼是卡片不是彈窗
  *
@@ -15,8 +16,8 @@ import { GOOD_STARS, markAsked, shouldAskReview, submitStars } from '../lib/revi
  * 卡片放在版面裡，看到的人自己決定要不要點，不想理它就往下滑——
  * 代價是觸及率低一點，但一輩子只問 3 次的額度不會被「隨手關掉」燒掉。
  *
- * 分流邏輯沒變，仍然在 `lib/review.ts`：4 星以上才叫原生評分視窗，
- * 3 星以下導去 LINE。**不要用 AI 次數之類的好處換評價**，
+ * 分流邏輯在 `lib/review.ts`：喜歡才叫原生評分視窗，有意見導去 LINE。
+ * 這裡不畫星星，理由見 `submitFeedback()`。**不要用 AI 次數之類的好處換評價**，
  * 那是 App Store 1.1.6／5.6.1 明文禁止的事（理由寫在 review.ts 檔頭）。
  *
  * ## 為什麼「顯示出來」就記一次
@@ -46,35 +47,39 @@ export default function ReviewCard({ placement, style }: Props) {
     eligible.current = shouldAskReview(r, d.progress.completed.length);
   }
   const counted = useRef(false);
-  const [picked, setPicked] = useState(0);
+  const [answer, setAnswer] = useState<'like' | 'meh' | null>(null);
   const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
     if (!eligible.current || counted.current) return;
     counted.current = true;
     d.setReview({ ...markAsked(), asked: r.asked + 1 });
+    // 三段漏斗：看到 → 回答（喜歡／有意見／以後再說）。只記回答的話算不出觸及率
+    track('review_prompt_shown', { placement, n: r.asked + 1 });
   }, []);
 
   if (!eligible.current || hidden) return null;
 
-  function tap(n: number) {
-    setPicked(n);
+  function pick(liked: boolean) {
+    setAnswer(liked ? 'like' : 'meh');
+    track('review_answer', { placement, answer: liked ? 'like' : 'meh' });
     // 不再累加 asked：掛載時已經記過這一次了，這裡只補上 done
-    d.setReview(submitStars(n));
-    // 留 1.2 秒讓他看到自己點亮的星數，直接消失會像點壞了
+    d.setReview(submitFeedback(liked));
+    // 留 1.2 秒讓他看到謝謝，直接消失會像點壞了
     setTimeout(() => setHidden(true), 1200);
   }
 
   /**
-   * 好評的文案**不要承諾會跳出什麼**。
+   * 「喜歡」的文案**不要承諾會跳出什麼**。
    *
    * `requestReview()` 只是「請求」，系統有權不顯示（一年三次的上限、剛顯示過），
    * 叫不出來時才退回 App Store 頁（`appStoreUrl`，見 app.config.ts）。
    * 兩條路哪一條會發生、甚至會不會發生，畫面這邊都不知道——
    * 文案寫死「正在開啟 App Store」，碰上系統安靜吞掉請求的那次就是說謊。
    */
-  const thanks = picked >= GOOD_STARS ? '謝謝你的支持！'
-    : picked ? '謝謝，想聽聽你覺得可以更好的地方' : null;
+  const thanks = answer === 'like' ? '謝謝你的支持！'
+    : answer === 'meh' ? (hasFeedbackChannel() ? '謝謝，想聽聽你覺得可以更好的地方' : '謝謝你的回饋')
+    : null;
 
   /**
    * 列表版不鋪酒紅：首頁和讀物列表已經有一塊飽和色（設計原則 4，見 theme.ts 檔頭），
@@ -85,7 +90,6 @@ export default function ReviewCard({ placement, style }: Props) {
   const bg = solid ? t.primary : t.cream;
   const fg = solid ? t.onPrimary : t.heading;
   const dim = solid ? 'rgba(255,255,255,0.72)' : t.sub;
-  const star = solid ? t.onPrimary : t.gold;
 
   return (
     <View style={{
@@ -94,24 +98,43 @@ export default function ReviewCard({ placement, style }: Props) {
       alignItems: 'center', gap: space.md, ...style,
     }}>
       <T variant="heading" color={fg} style={{ textAlign: 'center' }}>
-        {placement === 'done' ? '皓學日語有幫到你嗎？' : '喜歡皓學日語嗎？給我們評分'}
+        {placement === 'done' ? '皓學日語有幫到你嗎？' : '喜歡皓學日語嗎？'}
       </T>
-      <View style={{ flexDirection: 'row', gap: space.sm }}>
-        {[1, 2, 3, 4, 5].map(n => (
-          <Pressable key={n} disabled={picked > 0} onPress={() => tap(n)} hitSlop={6}
-            accessibilityRole="button" accessibilityLabel={`給 ${n} 顆星`}
-            style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-            <Ionicons name={n <= picked ? 'star' : 'star-outline'} size={36} color={star} />
-          </Pressable>
-        ))}
-      </View>
+      {answer ? null : (
+        <View style={{ flexDirection: 'row', gap: space.sm, alignSelf: 'stretch' }}>
+          {/* 兩顆一樣大：把「有意見」縮成一行小字等於在誘導，負評的人會改去商店寫 */}
+          <Choice label="喜歡" icon="heart" strong solid={solid} onPress={() => pick(true)} />
+          <Choice label="有意見" icon="chatbubble-ellipses-outline" solid={solid} onPress={() => pick(false)} />
+        </View>
+      )}
       {thanks
         ? <T variant="caption" color={dim} style={{ textAlign: 'center' }}>{thanks}</T>
         : (
-          <Pressable onPress={() => setHidden(true)} hitSlop={8} accessibilityRole="button">
+          <Pressable onPress={() => { track('review_answer', { placement, answer: 'later' }); setHidden(true); }} hitSlop={8} accessibilityRole="button">
             <T variant="caption" color={dim}>以後再說</T>
           </Pressable>
         )}
     </View>
+  );
+}
+
+/** 卡片裡的兩顆選擇。共用的 Button 沒有「疊在酒紅底上」的配色，outline 的字是黑的 */
+function Choice({ label, icon, strong, solid, onPress }: {
+  label: string; icon: keyof typeof Ionicons.glyphMap; strong?: boolean; solid: boolean; onPress: () => void;
+}) {
+  const t = useTheme();
+  const bg = strong ? (solid ? '#FFFFFF' : t.primary) : 'transparent';
+  const fg = strong ? (solid ? t.primary : t.onPrimary) : (solid ? '#FFFFFF' : t.ink);
+  const border = strong ? 'transparent' : (solid ? 'rgba(255,255,255,0.6)' : t.lineStrong);
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}
+      style={({ pressed }) => ({
+        flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+        paddingVertical: 12, borderRadius: radius.pill, backgroundColor: bg,
+        borderWidth: strong ? 0 : 1.5, borderColor: border, opacity: pressed ? 0.85 : 1,
+      })}>
+      <Ionicons name={icon} size={16} color={fg} />
+      <T style={{ fontSize: 14, fontWeight: '700' }} color={fg}>{label}</T>
+    </Pressable>
   );
 }

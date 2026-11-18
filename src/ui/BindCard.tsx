@@ -40,8 +40,9 @@ export default function BindCard({ placement, style }: Props) {
   async function bind(key: 'apple' | 'google') {
     setBusy(key);
     try {
-      await (key === 'apple' ? a.signInApple() : a.signInGoogle());
-      track('bind_from_prompt', { placement, method: key });
+      // 按取消會回 false：不記，不然轉換率會把「點了又反悔」也算進去
+      const ok = await (key === 'apple' ? a.signInApple() : a.signInGoogle());
+      if (ok) track('bind_from_prompt', { placement, method: key });
     } catch (e: any) {
       Alert.alert('綁定失敗', e?.message ?? '請稍後再試');
     } finally {

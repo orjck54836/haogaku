@@ -9,9 +9,9 @@ import { today } from './date';
  * 兩段式，不是直接跳原生評分視窗。理由很實際：
  * iOS 一年只允許跳三次原生視窗（而且是系統在數，不是我們），
  * 跳給一個正在不爽的人等於浪費掉一次額度，還會換來一顆星。
- * 所以第一段自己問，使用者點幾顆星決定後面怎麼走：
- *   4〜5 星 → 才叫原生視窗（那時幾乎篤定是好評）
- *   1〜3 星 → 不叫評分，改導去 LINE 聽他要說什麼（負評變成客服對話）
+ * 所以第一段自己問一句「喜歡嗎」，答案決定後面怎麼走：
+ *   喜歡 → 才叫原生評分視窗（那時幾乎篤定是好評）
+ *   有意見 → 不叫評分，改導去 LINE 聽他要說什麼（負評變成客服對話）
  *   不理它 → 什麼都不做，過一陣子再問
  *
  * **不要用任何好處換評價**（AI 次數、解鎖、點數都算）。
@@ -125,19 +125,24 @@ export function markAsked(): AskResult {
   return { lastAskedAt: today() };
 }
 
-/** 給好評的門檻。4 星以上才值得花掉一次原生視窗的額度 */
-export const GOOD_STARS = 4;
-
 /**
- * 使用者點了幾顆星。回傳要寫回 ReviewState 的欄位。
+ * 使用者回答了「喜歡嗎」。回傳要寫回 ReviewState 的欄位。
  *
- * 不論幾星都 `done: true`：他已經表達過了，再問第二次只會惹人厭，
+ * 第一段**不用星星**。以前是自己畫一排五顆星、4 星以上才送去商店：
+ * 那等於先收了一份評分、只把好的轉交出去，正是 Apple 5.6.1（評分要用系統 API）
+ * 和 Google Play「review gating」在抓的東西。改成問一句喜不喜歡，
+ * 真正的星數留給系統視窗。
+ *
+ * 不論答案都 `done: true`：他已經表達過了，再問第二次只會惹人厭，
  * 而「一輩子 3 次」那個額度要留給還沒表態的人。
  */
-export function submitStars(stars: number): AskResult {
+export function submitFeedback(liked: boolean): AskResult {
   const res: AskResult = { lastAskedAt: today(), done: true };
-  if (stars >= GOOD_STARS) { openNativeReview(); return res; }
+  if (liked) { openNativeReview(); return res; }
   const fb = feedbackUrl();
   if (fb) Linking.openURL(fb).catch(() => {});
   return res;
 }
+
+/** 沒有 LINE 可以導的話，「有意見」就只是一聲謝謝，畫面要知道才不會講錯話 */
+export const hasFeedbackChannel = () => feedbackUrl() !== null;

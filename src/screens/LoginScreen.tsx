@@ -12,7 +12,7 @@ export default function LoginScreen() {
   const { signInGoogle, signInApple, signInGuest } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
 
-  async function run(key: string, fn: () => Promise<void>) {
+  async function run(key: string, fn: () => Promise<unknown>) {
     setBusy(key);
     try { await fn(); } catch (e: any) { Alert.alert('登入失敗', e?.message ?? '請稍後再試'); }
     finally { setBusy(null); }

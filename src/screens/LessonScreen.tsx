@@ -15,6 +15,7 @@ import { StackProps } from '../navigation';
 import { lessonXp, rankOf, weightLabel } from '../lib/rank';
 import { useReviewPrompt } from '../lib/useReviewPrompt';
 import ReviewCard from '../ui/ReviewCard';
+import { askReminderAfterLesson } from '../lib/reminders';
 import { Seal } from '../ui/seal';
 import FollowInvite from '../ui/FollowInvite';
 import BindCard from '../ui/BindCard';
@@ -82,6 +83,21 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   const { reviewing } = useReviewPrompt(finished);
   const { isGuest } = useAuth();
 
+  /**
+   * 通知權限在這裡問，不在冷啟動問（理由見 lib/reminders.ts 的 `ensureScheduled`）。
+   * 晚 1.2 秒才跳：先讓他看到 +XP，Alert 一進場就蓋住慶祝的話，問句聽起來像在討東西。
+   * 評價卡那一次讓位：一個畫面同時要兩樣東西，兩樣都會被拒絕。
+   *
+   * 升段**不讓位**：第一堂課就給 150 XP 以上，新手的第一堂一定升到 Lv.2。
+   * 升段讓位的話第一堂永遠問不到，而只上一堂就離開的人正是最需要提醒的人。
+   */
+  useEffect(() => {
+    if (!finished || reviewing) return;
+    const id = setTimeout(() => { askReminderAfterLesson(); }, 1200);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finished]);
+
   useEffect(() => { d.setResume(lesson.id, step); }, [step]);
   // 已在上課時，從「單元內容」點別張回來：跳到那一張
   useEffect(() => {
@@ -140,9 +156,12 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
      * 第一堂就出現是刻意的——那是他第一次有 XP 可以失去，也是訪客流失最多的關口，
      * 等到第 3 堂才問，大部分人已經不在了。之後放寬是因為每次都掛會被當成背景。
      * 和 IG 邀請互斥，綁定優先：沒綁定的人重裝就歸零，追蹤 IG 可以晚點再說。
+     *
+     * 升段時**照樣出現**（評價和 IG 才讓位）。第一堂課一定升到 Lv.2（155 XP > 150），
+     * 以前寫成升段就讓位，結果第一堂的綁定卡一次都沒出現過——最關鍵的那一次。
      */
     const lessonsDone = d.progress.completed.filter(id => !isReadingLesson(id)).length;
-    const askBind = isGuest && !leveledUp && !reviewing
+    const askBind = isGuest && !reviewing
       && (lessonsDone === 1 || lessonsDone === 3 || lessonsDone % 5 === 0);
     const goNext = () => {
       if (!nextRef) return navigation.goBack();
@@ -162,9 +181,12 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
             <Pill icon="flame" label={`連續 ${d.streak()} 天`} color={t.accent} bg={t.accentSoft} />
             {/* 難度加成只在真的有加成時出現，不然每堂課都掛一個就沒有訊息量 */}
             {weightLabel(xp.weight) ? <Pill icon="trending-up" label={weightLabel(xp.weight)!} color={t.success} bg={t.successSoft} /> : null}
+            {/* 升段又要綁定（新手第一堂一定是這樣）：升段縮成一顆 Pill。
+                大卡＋綁定卡＋兩顆按鈕在 iPhone SE 上會把「下一堂」擠出畫面 */}
+            {leveledUp && askBind ? <Pill icon="ribbon" label={`升到 Lv.${after.n} ${after.name}`} color={t.gold} bg={t.goldSoft} /> : null}
           </View>
 
-          {leveledUp ? (
+          {leveledUp && !askBind ? (
             <View style={{ alignItems: 'center', marginTop: space.section, backgroundColor: t.shell,
               borderRadius: radius.xl, paddingVertical: space.xl, paddingHorizontal: space.section, gap: space.sm }}>
               <Seal kanji={after.kanji} size={54} tone="gold" />
@@ -176,7 +198,9 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
         </View>
         {/* 升段卡在 flex 容器裡、邀請在外面：有 LEVEL UP 的那一次要讓慶祝獨占中央 */}
         {/* 有 LEVEL UP 的那一次讓慶祝獨占中央，評價和 IG 都讓位 */}
-        {!leveledUp && reviewing ? <ReviewCard placement="done" style={{ marginBottom: space.md }} /> : null}
+        {/* 訪客要綁定的那一次評價讓位（不 render 就不會燒掉詢問額度，下一堂再問）：
+            兩張卡疊在一起，「下一堂」會被擠出畫面，而綁定對訪客比評價急 */}
+        {!leveledUp && reviewing && !askBind ? <ReviewCard placement="done" style={{ marginBottom: space.md }} /> : null}
         {askBind ? <BindCard placement="done" style={{ marginBottom: space.md }} /> : null}
         {!leveledUp && !askBind ? <FollowInvite placement="done" reviewing={reviewing} style={{ marginBottom: space.md }} /> : null}
         {nextRef ? <Button label={`下一堂：${nextRef.lesson.title}`} icon="arrow-forward" variant="accent" onPress={goNext} /> : null}

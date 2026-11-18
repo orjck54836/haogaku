@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { track } from './analytics';
 import { today } from './date';
@@ -145,43 +146,91 @@ async function lastPracticedDay(): Promise<string | null> {
 }
 
 /**
- * 確保提醒已排好。提醒**預設開啟、App 裡沒有開關**：要關就到系統設定關通知，
+ * 有權限就把提醒排好。提醒**預設開啟、App 裡沒有開關**：要關就到系統設定關通知，
  * 那是 iOS／Android 本來就給的、使用者最熟的那個開關。App 裡再做一個的話，
  * 兩邊狀態會對不上（系統關了、App 顯示開著），而且多一個讓人順手關掉的地方。
  *
- * 權限只在還能問的時候問（`canAskAgain`）：iOS 拒絕過一次之後就不會再跳視窗，
- * 每次冷啟動都 request 只會白打，也會讓「拒絕」的事件每天被灌一次。
+ * 這裡**不跳權限視窗**，那件事交給 `askReminderAfterLesson()`。
+ * 以前冷啟動就問：視窗蓋在登入頁上，那時他連這個 App 在做什麼都還不知道，
+ * 按「不允許」的機率最高，而 iOS 拒絕一次就永遠不能再問。
+ * 對沒綁定的訪客來說，通知是唯一能把他拉回來的管道（沒有 email、沒有帳號），
+ * 浪費在這個時間點太可惜。
  */
 async function ensureScheduled(): Promise<void> {
   const N = load();
   if (!N) return;
   try {
-    const current = await N.getPermissionsAsync();
-    let granted = current.granted;
-    if (!granted && current.canAskAgain !== false) {
-      granted = (await N.requestPermissionsAsync()).granted;
-      if (!granted) track('reminder_permission_denied');
-    }
-    if (!granted) return;
-
-    // Android 一定要有 channel，否則通知不會出現（iOS 忽略這段）
-    if (N.setNotificationChannelAsync) {
-      await N.setNotificationChannelAsync(CHANNEL_ID, {
-        name: '每日學習提醒',
-        importance: N.AndroidImportance?.DEFAULT ?? 3,
-      });
-    }
-
-    await scheduleAhead(N, await reminderHour());
+    if (!(await N.getPermissionsAsync()).granted) return;
+    await scheduleNow(N);
   } catch { /* 忽略：下次冷啟動再試 */ }
+}
+
+async function scheduleNow(N: any) {
+  // Android 一定要有 channel，否則通知不會出現（iOS 忽略這段）
+  if (N.setNotificationChannelAsync) {
+    await N.setNotificationChannelAsync(CHANNEL_ID, {
+      name: '每日學習提醒',
+      importance: N.AndroidImportance?.DEFAULT ?? 3,
+    });
+  }
+  await scheduleAhead(N, await reminderHour());
+}
+
+/** 自己問過幾次、最後一次是哪天。和系統的權限狀態分開記：按「先不用」不會燒掉系統那一次 */
+const ASK_KEY = 'reminder-ask-v1';
+const MAX_SOFT_ASKS = 3;
+const SOFT_ASK_GAP_DAYS = 2;
+
+/**
+ * 課程完成頁問一次「要不要每天提醒你」，說好才叫系統的權限視窗。
+ *
+ * 時機選在完成頁，是因為那時他剛拿到 XP、剛知道一堂課只要幾分鐘，
+ * 「每天提醒一下」聽起來才像在幫他，而不是 App 在討東西。
+ *
+ * 先用自己的 Alert 問一句，不是直接叫系統視窗：系統視窗一輩子只有一次，
+ * 他按了「不允許」就再也問不回來；自己的問句按「先不用」，隔兩天還能再問，
+ * 最多問 3 次。
+ *
+ * 函式自己決定要不要問，呼叫端每次完成都叫它就好。
+ */
+export async function askReminderAfterLesson(): Promise<void> {
+  const N = load();
+  if (!N) return;
+  try {
+    const perm = await N.getPermissionsAsync();
+    if (perm.granted || perm.canAskAgain === false) return;
+
+    let rec = { n: 0, last: '' };
+    try { rec = { ...rec, ...JSON.parse((await AsyncStorage.getItem(ASK_KEY)) ?? '{}') }; } catch { /* 壞掉當作沒問過 */ }
+    if (rec.n >= MAX_SOFT_ASKS) return;
+    if (rec.last && Date.now() - Date.parse(`${rec.last}T00:00:00`) < SOFT_ASK_GAP_DAYS * 86400000) return;
+    await AsyncStorage.setItem(ASK_KEY, JSON.stringify({ n: rec.n + 1, last: today() })).catch(() => {});
+
+    const hour = await reminderHour();
+    Alert.alert(
+      '要每天提醒你練一下嗎？',
+      `每天 ${hour}:00 跳一則，今天練過就不會吵你。`,
+      [
+        { text: '先不用', style: 'cancel', onPress: () => track('reminder_ask', { answer: 'later', n: rec.n + 1 }) },
+        {
+          text: '好', onPress: async () => {
+            track('reminder_ask', { answer: 'yes', n: rec.n + 1 });
+            try {
+              if (!(await N.requestPermissionsAsync()).granted) { track('reminder_permission_denied'); return; }
+              await scheduleNow(N);
+            } catch { /* 下次冷啟動會補排 */ }
+          },
+        },
+      ],
+    );
+  } catch { /* 問不了就算了，不影響完成頁 */ }
 }
 
 /**
  * 「今天練到東西了」。完成課程、讀完讀物、練過一場 AI 會話都算。
  *
  * 記下日期之後把今天那一則取消掉（做法是整個重排，排程只有 7 則，重排很便宜）。
- * 沒給通知權限的人只記日期不排程，也不在這裡跳權限視窗——剛做完一堂課就被問，
- * 時機不對；權限只在冷啟動問。
+ * 沒給通知權限的人只記日期不排程。權限由完成頁的 `askReminderAfterLesson()` 問。
  */
 export async function practicedToday() {
   try { await AsyncStorage.setItem(PRACTICED_KEY, today()); } catch { return; }
@@ -197,7 +246,7 @@ export async function practicedToday() {
  * 啟動時重排一次。
  *
  * 排程會被「重裝 App」「還原備份到新手機」清掉。每次冷啟動重排一次最省事，
- * 而且本機排程重排的成本是零。第一次啟動也是走這裡，所以權限視窗會在這時跳出來。
+ * 而且本機排程重排的成本是零。沒有權限就什麼都不做，不在這裡問（理由見 `ensureScheduled`）。
  * 以前在 App 裡關掉提醒的人（舊的 `reminder-on-v1 = 0`）不再被尊重：
  * 開關已經拿掉，留著那筆等於讓他永遠開不回來，要關請用系統設定。
  *

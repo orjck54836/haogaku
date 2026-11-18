@@ -2,6 +2,8 @@ import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Button, ProgressRing, ProgressBar, SectionTitle, Pill, Divider } from '../ui';
 import SaveButton from '../ui/SaveButton';
+import ReviewCard from '../ui/ReviewCard';
+import { useReviewPrompt } from '../lib/useReviewPrompt';
 import { useTheme, space } from '../theme';
 import { scenarioById } from '../content/scenarios';
 import { StackProps } from '../navigation';
@@ -17,6 +19,12 @@ export default function ReportScreen({ route, navigation }: StackProps<'Report'>
   const fresh = !savedAt;
   const scenario = scenarioById(route.params.scenarioId)!;
   const color = (n: number) => (n >= 80 ? t.success : n >= 60 ? t.primary : t.warning);
+  /**
+   * 會話拿高分是另一個「心情最好」的時刻，而且常常比上完一堂課更有成就感。
+   * 只在剛做完（fresh）而且分數夠高時問：從歷史紀錄點回來的、或剛被挑一堆錯的，
+   * 都不是請人去商店寫好話的時候。門檻 75 是報告裡第二級的顏色界線往上一點。
+   */
+  const { reviewing } = useReviewPrompt(fresh && report.overall >= 75);
 
   return (
     <Screen edges={['bottom']}>
@@ -96,6 +104,9 @@ export default function ReportScreen({ route, navigation }: StackProps<'Report'>
           ))}
         </Card>
       </> : null}
+
+      {/* 列表版（米白）：這頁的總分圈已經是彩色的，再鋪一塊酒紅會兩塊搶注意力 */}
+      {reviewing ? <ReviewCard placement="list" style={{ marginTop: space.xxl }} /> : null}
 
       <View style={{ marginTop: space.xxl, gap: space.sm }}>
         <Button label="再練一次" icon="refresh" variant="secondary" onPress={() => navigation.replace('Chat', { scenarioId: scenario.id, lessonId: route.params.lessonId })} />

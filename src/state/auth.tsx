@@ -33,8 +33,9 @@ type AuthCtx = {
   linked: LinkedProvider[];
   hasProvider: (id: ProviderId) => boolean;
   signInGuest: () => Promise<void>;
-  signInGoogle: () => Promise<void>;
-  signInApple: () => Promise<void>;
+  /** true＝真的登入／綁定了；false＝使用者在 Apple／Google 視窗按了取消 */
+  signInGoogle: () => Promise<boolean>;
+  signInApple: () => Promise<boolean>;
   /** 解除綁定。只剩一種登入方式時會擋下來，避免把自己鎖在帳號外面 */
   unlinkProvider: (id: ProviderId) => Promise<void>;
   signOut: () => Promise<void>;
@@ -115,14 +116,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * 目前帳號還沒綁過這個提供者就用 link（訪客和正式帳號都適用，學習紀錄不會斷）；
    * 已經綁過、或這組憑證屬於別的帳號，就改為登入那個帳號。
    */
-  async function applyCredential(cred: AuthCredential, refresh?: () => Promise<AuthCredential | null>) {
+  async function applyCredential(cred: AuthCredential, refresh?: () => Promise<AuthCredential | null>): Promise<boolean> {
     const current = auth.currentUser;
     if (current && !current.providerData.some(p => p.providerId === cred.providerId)) {
       try {
         await linkWithCredential(current, cred);
         await current.reload();
         sync(auth.currentUser);
-        return;
+        return true;
       } catch (e: any) {
         if (e?.code !== 'auth/credential-already-in-use' && e?.code !== 'auth/email-already-in-use') throw e;
         /**
@@ -139,12 +140,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          */
         const fromError = OAuthProvider.credentialFromError(e) ?? GoogleAuthProvider.credentialFromError(e);
         const next = fromError ?? (refresh ? await refresh() : null);
-        if (!next) return;            // 重跑時使用者按了取消：什麼都不做，維持訪客
+        if (!next) return false;      // 重跑時使用者按了取消：什麼都不做，維持訪客
         await signInWithCredential(auth, next);
-        return;
+        return true;
       }
     }
     await signInWithCredential(auth, cred);
+    return true;
   }
 
   async function signInGuest() {
@@ -152,18 +154,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     track('login', { method: 'guest' });
   }
 
+  /**
+   * 回傳有沒有真的登入。使用者在 Apple／Google 視窗按取消時這裡是安靜 return，
+   * 不丟錯——呼叫端只看「有沒有 throw」的話，取消也會被當成成功，
+   * 綁定漏斗（bind_prompt_shown → bind_from_prompt）就會被灌水。
+   */
   async function signInGoogle() {
     const cred = await googleCredential();
-    if (!cred) return;
-    await applyCredential(cred, googleCredential);
+    if (!cred) return false;
+    if (!(await applyCredential(cred, googleCredential))) return false;
     track('login', { method: 'google' });
+    return true;
   }
 
   async function signInApple() {
     const r = await appleCredential();
-    if (!r) return;
-    await applyCredential(r.cred, async () => (await appleCredential())?.cred ?? null);
+    if (!r) return false;
+    if (!(await applyCredential(r.cred, async () => (await appleCredential())?.cred ?? null))) return false;
     track('login', { method: 'apple' });
+    return true;
   }
 
   async function unlinkProvider(id: ProviderId) {
