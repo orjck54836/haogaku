@@ -70,7 +70,16 @@ export const legalLinks = {
   deleteAccount: 'https://www.forma-global.com/study/delete-account',
 };
 
-export const linkById = (id: string) => officialLinks.find(l => l.id === id);
+/**
+ * App Store Connect 的 provider token（行銷活動連結裡的 `pt=`）。
+ *
+ * 分享出去的下載連結會帶 `ct=` 標來源，但 Apple 要 `pt` 一起在才會把下載算到那個來源上。
+ * 數字在 App Store Connect → App Analytics → 右上「取得行銷活動連結」產生的網址裡，
+ * 不是 App ID。留空時連結照樣能開，只是後台分不出來源。
+ */
+export const appStoreProviderToken = '';
+
+export const linkById =(id: string) => officialLinks.find(l => l.id === id);
 
 /** 有填網址的才拿去渲染 */
 export const activeLinks = () => officialLinks.filter(l => l.url.trim().length > 0);

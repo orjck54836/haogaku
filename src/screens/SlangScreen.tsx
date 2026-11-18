@@ -7,6 +7,7 @@ import FollowInvite from '../ui/FollowInvite';
 import { useTheme, space, radius, fonts } from '../theme';
 import { slang, todaySlangIndex } from '../content/slang';
 import { speakJa } from '../lib/speech';
+import { shareToThreads } from '../lib/share';
 
 export default function SlangScreen() {
   const t = useTheme();
@@ -24,8 +25,13 @@ export default function SlangScreen() {
               : null}
             <Pill label={`${i + 1} / ${slang.length}`} color={t.sub} />
           </View>
-          <RoundButton icon="volume-high" size={42} bg={t.primary} fg="#FFFFFF"
-            accessibilityLabel={`播放 ${w.word}`} onPress={() => speakJa(w.word)} />
+          <View style={{ flexDirection: 'row', gap: space.sm }}>
+            {/* 分享的是「正在看的這一個」不是今日那個：翻到喜歡的詞才是最想分享的時候 */}
+            <RoundButton icon="share-outline" size={42} bg={t.surface2} fg={t.primary}
+              accessibilityLabel={`分享 ${w.word} 到 Threads`} onPress={() => shareToThreads(slangPost(w), 'share-slang')} />
+            <RoundButton icon="volume-high" size={42} bg={t.primary} fg="#FFFFFF"
+              accessibilityLabel={`播放 ${w.word}`} onPress={() => speakJa(w.word)} />
+          </View>
         </View>
 
         <Pressable accessibilityRole="button" accessibilityLabel={`播放 ${w.word}`} onPress={() => speakJa(w.word)}
@@ -65,4 +71,13 @@ export default function SlangScreen() {
       <FollowInvite placement="slang" style={{ marginTop: space.section }} />
     </Screen>
   );
+}
+
+/**
+ * 貼文內容自己就要有料：看到的人不下載也學到一個詞，才會按讚、轉發，
+ * 只寫「我在用某某 App」的貼文在 Threads 上沒人看。
+ */
+function slangPost(w: (typeof slang)[number]) {
+  const head = w.kana ? `${w.word}（${w.kana}）` : w.word;
+  return `今天學到的日文流行語👇\n\n${head}＝${w.meaning}\n例：${w.example}\n${w.exampleZh}\n\n#日文 #日語學習 #皓學日語`;
 }

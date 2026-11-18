@@ -19,6 +19,7 @@ import { askReminderAfterLesson } from '../lib/reminders';
 import { Seal } from '../ui/seal';
 import FollowInvite from '../ui/FollowInvite';
 import BindCard from '../ui/BindCard';
+import { shareToThreads } from '../lib/share';
 import { useAuth } from '../state/auth';
 import { isReadingLesson } from '../content/readings';
 
@@ -183,6 +184,14 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
             {weightLabel(xp.weight) ? <Pill icon="trending-up" label={weightLabel(xp.weight)!} color={t.success} bg={t.successSoft} /> : null}
             {/* 升段又要綁定（新手第一堂一定是這樣）：升段縮成一顆 Pill。
                 大卡＋綁定卡＋兩顆按鈕在 iPhone SE 上會把「下一堂」擠出畫面 */}
+            {/* 做成一顆 Pill 擺在成績旁邊，不另起一顆大按鈕：完成頁在 iPhone SE 上
+                已經快把「下一堂」擠出畫面。和成績放一起，也就是「炫耀這個」的意思 */}
+            <Pressable accessibilityRole="button" accessibilityLabel="分享到 Threads" hitSlop={6}
+              // 帶主題名：只寫「基本說法」的話，看到貼文的人不知道是哪一課
+              onPress={() => shareToThreads(`今天在皓學日語完成了「${ref.topic ? `${ref.topic.title}・` : ''}${lesson.title}」，連續學日文第 ${d.streak()} 天🔥\n\n#日文 #日語學習`, 'share-lesson')}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+              <Pill icon="share-outline" label="分享" color={t.primary} bg={t.primarySoft} />
+            </Pressable>
             {leveledUp && askBind ? <Pill icon="ribbon" label={`升到 Lv.${after.n} ${after.name}`} color={t.gold} bg={t.goldSoft} /> : null}
           </View>
 
