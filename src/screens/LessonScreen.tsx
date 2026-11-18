@@ -17,6 +17,9 @@ import { useReviewPrompt } from '../lib/useReviewPrompt';
 import ReviewCard from '../ui/ReviewCard';
 import { Seal } from '../ui/seal';
 import FollowInvite from '../ui/FollowInvite';
+import BindCard from '../ui/BindCard';
+import { useAuth } from '../state/auth';
+import { isReadingLesson } from '../content/readings';
 
 /** 外層：AI 主題課先載入內容 */
 export default function LessonScreen(props: StackProps<'Lesson'>) {
@@ -77,6 +80,7 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   // 上完一堂課是使用者心情最好的時刻，評價就在這時問（時機規則見 lib/review.ts）。
   // reviewing 代表這一次被評價用掉了，完成頁就不要再掛 IG 邀請
   const { reviewing } = useReviewPrompt(finished);
+  const { isGuest } = useAuth();
 
   useEffect(() => { d.setResume(lesson.id, step); }, [step]);
   // 已在上課時，從「單元內容」點別張回來：跳到那一張
@@ -131,6 +135,15 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
     const before = rankOf(xpAtStart.current);
     const after = rankOf(d.progress.xp);
     const leveledUp = after.n > before.n;
+    /**
+     * 訪客的綁定卡：第 1、3 堂，之後每 5 堂一次。
+     * 第一堂就出現是刻意的——那是他第一次有 XP 可以失去，也是訪客流失最多的關口，
+     * 等到第 3 堂才問，大部分人已經不在了。之後放寬是因為每次都掛會被當成背景。
+     * 和 IG 邀請互斥，綁定優先：沒綁定的人重裝就歸零，追蹤 IG 可以晚點再說。
+     */
+    const lessonsDone = d.progress.completed.filter(id => !isReadingLesson(id)).length;
+    const askBind = isGuest && !leveledUp && !reviewing
+      && (lessonsDone === 1 || lessonsDone === 3 || lessonsDone % 5 === 0);
     const goNext = () => {
       if (!nextRef) return navigation.goBack();
       if (nextRef.lesson.kind === 'ai') navigation.replace('Chat', { scenarioId: nextRef.lesson.scenarioId!, lessonId: nextRef.lesson.id });
@@ -164,7 +177,8 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
         {/* 升段卡在 flex 容器裡、邀請在外面：有 LEVEL UP 的那一次要讓慶祝獨占中央 */}
         {/* 有 LEVEL UP 的那一次讓慶祝獨占中央，評價和 IG 都讓位 */}
         {!leveledUp && reviewing ? <ReviewCard placement="done" style={{ marginBottom: space.md }} /> : null}
-        {!leveledUp ? <FollowInvite placement="done" reviewing={reviewing} style={{ marginBottom: space.md }} /> : null}
+        {askBind ? <BindCard placement="done" style={{ marginBottom: space.md }} /> : null}
+        {!leveledUp && !askBind ? <FollowInvite placement="done" reviewing={reviewing} style={{ marginBottom: space.md }} /> : null}
         {nextRef ? <Button label={`下一堂：${nextRef.lesson.title}`} icon="arrow-forward" variant="accent" onPress={goNext} /> : null}
         <Button label={nextRef ? "先到這裡" : "完成"} variant={nextRef ? "ghost" : "primary"} style={{ marginTop: space.sm }} onPress={() => navigation.goBack()} />
       </SafeAreaView>

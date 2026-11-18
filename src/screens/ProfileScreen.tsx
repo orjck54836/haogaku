@@ -20,9 +20,6 @@ import OfficialLinks from '../ui/OfficialLinks';
 import { planById } from '../content/plans';
 import { legalLinks } from '../content/links';
 import { loadAnalyticsChoice, setAnalyticsEnabled } from '../lib/analytics';
-import {
-  remindersSupported, remindersEnabled, reminderHour, enableReminders, disableReminders, DEFAULT_HOUR,
-} from '../lib/reminders';
 
 /** 四個目標各配一張看得懂的照片：機場、區役所（留學手續）、會議室、KTV */
 const goalPhoto: Record<Goal, number> = {
@@ -69,29 +66,12 @@ export default function ProfileScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const plan = planById(d.profile.plan);
 
-  // 提醒和分析的開關狀態存在手機（AsyncStorage），不是 profile：
-  // 訪客也要能設定，而且這兩件事和學習紀錄無關，不該為了它們多寫一次雲端
-  const [reminderOn, setReminderOn] = useState(false);
-  const [hour, setHour] = useState(DEFAULT_HOUR);
+  // 分析的開關狀態存在手機（AsyncStorage），不是 profile：
+  // 訪客也要能設定，而且這件事和學習紀錄無關，不該為了它多寫一次雲端。
+  // 每日提醒沒有開關：預設開啟，要關走系統設定（理由見 reminders.ts）
   const [analyticsOn, setAnalyticsOn] = useState(true);
-  // 「這個 build 有沒有通知模組」在 effect 裡問，不要在 render 的判斷式裡問：
-  // 探測如果丟出錯誤，在 render 裡就是整頁白掉，在 effect 裡最多是這一列不出現
-  const [canRemind, setCanRemind] = useState(false);
-  useEffect(() => {
-    remindersEnabled().then(setReminderOn);
-    reminderHour().then(setHour);
-    loadAnalyticsChoice().then(setAnalyticsOn);
-    try { setCanRemind(remindersSupported()); } catch { setCanRemind(false); }
-  }, []);
+  useEffect(() => { loadAnalyticsChoice().then(setAnalyticsOn); }, []);
 
-  async function toggleReminder() {
-    if (reminderOn) { await disableReminders(); setReminderOn(false); return; }
-    const ok = await enableReminders(hour);
-    setReminderOn(ok);
-    // 排不成功時開關要彈回去，並且說清楚是權限的問題——
-    // 顯示「已開啟」卻永遠不跳，使用者只會覺得這個 App 壞了
-    if (!ok) Alert.alert('打不開提醒', '請到「設定 → 通知 → 皓學日語」允許通知，再回來開啟一次。');
-  }
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
   const name = d.profile.nickname || a.user?.displayName || (a.isGuest ? '訪客' : a.user?.email?.split('@')[0]) || '學習者';
 
@@ -341,18 +321,6 @@ export default function ProfileScreen() {
             setSpeechRate(next.v);
             speakJa(next.l === '慢' ? 'ゆっくり話します。' : next.l === '快' ? '少し速く話します。' : '普通の速さで話します。');
           }} />
-        {/* 沒有通知原生模組的 build（例如還沒重 build 的 dev client）就整列不顯示：
-            顯示一個打開也不會有作用的開關，比沒有這個功能更糟 */}
-        {canRemind ? <>
-          <Divider />
-          {/* 用 cafe 而不是 coach：coach 已經給了上一列的「語音速度」，
-              兩列並排同一張縮圖會讓人以為是同一個設定的兩個開關 */}
-          <Row leading={<RowPhoto source={topicPhotos.cafe!} />} title="每日提醒"
-            subtitle={reminderOn ? `每天 ${hour}:00 提醒一次 · 點一下關閉` : '關閉中 · 點一下開啟'}
-            right={<Ionicons name={reminderOn ? 'toggle' : 'toggle-outline'} size={30}
-              color={reminderOn ? t.primary : t.faint} />}
-            onPress={toggleReminder} />
-        </> : null}
         <Divider />
         <Row leading={<RowPhoto source={topicPhotos.gifts!} />} title="使用狀況分析"
           subtitle={analyticsOn ? '協助改善 App · 不含會話內容與個人資料' : '已關閉 · 點一下開啟'}

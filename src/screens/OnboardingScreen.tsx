@@ -8,6 +8,7 @@ import { useTheme, space, radius } from '../theme';
 import { useData, Goal } from '../state/data';
 import { track } from '../lib/analytics';
 import { LevelId } from '../content/types';
+import { requestFirstLesson } from '../lib/firstRun';
 
 type Opt<V> = { value: V; title: string; sub: string; icon: IconName };
 
@@ -27,7 +28,7 @@ const paces: Opt<number>[] = [
   { value: 80, title: '認真', sub: '每天約 15 分鐘', icon: 'flame-outline' },
 ];
 
-function Choice<V>({ opts, value, onChange }: { opts: Opt<V>[]; value: V; onChange: (v: V) => void }) {
+function Choice<V>({ opts, value, onChange }: { opts: Opt<V>[]; value: V | null; onChange: (v: V) => void }) {
   const t = useTheme();
   return (
     <View style={{ gap: space.md }}>
@@ -56,13 +57,18 @@ export default function OnboardingScreen() {
   const a = useAuth();
   const [step, setStep] = useState(0);
   const [nickname, setNickname] = useState(a.user?.displayName ?? '');
-  const [goal, setGoal] = useState<Goal>('travel');
+  /**
+   * 學習目標不預設。原本預設勾「旅行」，結果 52 人裡 42 人是旅行——大多是直接按下一步過去的。
+   * 這個欄位是要拿去跟廣告商談的數字（見 analytics.ts 的 userProps），預設值會讓它失真，
+   * 所以一定要點一個才能繼續。程度和每日目標照舊有預設：那兩題選錯之後隨時能改，也不拿去分群
+   */
+  const [goal, setGoal] = useState<Goal | null>(null);
   const [level, setLevel] = useState<LevelId>('L2');
   const [pace, setPace] = useState(50);
 
   const titles = ['怎麼稱呼你？', '你學日語是為了？', '你目前的程度？', '每天想練多久？'];
   const last = titles.length - 1;
-  const canNext = step !== 0 || nickname.trim().length > 0;
+  const canNext = step === 0 ? nickname.trim().length > 0 : step === 1 ? goal !== null : true;
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -83,12 +89,13 @@ export default function OnboardingScreen() {
       {step === 2 && <Choice opts={levelOpts} value={level} onChange={setLevel} />}
       {step === 3 && <Choice opts={paces} value={pace} onChange={setPace} />}
       <View style={{ marginTop: space.xxl, gap: space.sm }}>
-        <Button label={step < last ? '下一步' : '開始學習'} disabled={!canNext} onPress={() => {
+        <Button label={step < last ? '下一步' : '開始第一堂課'} disabled={!canNext} onPress={() => {
           if (step < last) { track('onboarding_step', { step: step + 1 }); setStep(step + 1); }
           else {
             // 這是整個漏斗的第一個關口：裝了 app 卻沒走完設定的人，後面全部看不到
-            track('onboarding_complete', { goal, level, daily_goal: pace });
-            setProfile({ onboarded: true, nickname: nickname.trim(), goal, startLevel: level, dailyGoal: pace });
+            track('onboarding_complete', { goal: goal!, level, daily_goal: pace });
+            requestFirstLesson();
+            setProfile({ onboarded: true, nickname: nickname.trim(), goal: goal!, startLevel: level, dailyGoal: pace });
           }
         }} />
         {step > 0 ? <Button label="上一步" variant="ghost" onPress={() => setStep(step - 1)} /> : null}

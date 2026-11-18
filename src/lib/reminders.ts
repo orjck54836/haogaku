@@ -41,7 +41,7 @@ import { today } from './date';
  */
 const NEEDED = ['ExpoNotificationScheduler', 'ExpoPushTokenManager'];
 
-/** 探測結果只算一次：這個函式會在每次 render 的判斷式裡被叫到 */
+/** 探測結果只算一次：冷啟動和每次完成練習都會叫到 */
 let cached: any | null | undefined;
 
 function load(): any | null {
@@ -55,7 +55,6 @@ function load(): any | null {
   return cached;
 }
 
-const ENABLED_KEY = 'reminder-on-v1';
 const HOUR_KEY = 'reminder-hour-v1';
 /** 最後一次「有練到東西」的日期 YYYY-MM-DD。決定今天那一則還要不要跳 */
 const PRACTICED_KEY = 'reminder-practiced-v1';
@@ -94,10 +93,6 @@ const LINES = [
   { title: '單字在等你複習', body: '間隔複習就是要趁快忘記的時候回來看一眼。' },
   { title: '連續紀錄還在', body: '今天練一題就能接下去。' },
 ];
-
-export async function remindersEnabled(): Promise<boolean> {
-  try { return (await AsyncStorage.getItem(ENABLED_KEY)) === '1'; } catch { return false; }
-}
 
 export async function reminderHour(): Promise<number> {
   try {
@@ -150,17 +145,24 @@ async function lastPracticedDay(): Promise<string | null> {
 }
 
 /**
- * 打開提醒。回傳 false 代表沒排成功（使用者拒絕權限，或這個 build 沒有原生模組），
- * 呼叫端要據此把開關彈回去——顯示「已開啟」但其實不會跳，比沒有這個功能更糟。
+ * 確保提醒已排好。提醒**預設開啟、App 裡沒有開關**：要關就到系統設定關通知，
+ * 那是 iOS／Android 本來就給的、使用者最熟的那個開關。App 裡再做一個的話，
+ * 兩邊狀態會對不上（系統關了、App 顯示開著），而且多一個讓人順手關掉的地方。
+ *
+ * 權限只在還能問的時候問（`canAskAgain`）：iOS 拒絕過一次之後就不會再跳視窗，
+ * 每次冷啟動都 request 只會白打，也會讓「拒絕」的事件每天被灌一次。
  */
-export async function enableReminders(hour = DEFAULT_HOUR): Promise<boolean> {
+async function ensureScheduled(): Promise<void> {
   const N = load();
-  if (!N) return false;
+  if (!N) return;
   try {
     const current = await N.getPermissionsAsync();
-    const granted = current.granted
-      || (await N.requestPermissionsAsync()).granted;
-    if (!granted) { track('reminder_permission_denied'); return false; }
+    let granted = current.granted;
+    if (!granted && current.canAskAgain !== false) {
+      granted = (await N.requestPermissionsAsync()).granted;
+      if (!granted) track('reminder_permission_denied');
+    }
+    if (!granted) return;
 
     // Android 一定要有 channel，否則通知不會出現（iOS 忽略這段）
     if (N.setNotificationChannelAsync) {
@@ -170,53 +172,38 @@ export async function enableReminders(hour = DEFAULT_HOUR): Promise<boolean> {
       });
     }
 
-    await scheduleAhead(N, hour);
-    await AsyncStorage.multiSet([[ENABLED_KEY, '1'], [HOUR_KEY, String(hour)]]);
-    track('reminder_enable', { hour });
-    return true;
-  } catch {
-    return false;
-  }
+    await scheduleAhead(N, await reminderHour());
+  } catch { /* 忽略：下次冷啟動再試 */ }
 }
 
 /**
  * 「今天練到東西了」。完成課程、讀完讀物、練過一場 AI 會話都算。
  *
  * 記下日期之後把今天那一則取消掉（做法是整個重排，排程只有 7 則，重排很便宜）。
- * 沒開提醒的人只記日期不排程——他之後才打開提醒時，`enableReminders` 讀得到這筆，
- * 當天那一則一樣不會跳。
+ * 沒給通知權限的人只記日期不排程，也不在這裡跳權限視窗——剛做完一堂課就被問，
+ * 時機不對；權限只在冷啟動問。
  */
 export async function practicedToday() {
   try { await AsyncStorage.setItem(PRACTICED_KEY, today()); } catch { return; }
-  if (!(await remindersEnabled())) return;
   const N = load();
   if (!N) return;
-  try { await scheduleAhead(N, await reminderHour()); } catch { /* 下次冷啟動會補排 */ }
-}
-
-export async function disableReminders() {
-  const N = load();
-  try { await N?.cancelAllScheduledNotificationsAsync(); } catch { /* 忽略 */ }
-  try { await AsyncStorage.setItem(ENABLED_KEY, '0'); } catch { /* 忽略 */ }
-  track('reminder_disable');
+  try {
+    if (!(await N.getPermissionsAsync()).granted) return;
+    await scheduleAhead(N, await reminderHour());
+  } catch { /* 下次冷啟動會補排 */ }
 }
 
 /**
  * 啟動時重排一次。
  *
- * 排程會被「重裝 App」「還原備份到新手機」清掉，但我們存的開關還在，
- * 於是使用者以為提醒開著、其實再也不會跳。每次冷啟動重排一次最省事，
- * 而且本機排程重排的成本是零。
+ * 排程會被「重裝 App」「還原備份到新手機」清掉。每次冷啟動重排一次最省事，
+ * 而且本機排程重排的成本是零。第一次啟動也是走這裡，所以權限視窗會在這時跳出來。
+ * 以前在 App 裡關掉提醒的人（舊的 `reminder-on-v1 = 0`）不再被尊重：
+ * 開關已經拿掉，留著那筆等於讓他永遠開不回來，要關請用系統設定。
  *
  * 改成一天一則之後，這裡還多擔一件事：**把排到 7 天後的那一段補滿**。
  * 不補的話，連開 App 一週的人會在第 8 天安靜地沒有提醒。
  */
 export async function syncReminders() {
-  if (!(await remindersEnabled())) return;
-  const N = load();
-  if (!N) return;
-  try { await scheduleAhead(N, await reminderHour()); } catch { /* 忽略：下次冷啟動再試 */ }
+  await ensureScheduled();
 }
-
-/** 這個 build 到底有沒有通知的原生模組。畫面用它決定要不要顯示開關 */
-export const remindersSupported = () => !!load();

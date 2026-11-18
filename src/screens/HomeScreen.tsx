@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { View, ScrollView, Pressable, Text, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -19,6 +20,13 @@ import { slang, todaySlangIndex } from '../content/slang';
 import { readings, todayReadingIndex, readingLessonId, genreLabels } from '../content/readings';
 import { RootStack } from '../navigation';
 import { useAuth } from '../state/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import BindCard from '../ui/BindCard';
+import { consumeFirstLesson } from '../lib/firstRun';
+import { isReadingLesson } from '../content/readings';
+
+/** 「新手三步」被按掉了。存手機不存 profile：理由同 follow.ts，這是提示狀態不是學習成果 */
+const STARTER_HIDDEN_KEY = 'starter-hidden-v1';
 
 function greeting() {
   const h = new Date().getHours();
@@ -60,6 +68,45 @@ export default function HomeScreen() {
   const open = () => next.lesson.kind === 'ai'
     ? nav.navigate('Chat', { scenarioId: next.lesson.scenarioId!, lessonId: next.lesson.id })
     : nav.navigate('Lesson', { lessonId: next.lesson.id });
+
+  // 剛走完新手設定：直接進第一堂課（理由見 lib/firstRun.ts）
+  useEffect(() => {
+    if (consumeFirstLesson()) open();
+    // 只在掛載時看一次。open 每次 render 都是新的，放進依賴會變成每次 render 都檢查
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * 新手三步。首頁的入口太多，新的人不知道先做哪個，所以把「留下來的人都做過的事」
+   * 排成三步，做完一步打一個勾：
+   * 1. 完成第一堂課——有了 XP，後面的綁定才有東西可以保存
+   * 2. 收藏一個單字——單字本是讓人隔天回來的理由（有東西到期要複習）
+   * 3. 訪客：綁定帳號；已登入：試一場 AI 會話
+   *
+   * 第 3 步訪客和登入者不同，是因為訪客的 AI 每天只有 1 次（後端 GUEST_ALLOWANCE），
+   * 叫他去試一場會話，第二句就撞到「試用次數已用完」，那是反效果。
+   * 三步都做完就自己消失；也可以按「先不用」收起來，不做成擋不掉的東西。
+   */
+  const [starterHidden, setStarterHidden] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem(STARTER_HIDDEN_KEY).then(v => setStarterHidden(v === '1')).catch(() => setStarterHidden(false));
+  }, []);
+  const lessonsDone = progress.completed.filter(id => !isReadingLesson(id)).length;
+  const starter = [
+    { done: lessonsDone > 0, title: '完成第一堂課', sub: `${next.lesson.title} · 約 ${next.lesson.minutes} 分鐘`, onPress: open },
+    { done: d.words.length > 0, title: '收藏一個單字', sub: '課程裡每句旁邊的書籤點一下，就會進單字本', onPress: open },
+    a.isGuest
+      ? { done: false, title: '綁定帳號', sub: '保存學習紀錄，換手機也找得回來', onPress: undefined }
+      : { done: d.progress.chats > 0, title: '試一場 AI 會話',
+          sub: chatTopic ? `推薦：${chatTopic.title}` : '和 AI 用日語聊一段',
+          onPress: () => chatTopic ? nav.navigate('Chat', { scenarioId: `t-${chatTopic.id}` }) : goTab('AI') },
+  ];
+  const starterLeft = starter.filter(x => !x.done).length;
+  const showStarter = !starterHidden && starterLeft > 0;
+  const hideStarter = () => {
+    setStarterHidden(true);
+    AsyncStorage.setItem(STARTER_HIDDEN_KEY, '1').catch(() => {});
+  };
 
   return (
     <Screen shell padded={false}>
@@ -105,6 +152,24 @@ export default function HomeScreen() {
 
       {/* 白色面板，大圓角往上疊住酒紅卡 */}
       <Sheet>
+        {/* 新手三步排在白面板最上面：它是新的人唯一該看的東西，放在推薦下面會被當成又一個區塊。
+            出現時取代「今日計畫」：兩張都在叫你「完成一堂課」，並排只會讓人以為是兩件事 */}
+        {/* SectionTitle 自帶區塊間距，放在面板頂端會多出一大段空白，用負邊距抵掉 */}
+        {showStarter ? <View style={{ marginTop: -space.section, marginBottom: space.lg }}>
+          <SectionTitle title={`新手三步 · 還剩 ${starterLeft} 步`} ja="はじめの一歩" action="先不用" onAction={hideStarter} />
+          <Card tone="soft" style={{ paddingVertical: space.sm }}>
+            {starter.map((x, i) => (
+              <View key={x.title}>
+                {i > 0 ? <Rule /> : null}
+                <PlanRow n={String(i + 1)} title={x.title} sub={x.sub} done={x.done}
+                  onPress={x.done ? undefined : x.onPress} />
+              </View>
+            ))}
+          </Card>
+          {/* 綁定那一步直接給按鈕，不導去「我的」：多一頁就多一層流失。
+              等第一堂課完成才出現——還沒有 XP 的時候叫人保存紀錄，他沒有東西可以保存 */}
+          {a.isGuest && lessonsDone > 0 ? <BindCard placement="home" style={{ marginTop: space.md }} /> : null}
+        </View> : null}
         <View style={{ flexDirection: 'row', gap: space.md }}>
           {/* 習字紙是淺色的，遮罩要比另外兩張重，不然白字浮不出來 */}
           <IconTile kanji="音" label="五十音" photo={photoFor('basics') ?? undefined} photoScrim={0.56}
@@ -133,6 +198,7 @@ export default function HomeScreen() {
           })}
         </ScrollView>
 
+        {showStarter ? null : <>
         <SectionTitle title="今日計畫" ja="きょうの予定" />
         <Card tone="soft" style={{ paddingVertical: space.sm }}>
           {/* 課名本身常常已經含單元名（平假名：あ行），再接一次會變「平假名・平假名：…」 */}
@@ -149,6 +215,7 @@ export default function HomeScreen() {
               onPress={() => nav.navigate('Chat', { scenarioId: `t-${chatTopic.id}` })} />
           </> : null}
         </Card>
+        </>}
 
         {/* 讀物。課程是一句一句練，讀物是一次讀一段——
             放在流行語前面，因為它需要的時間比較長，該在使用者還有耐心的位置 */}
