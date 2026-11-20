@@ -2,7 +2,7 @@ import { LevelId } from './types';
 
 export type CategoryId =
   | 'food' | 'transport' | 'home' | 'shopping' | 'errands' | 'health'
-  | 'work' | 'keigo' | 'social' | 'fun' | 'seasons' | 'feelings' | 'native';
+  | 'work' | 'keigo' | 'social' | 'fun' | 'seasons' | 'feelings' | 'native' | 'bousai';
 
 export type Category = { id: CategoryId; title: string; icon: string; desc: string };
 
@@ -35,6 +35,8 @@ export const categories: Category[] = [
   { id: 'seasons', title: '季節文化', icon: 'leaf-outline', desc: '天氣、節日、送禮' },
   { id: 'feelings', title: '情緒表達', icon: 'happy-outline', desc: '開心、抱怨、安慰' },
   { id: 'native', title: '道地口語', icon: 'chatbubbles-outline', desc: '流行語、相槌、關西腔' },
+  // 排在最後而不是「健康」旁邊：topicNumber() 依分類順序編號，插在中間會讓後面四十幾個主題的編號全部位移
+  { id: 'bousai', title: '防災', icon: 'shield-checkmark-outline', desc: '地震、颱風、避難' },
 ];
 
 const T = (id: string, cat: CategoryId, title: string, icon: string, focus: string, role: string, setting: string, goal: string, extra: Partial<Topic> = {}): Topic =>
@@ -145,6 +147,14 @@ export const topics: Topic[] = [
   T('kansai', 'native', '關西腔', 'chatbubble-ellipses-outline', 'あかん、ほんま、なんでやねん、おおきに 等大阪話', '大阪的朋友', '你到大阪找朋友玩。', '聽懂對方的關西腔並試著用幾句', { voice: 'male', minLevel: 'L3' }),
   T('idioms', 'native', '慣用句與諺語', 'library-outline', '日常常用的慣用句、諺語與四字熟語', '日本朋友', '你們在聊最近的生活。', '在對話中用上一兩個慣用句', { minLevel: 'L3' }),
   T('casual', 'native', '常體與敬體切換', 'swap-vertical-outline', '什麼時候用です・ます、什麼時候可以說常體、從敬語慢慢變熟', '剛認識不久的日本朋友', '你們漸漸變熟了。', '從敬體自然地切換到常體聊天', { minLevel: 'L3' }),
+  // 防災：住在日本的人一定會遇到，但「緊急狀況」只教到打 119。
+  // 颱風那堂特別點出「日本沒有颱風假」——台灣人最容易誤判的就是這件事
+  T('earthquake', 'bousai', '地震', 'pulse-outline', '緊急地震速報、揺れてる？、保護自己（躲桌子底下、遠離窗戶）、震度、餘震、電車停駛、確認彼此平安', '公司的同事', '上班時手機突然響起緊急地震速報，接著辦公室開始搖晃。', '確認彼此是否安全，並問清楚電車狀況和接下來怎麼辦',
+    { opening: '地震だ！机の下に入って！', openingZh: '地震！快躲到桌子下面！' }),
+  T('typhoon', 'bousai', '颱風與大雨', 'thunderstorm-outline', '颱風與大雨的天氣預報、警報與注意報、計画運休、日本沒有颱風假、提早下班、在家工作、警戒等級', '公司的前輩', '颱風明天會直撲東京，電車可能計畫停駛。', '問清楚明天要不要上班、能不能在家工作'),
+  T('evacuation', 'bousai', '避難所', 'walk-outline', '避難指示、避難場所和避難所的差別、報到登記、領水和食物、外國人的語言協助、跟家人報平安（災害用伝言ダイヤル 171）', '避難所的志工', '大地震後你家停水停電，你到附近的小學避難。', '完成登記，問到發放水和食物的時間，並問哪裡可以幫手機充電',
+    { voice: 'male', minLevel: 'L3' }),
+  T('bousai-prep', 'bousai', '防災準備', 'flashlight-outline', '防災包要放什麼、儲備水和食物、ハザードマップ、找最近的避難場所、固定家具、防災訓練', '一起參加防災訓練的鄰居', '你們社區今天舉辦防災訓練。', '問到最近的避難場所在哪裡，以及防災包該準備什麼'),
 ];
 
 export const topicById = (id: string) => topics.find(t => t.id === id);

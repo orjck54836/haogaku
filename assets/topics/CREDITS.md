@@ -5,7 +5,7 @@
 
 下面的署名**不是義務**，是留給自己日後查核用的——換圖時請一起更新這份清單。
 
-**83 個主題全部有照片**，加上五十音基礎和兩張介面用圖，共 86 張，約 9.6MB。
+**87 個主題全部有照片**，加上五十音基礎和兩張介面用圖，共 90 張，約 10.2MB。
 單張寬 1000px（少數細節密的縮到 820〜900px）。
 
 ## 三種配圖策略
@@ -107,6 +107,10 @@
 | `kansai.jpg` | 關西腔 | 鐵板上的章魚燒 | https://www.pexels.com/photo/38004081/ |
 | `idioms.jpg` | 慣用句與諺語 | 堆疊的舊書 | https://www.pexels.com/photo/11766391/ |
 | `casual.jpg` | 常體與敬體切換 | 背光的障子門，兩扇錯開 | https://www.pexels.com/photo/2962199/ |
+| `earthquake.jpg` | 地震 | 熊本地震後石垣崩落的熊本城櫓 | https://www.pexels.com/photo/10042298/ |
+| `typhoon.jpg` | 颱風與大雨 | 鹿兒島海岸，浪打上消波塊和堤防 | https://www.pexels.com/photo/30285304/ |
+| `evacuation.jpg` | 避難所 | 宮城縣的學校體育館（原圖直幅，裁成 4:3 保留建築） | https://www.pexels.com/photo/33925952/ |
+| `bousai-prep.jpg` | 防災準備 | 防災包內容物平拍：急救包、水、手電筒、收音機 | https://www.pexels.com/photo/5125690/ |
 
 ### 介面用圖（assets/ui/）
 
@@ -180,3 +184,4 @@
 | `casual-b` | https://www.pexels.com/photo/11946030/ | NIKE 標誌清楚可見 |
 | `casual-c` | https://www.pexels.com/photo/7193625/ | 同樣的留白問題 |
 | `anime-e-alt` | https://www.pexels.com/photo/14823488/ | 攝影書櫃，書背上有 Kodak |
+| `evacuation-a` | https://www.pexels.com/photo/25461700/ | 避難所床位俯拍，指示牌是西里爾字母（Ш），國別不對 |

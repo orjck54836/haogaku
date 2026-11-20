@@ -159,7 +159,7 @@ export const lessonRef = (id: string) => allLessons.find(r => r.lesson.id === id
 
 /**
  * 主題的單元編號。
- * 生活主題依分類順序從 01 編到 77，敬語自己一套 01〜06。
+ * 生活主題依分類順序從 01 往下編，敬語自己一套 01〜06。
  * 編號是畫面上的身分（取代通用圖示），所以順序改了編號就會變——
  * 不要拿它當資料的 key，key 一律用 topic.id。
  */

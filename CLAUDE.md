@@ -32,9 +32,9 @@ Metro 要背景跑並導到 log 檔再輪詢——直接接 `| tail` 會卡住�
 
 ## 照片
 
-83 個主題全部有圖，共 86 張（含 `basics` 和兩張介面用圖），登記在 `src/ui/images.ts`。
+87 個主題全部有圖，共 90 張（含 `basics` 和兩張介面用圖），登記在 `src/ui/images.ts`。
 
-挑圖的兩條**硬規則**，和完整的來源表、38 筆否決紀錄都在
+挑圖的兩條**硬規則**，和完整的來源表、39 筆否決紀錄都在
 [`assets/topics/CREDITS.md`](assets/topics/CREDITS.md)：
 
 1. **不要可辨識的人臉**（Pexels／Unsplash 的授權不含肖像權）
@@ -96,7 +96,7 @@ function loadX() {
 
 ## 內容
 
-- **課程**：`src/content/generated/lessons.json`，**初級 249 堂＋進階 249 堂**，兩階都齊了。
+- **課程**：`src/content/generated/lessons.json`，**初級 261 堂＋進階 261 堂**（87 主題 × 3），兩階都齊了。
   產生要 `ANTHROPIC_API_KEY`（console.anthropic.com 發的 `sk-ant-api03-`，
   Claude Code 的登入憑證不能用）：`npm run generate-lessons -- --levels=L3`
 - **流行語**：`src/content/slang.ts`，100 個，每天輪一個。

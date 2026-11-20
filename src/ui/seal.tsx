@@ -11,7 +11,7 @@ import { topicNumber } from '../content/curriculum';
  */
 const catKanji: Record<CategoryId, string> = {
   food: '食', transport: '交', home: '住', shopping: '買', errands: '手', health: '健',
-  work: '職', keigo: '敬', social: '人', fun: '楽', seasons: '季', feelings: '情', native: '語',
+  work: '職', keigo: '敬', social: '人', fun: '楽', seasons: '季', feelings: '情', native: '語', bousai: '防',
 };
 
 /** 五十音基礎用的字 */
@@ -19,8 +19,8 @@ export const BASICS_KANJI = '音';
 
 /**
  * 主題自己的代表字。
- * 預設取主題名的第一個字（便利商店→便、拉麵店→拉），83 個主題裡有 73 個這樣就唯一了；
- * 下面只列會撞字的那 10 組，各挑一個更貼切的字避開。
+ * 預設取主題名的第一個字（便利商店→便、拉麵店→拉），大部分主題這樣就唯一了；
+ * 下面只列會撞字的那幾組，各挑一個更貼切的字避開。
  * 新增主題時不用動這裡，除非第一個字跟別人撞了或讀起來怪。
  */
 const topicKanji: Record<string, string> = {
@@ -34,6 +34,8 @@ const topicKanji: Record<string, string> = {
   'business-phone': '電', 'business-email': '郵',
   meeting: '會', happy: '喜',
   'keigo-mistakes': '誤',
+  earthquake: '震',     // 和「地鐵電車」撞「地」
+  'bousai-prep': '備',  // 和「防災」分類的代表字撞「防」
 };
 
 export const kanjiFor = (cat?: CategoryId) => (cat ? catKanji[cat] : BASICS_KANJI);
@@ -123,7 +125,7 @@ export function UnitBlock({ topicId, cat, aspect = 1 }: { topicId: string; cat?:
  *
  * 這個 app 的圖像語言分兩種，兩種都用明體排在同一款圓角磚裡：
  *   漢字 → 系統與集合（五十音「音」、敬語「敬」、AI 教練「話」）
- *   數字 → 生活主題的單元編號（01〜77）
+ *   數字 → 生活主題的單元編號（01 起，依分類順序）
  * 所以一眼就分得出「這是一套系統」還是「這是第幾單元」。
  */
 export function UnitTile({ num, size = 48, tone = 'wine' }: {

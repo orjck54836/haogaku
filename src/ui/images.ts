@@ -7,7 +7,7 @@ import type { CategoryId } from '../content/topics';
  * 登記過的主題會在主題頁顯示橫幅照片、在主題卡上顯示縮圖；沒登記的自動退回
  * 單元編號（見 src/ui/seal.tsx 的 UnitBlock），所以少一張不會開天窗。
  *
- * 83 個主題全部有照片，另外加上五十音基礎（key 是 basics）。
+ * 87 個主題全部有照片，另外加上五十音基礎（key 是 basics）。
  * 拍不到本體的（自我介紹、道謝、相槌⋯⋯）改用意象相近的物件：
  * 名片、封蠟信、耳機。動漫與宅文化用書櫃——拍不到不侵權的動漫畫面，
  * 但「書」這個意象是通的。取捨記在 CREDITS.md。
@@ -115,6 +115,12 @@ export const topicPhotos: Partial<Record<string, number>> = {
   kansai: require('../../assets/topics/kansai.jpg'),
   idioms: require('../../assets/topics/idioms.jpg'),
   casual: require('../../assets/topics/casual.jpg'),
+  // 防災。地震和颱風用日本實景（熊本城、鹿兒島的消波塊），不用海外災區的照片——
+  // 那些多半有受災者入鏡，而且拍錯國家在這個主題特別刺眼
+  earthquake: require('../../assets/topics/earthquake.jpg'),
+  typhoon: require('../../assets/topics/typhoon.jpg'),
+  evacuation: require('../../assets/topics/evacuation.jpg'),
+  'bousai-prep': require('../../assets/topics/bousai-prep.jpg'),
 };
 
 /** 分類的代表照片：主題沒有自己的照片時，退而用所屬分類的 */

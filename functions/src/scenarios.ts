@@ -85,6 +85,10 @@ export const SCENARIOS: Record<string, ScenarioDef> = {
   "kansai": {"title":"關西腔","role":"大阪的朋友","setting":"你到大阪找朋友玩。","goal":"聽懂對方的關西腔並試著用幾句"},
   "idioms": {"title":"慣用句與諺語","role":"日本朋友","setting":"你們在聊最近的生活。","goal":"在對話中用上一兩個慣用句"},
   "casual": {"title":"常體與敬體切換","role":"剛認識不久的日本朋友","setting":"你們漸漸變熟了。","goal":"從敬體自然地切換到常體聊天"},
+  "earthquake": {"title":"地震","role":"公司的同事","setting":"上班時手機突然響起緊急地震速報，接著辦公室開始搖晃。","goal":"確認彼此是否安全，並問清楚電車狀況和接下來怎麼辦"},
+  "typhoon": {"title":"颱風與大雨","role":"公司的前輩","setting":"颱風明天會直撲東京，電車可能計畫停駛。","goal":"問清楚明天要不要上班、能不能在家工作"},
+  "evacuation": {"title":"避難所","role":"避難所的志工","setting":"大地震後你家停水停電，你到附近的小學避難。","goal":"完成登記，問到發放水和食物的時間，並問哪裡可以幫手機充電"},
+  "bousai-prep": {"title":"防災準備","role":"一起參加防災訓練的鄰居","setting":"你們社區今天舉辦防災訓練。","goal":"問到最近的避難場所在哪裡，以及防災包該準備什麼"},
 };
 
 /**

@@ -1,10 +1,16 @@
 import type { IconName } from '../ui';
+import { topics } from './topics';
+
+// 從主題表算，不寫死：加主題時這兩處以前要手動改，漏改就是付費頁在講錯的數字。
+// 每個主題三堂（基本／道地／情境），每一階各一份
+const TOPIC_COUNT = `${topics.length} 個生活主題`;
+const LESSON_COUNT = `${topics.length * 3} 堂課`;
 
 /**
  * 付費方案。
  *
  * 原則一條：**沒有用到 AI 的東西一律免費**。
- * 課程內容、83 個主題、讀物、五十音、單字本與間隔複習、流行語、
+ * 課程內容、所有主題、讀物、五十音、單字本與間隔複習、流行語、
  * 排行榜、等級——這些的邊際成本是零（內容早就產好了，
  * 排行榜一天寫幾次 Firestore），收費只會把人擋在門外。
  *
@@ -139,7 +145,7 @@ export const plans: Plan[] = [
     aiPerDay: 5, reportsPerDay: 1, ttsCharsPerMonth: 3_000,
     icon: 'leaf-outline',
     perks: [
-      '83 個生活主題・249 堂課',
+      `${TOPIC_COUNT}・${LESSON_COUNT}`,
       '41 篇日文小品',
       '五十音、敬語、流行語',
       '單字本與間隔複習',
@@ -263,7 +269,7 @@ export const yearlyPerMonth = (p: Plan) => Math.round(p.yearly / 12);
  * 再講付費多了什麼。把免費的部分藏起來只會讓人覺得被設計。
  */
 export const freeForever: { icon: IconName; label: string }[] = [
-  { icon: 'grid-outline', label: '83 個生活主題、249 堂課' },
+  { icon: 'grid-outline', label: `${TOPIC_COUNT}、${LESSON_COUNT}` },
   { icon: 'book-outline', label: '41 篇日文小品' },
   { icon: 'language-outline', label: '五十音與敬語' },
   { icon: 'bookmark-outline', label: '單字本與間隔複習' },
