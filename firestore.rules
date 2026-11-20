@@ -45,6 +45,31 @@ service cloud.firestore {
         && request.resource.data.lessons is int;
     }
 
+    // 每日提醒的狀態（見 src/lib/reminders.ts 的 reportStatus）。
+    //
+    // 提醒是手機本機排程，後端沒有任何發送紀錄，後台要知道「今天有沒有發」只能靠手機自己講。
+    // 本人只能寫自己那一筆、讀不到別人的；讀取只開給 admin，彙總在 adminStats 裡做。
+    // hasOnly 和長度上限的理由和排行榜一樣：擋住有人拿這裡當免費的儲存空間。
+    match /reminderStatus/{uid} {
+      allow read: if request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['perm', 'pending', 'nextDay', 'hour', 'practiced',
+          'delivered', 'tapped', 'os', 'app', 'updatedAt'])
+        && request.resource.data.perm in ['granted', 'denied', 'undetermined', 'unavailable']
+        && request.resource.data.pending is int && request.resource.data.pending <= 64
+        && request.resource.data.nextDay is string && request.resource.data.nextDay.size() <= 10
+        && request.resource.data.practiced is string && request.resource.data.practiced.size() <= 10
+        && request.resource.data.hour is int
+        && request.resource.data.delivered is list && request.resource.data.delivered.size() <= 14
+        && request.resource.data.tapped is list && request.resource.data.tapped.size() <= 14
+        && request.resource.data.os is string && request.resource.data.os.size() <= 40
+        && request.resource.data.app is string && request.resource.data.app.size() <= 40
+        && request.resource.data.updatedAt is int;
+    }
+
     // AI 使用次數只有後端能寫
     // AI 產生的課程只有後端能讀寫（可在 Firebase 主控台檢查、修改）
     match /lessons/{id} {

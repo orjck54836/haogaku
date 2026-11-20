@@ -970,6 +970,7 @@ export const purgeAccount = onCall(
     await attempt('usage', () => db.doc(`usage/${uid}`).delete());
     await attempt('ttsUsage', () => db.doc(`ttsUsage/${uid}`).delete());
     await attempt('entitlements', () => db.doc(`entitlements/${uid}`).delete());
+    await attempt('reminderStatus', () => db.doc(`reminderStatus/${uid}`).delete());
 
     // costs 的 id 是 `${uid}_${日期}`，一個人有好幾筆。
     // 用 documentId 的範圍查詢掃出來—— 是 Firestore 慣用的「字串結尾」上界
@@ -1875,6 +1876,42 @@ export const adminStats = onCall(
     }
     top.sort((a, b) => b.xp - a.xp);
 
+    // ---- 每日提醒（reminderStatus/{uid}，手機自己回報的）----
+    // 提醒是本機排程，後端沒有發送紀錄，這是唯一的資料來源。理由和三層的意思見 reminders.ts 的 reportStatus
+    const REM_DAYS = 14;
+    const perm: Record<string, number> = {};
+    const remDays: Record<string, { delivered: number; tapped: number }> = {};
+    let remScheduledToday = 0, remSkippedToday = 0, remNoDay = 0, remReported = 0;
+    const remByUid = new Map<string, { perm: string; lastDelivered: string; lastTapped: string; nextDay: string; at: number }>();
+    const remSnap = await db.collection('reminderStatus').get();
+    for (const d of remSnap.docs) {
+      const r = d.data();
+      remReported++;
+      const p = String(r.perm ?? '?');
+      inc(perm, p);
+      const delivered: string[] = Array.isArray(r.delivered) ? r.delivered : [];
+      const tapped: string[] = Array.isArray(r.tapped) ? r.tapped : [];
+      for (const x of delivered) { remDays[x] ??= { delivered: 0, tapped: 0 }; remDays[x].delivered++; }
+      for (const x of tapped) { remDays[x] ??= { delivered: 0, tapped: 0 }; remDays[x].tapped++; }
+      if (p === 'granted') {
+        // 「今天有排」有三種看法：下一則就排在今天（還沒到時間）、今天那則已經讀回來了、
+        // 或今天過了提醒時間才回報、下一則已經排到之後（今天那則跳完就從排程裡消失了）。
+        // 第三種是推論：過了時間才第一次給權限的人也長這樣，但那很少見。
+        // 今天已經練過的人那則是刻意取消的，分開算，不算「沒送到」
+        const at = Number(r.updatedAt) || 0;
+        const reportedAfterHour = dayOf(at) === today && new Date(at + 8 * 3600_000).getUTCHours() >= (Number(r.hour) || 20);
+        if (r.nextDay === today || delivered.includes(today)
+          || (reportedAfterHour && r.nextDay > today && r.practiced !== today)) remScheduledToday++;
+        else if (r.practiced === today) remSkippedToday++;
+        else if (!r.nextDay && Number(r.pending) > 0) remNoDay++;
+      }
+      remByUid.set(d.id, {
+        perm: p, nextDay: String(r.nextDay ?? ''), at: Number(r.updatedAt) || 0,
+        lastDelivered: delivered.slice().sort().pop() ?? '', lastTapped: tapped.slice().sort().pop() ?? '',
+      });
+    }
+    const withRem = <T extends { uid: string }>(u: T) => ({ ...u, rem: remByUid.get(u.uid) ?? null });
+
     // ---- 付費 ----
     const plans: Record<string, number> = {};
     let paidProd = 0, paidSandbox = 0, willChurn = 0;
@@ -1933,12 +1970,16 @@ export const adminStats = onCall(
         goals, levels, xpBuckets, lessonBuckets,
         topLessons: topN(lessonCount, 15), topReadings: topN(readingCount, 10),
         lessonsTouched: Object.keys(lessonCount).length,
-        topUsers: top.slice(0, 30),
+        topUsers: top.slice(0, 30).map(withRem),
         // 最新註冊的 30 人：剛上線時最想知道的是「新進來的人有沒有在學」
-        newest: [...top].sort((a, b) => b.created - a.created).slice(0, 30),
+        newest: [...top].sort((a, b) => b.created - a.created).slice(0, 30).map(withRem),
       },
       paid: { prod: paidProd, sandbox: paidSandbox, plans, willChurn, revenue },
       ai: { usersToday: aiToday, callsToday: aiCallsToday, reportsToday },
+      reminders: {
+        reported: remReported, perm, scheduledToday: remScheduledToday, skippedToday: remSkippedToday,
+        unknownDay: remNoDay, days: remDays, windowDays: REM_DAYS,
+      },
       reports: { total: reportsTotal, latest: reports },
     };
   },

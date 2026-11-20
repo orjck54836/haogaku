@@ -1,8 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo-modules-core';
+import { doc, setDoc } from 'firebase/firestore';
 import { track } from './analytics';
-import { today } from './date';
+import { dayString, today } from './date';
+import { auth, db } from './firebase';
 
 /**
  * 每日學習提醒（本機排程，不是遠端推播）。
@@ -132,7 +135,8 @@ async function scheduleAhead(N: any, hour: number) {
      */
     const line = LINES[Math.floor(at.getTime() / 86400000) % LINES.length];
     await N.scheduleNotificationAsync({
-      content: { title: line.title, body: line.body },
+      // day 給回報用：跳出來之後從通知中心讀回來，就知道是哪一天的那則（見 reportStatus）
+      content: { title: line.title, body: line.body, data: { kind: 'daily', day: dayString(at) } },
       trigger: {
         type: N.SchedulableTriggerInputTypes?.DATE ?? 'date',
         date: at, channelId: CHANNEL_ID,
@@ -219,6 +223,7 @@ export async function askReminderAfterLesson(): Promise<void> {
               if (!(await N.requestPermissionsAsync()).granted) { track('reminder_permission_denied'); return; }
               await scheduleNow(N);
             } catch { /* 下次冷啟動會補排 */ }
+            finally { void reportStatus(); }
           },
         },
       ],
@@ -240,6 +245,7 @@ export async function practicedToday() {
     if (!(await N.getPermissionsAsync()).granted) return;
     await scheduleAhead(N, await reminderHour());
   } catch { /* 下次冷啟動會補排 */ }
+  finally { void reportStatus(); }
 }
 
 /**
@@ -254,5 +260,132 @@ export async function practicedToday() {
  * 不補的話，連開 App 一週的人會在第 8 天安靜地沒有提醒。
  */
 export async function syncReminders() {
+  listenTaps();
   await ensureScheduled();
+  // 不放在 ensureScheduled 裡：那邊沒有原生模組就提早 return，舊 binary 的人會整個不回報
+  void reportStatus();
+}
+
+// ---------- 回報給後台 ----------
+
+/**
+ * 把「這台手機的提醒狀態」寫到 `reminderStatus/{uid}`，後台才看得到有沒有發出去。
+ *
+ * ## 為什麼要手機自己講
+ *
+ * 提醒是本機排程（理由見檔頭），**後端從頭到尾沒有參與**：沒有發送紀錄、沒有送達回條。
+ * 後台想知道「今天有沒有發」，唯一知道答案的是手機。所以回報三層，可信度由低到高：
+ *
+ * 1. **排了沒**（`perm`、`nextDay`）：權限有沒有給、下一則排在哪天。
+ *    今天練過的人今天那則被取消掉了，那是刻意的，不是沒送到（`practiced`）
+ * 2. **跳出來了**（`delivered`）：下次打開 App 時從通知中心讀回來的。
+ *    **使用者在打開 App 之前就把通知滑掉的話讀不到**，所以這個數字只會偏低，不會偏高
+ * 3. **點了**（`tapped`）：點通知打開 App。這是唯一百分之百確定他看到的
+ *
+ * 2、3 都要等他下次打開 App 才送得上來，今天晚上 8 點的那則，最快也要他點開那一刻才進後台。
+ *
+ * ## 為什麼不放進 users/{uid}
+ *
+ * 那份文件是整份 setDoc 覆蓋的（data.tsx 的 commit），另外塞的欄位下一次存檔就被洗掉。
+ * 獨立一份也方便規則用 hasOnly 鎖欄位，和排行榜同一個做法。
+ */
+const SEEN_KEY = 'reminder-seen-v1';
+/** 送達／點擊的日期留幾天。後台只畫兩週，留多了只是讓文件越來越肥 */
+const KEEP_DAYS = 14;
+
+type Seen = { delivered: string[]; tapped: string[] };
+
+async function readSeen(): Promise<Seen> {
+  try {
+    const v = JSON.parse((await AsyncStorage.getItem(SEEN_KEY)) ?? '{}');
+    return { delivered: Array.isArray(v.delivered) ? v.delivered : [], tapped: Array.isArray(v.tapped) ? v.tapped : [] };
+  } catch { return { delivered: [], tapped: [] }; }
+}
+
+/** 合併、去重、只留最近 KEEP_DAYS 天。通知中心被清掉之後還記得，所以要累積在手機上，不能每次重讀 */
+function mergeDays(old: string[], add: string[]): string[] {
+  const floor = dayString(new Date(Date.now() - KEEP_DAYS * 86400000));
+  return [...new Set([...old, ...add])].filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= floor).sort().slice(-KEEP_DAYS);
+}
+
+/**
+ * 一則通知是「哪一天的提醒」。新排的帶 `data.day`；這次改版之前排的沒有，退回用跳出來的時間。
+ * iOS 的 `date` 給的是**秒**、Android 是毫秒（expo-notifications 兩邊沒統一），小於 1e11 就當秒。
+ */
+function dayOfNotification(n: any): string | null {
+  const day = n?.request?.content?.data?.day;
+  if (typeof day === 'string') return day;
+  const t = Number(n?.date);
+  if (!Number.isFinite(t) || t <= 0) return null;
+  return dayString(new Date(t < 1e11 ? t * 1000 : t));
+}
+
+async function recordTap(n: any) {
+  const day = dayOfNotification(n);
+  if (!day) return;
+  const seen = await readSeen();
+  // 點得到就一定跳出來過：點完 iOS 會把它從通知中心拿掉，不補這筆的話「送達」會漏掉點過的人
+  const next = { delivered: mergeDays(seen.delivered, [day]), tapped: mergeDays(seen.tapped, [day]) };
+  try { await AsyncStorage.setItem(SEEN_KEY, JSON.stringify(next)); } catch { /* 忽略 */ }
+  track('reminder_open', { day });
+}
+
+let listening = false;
+/** App 開著（在背景）時點通知不會冷啟動，要靠 listener 才抓得到 */
+function listenTaps() {
+  if (listening) return;
+  const N = load();
+  if (!N?.addNotificationResponseReceivedListener) return;
+  listening = true;
+  try {
+    N.addNotificationResponseReceivedListener((r: any) => { void recordTap(r?.notification).then(reportStatus); });
+  } catch { /* 忽略 */ }
+}
+
+let lastSent = '';
+let waitingAuth = false;
+
+async function reportStatus(): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  // 冷啟動時常常還沒登入完：等登入那一刻再送一次，不然大多數冷啟動的回報都會漏掉
+  if (!uid) {
+    if (!waitingAuth) {
+      waitingAuth = true;
+      const off = auth.onAuthStateChanged(u => { if (u) { off(); waitingAuth = false; void reportStatus(); } });
+    }
+    return;
+  }
+  try {
+    const N = load();
+    let perm = 'unavailable', pending = 0, nextDay = '';
+    let seen = await readSeen();
+    if (N) {
+      const p = await N.getPermissionsAsync();
+      perm = p.granted ? 'granted' : p.canAskAgain === false ? 'denied' : 'undetermined';
+      // 冷啟動是被通知點開的：listener 掛上之前就發生了，只能事後問
+      const last = await N.getLastNotificationResponseAsync?.().catch(() => null);
+      if (last) await recordTap(last.notification);
+      const shown = await N.getPresentedNotificationsAsync?.().catch(() => []) ?? [];
+      seen = await readSeen();
+      seen = { ...seen, delivered: mergeDays(seen.delivered, shown.map(dayOfNotification).filter(Boolean)) };
+      await AsyncStorage.setItem(SEEN_KEY, JSON.stringify(seen)).catch(() => {});
+      const all = await N.getAllScheduledNotificationsAsync?.().catch(() => []) ?? [];
+      pending = all.length;
+      const days: string[] = all.map((x: any) => x?.content?.data?.day).filter((d: any) => typeof d === 'string').sort();
+      // 舊版排的沒有 day，那批只知道有幾則、不知道排在哪天（重排一次就會換成新的）
+      nextDay = days[0] ?? '';
+    }
+    const body = {
+      perm, pending, nextDay, hour: await reminderHour(),
+      practiced: (await lastPracticedDay()) ?? '',
+      delivered: seen.delivered, tapped: seen.tapped,
+      os: `${Platform.OS} ${Platform.Version}`.slice(0, 40),
+      app: String(Constants.expoConfig?.version ?? '?').slice(0, 40),
+    };
+    // 一次啟動裡會叫很多次（每完成一堂課都會），內容沒變就不寫，省得每堂課多一次寫入
+    const key = JSON.stringify(body);
+    if (key === lastSent) return;
+    await setDoc(doc(db, 'reminderStatus', uid), { ...body, updatedAt: Date.now() });
+    lastSent = key;
+  } catch { /* 回報失敗不影響提醒本身 */ }
 }

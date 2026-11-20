@@ -71,7 +71,7 @@
 
   <div id="app" class="hide">
     <nav class="row toc" style="margin-top:16px">
-      <a href="#sUsers">使用者</a><a href="#sTrend">趨勢與留存</a><a href="#sLearn">學習</a><a href="#sPaid">付費</a>
+      <a href="#sUsers">使用者</a><a href="#sTrend">趨勢與留存</a><a href="#sLearn">學習</a><a href="#sRemind">提醒</a><a href="#sPaid">付費</a>
       <a href="#sCost">成本</a><a href="#sLogs">紀錄</a><a href="#sReports">檢舉</a>
       <span class="faint" id="statsAt"></span>
       <button id="reloadStats" type="button">重新整理</button>
@@ -195,11 +195,35 @@
       </div>
       <div class="scroll">
         <table>
-          <thead><tr><th>使用者</th><th>暱稱</th><th>帳號</th><th>XP</th><th>課程</th><th>單字</th><th>連續</th><th>註冊</th><th>最後活躍</th></tr></thead>
+          <thead><tr><th>使用者</th><th>暱稱</th><th>帳號</th><th>XP</th><th>課程</th><th>單字</th><th>連續</th><th>提醒</th><th>註冊</th><th>最後活躍</th></tr></thead>
           <tbody id="userList"></tbody>
         </table>
       </div>
       <p class="faint" style="margin:10px 0 0">點 uid 會帶進下方的查詢框，一次看他的訂閱、Apple 通知和錯誤紀錄。</p>
+    </div>
+
+    <h2 id="sRemind">每日提醒</h2>
+    <p class="faint" style="margin:0">
+      提醒是手機本機排程的，後端不發也不知道有沒有發——這裡的數字都是手機打開 App 時回報的。
+      「讀回送達」是下次打開 App 時還留在通知中心的那幾則，<strong>先滑掉才開 App 的人讀不到</strong>，所以只會偏低；
+      「點開」是點通知進 App，最確定看到了。今晚的提醒要等他們下次打開 App 才會進來。
+      回報從 App 更新到這一版之後才開始累積。
+    </p>
+    <div class="kpis">
+      <div class="panel kpi"><div class="label">有通知權限</div><div class="value" id="rGranted">—</div><div class="note" id="rGrantedNote"></div></div>
+      <div class="panel kpi"><div class="label">今天有排提醒</div><div class="value" id="rToday">—</div><div class="note" id="rTodayNote"></div></div>
+      <div class="panel kpi"><div class="label">今天練過、不吵他</div><div class="value" id="rSkip">—</div><div class="note">當天練過就取消那一則</div></div>
+      <div class="panel kpi"><div class="label">今天讀回送達／點開</div><div class="value" id="rDelivered">—</div><div class="note" id="rDeliveredNote"></div></div>
+    </div>
+    <div class="grid2">
+      <div class="panel"><strong>權限狀態</strong><div id="rPerm" class="bars"></div></div>
+      <div class="panel">
+        <strong>最近 14 天</strong>
+        <table style="margin-top:8px">
+          <thead><tr><th>日期</th><th>讀回送達</th><th>點開</th><th>點開率</th></tr></thead>
+          <tbody id="rDays"></tbody>
+        </table>
+      </div>
     </div>
 
     <h2 id="sPaid">付費</h2>
@@ -691,6 +715,7 @@ function renderStats() {
   bars('topLessons', l.topLessons, { label: k => k });
   bars('topReadings', l.topReadings, { label: k => k });
   renderUserList();
+  renderReminders(stats.reminders);
 
   // 付費
   $('pPaid').textContent = num(p.prod);
@@ -726,9 +751,42 @@ function renderUserList() {
       <td>${esc(u.name || '—')}</td>
       <td>${u.anon ? '<span class="faint">訪客</span>' : '已綁定'}</td>
       <td>${num(u.xp)}</td><td>${u.lessons}</td><td>${u.words}</td><td>${u.streak || '—'}</td>
+      <td>${remCell(u.rem)}</td>
       <td class="faint">${u.created ? esc(dayOfMs(u.created)) : '—'}</td>
       <td>${esc(ago(u.last))}</td>
-    </tr>`).join('') : '<tr><td colspan="9" class="faint">還沒有使用者</td></tr>';
+    </tr>`).join('') : '<tr><td colspan="10" class="faint">還沒有使用者</td></tr>';
+}
+
+/** 使用者清單的「提醒」欄：權限 → 最後一次確定收到。滑過去看細節 */
+function remCell(r) {
+  if (!r) return '<span class="faint" title="還沒回報（App 還沒更新到這一版，或這次更新後還沒打開過）">—</span>';
+  if (r.perm !== 'granted') return `<span class="faint">${esc(PERM[r.perm] ?? r.perm)}</span>`;
+  const today = taipeiDay(0), yest = taipeiDay(1);
+  const rel = d => d === today ? '今天' : d === yest ? '昨天' : d.slice(5);
+  const tip = `下一則 ${r.nextDay || '不明'}・最後讀回 ${r.lastDelivered || '—'}・最後點開 ${r.lastTapped || '—'}・回報於 ${when(r.at)}`;
+  const txt = r.lastTapped && r.lastTapped >= (r.lastDelivered || '') ? `${rel(r.lastTapped)}點開`
+    : r.lastDelivered ? `${rel(r.lastDelivered)}收到` : '已允許';
+  return `<span title="${esc(tip)}">${esc(txt)}</span>`;
+}
+const PERM = { granted: '已允許', denied: '已拒絕', undetermined: '還沒問', unavailable: '不支援（舊版本）' };
+
+function renderReminders(r) {
+  if (!r) return;
+  const g = r.perm.granted ?? 0;
+  $('rGranted').textContent = num(g);
+  $('rGrantedNote').textContent = `回報的 ${num(r.reported)} 台中 ${pct(g, r.reported)}`;
+  $('rToday').textContent = num(r.scheduledToday);
+  $('rTodayNote').textContent = r.unknownDay ? `另有 ${r.unknownDay} 台是舊排程、看不出哪天` : `有權限的 ${pct(r.scheduledToday, g)}`;
+  $('rSkip').textContent = num(r.skippedToday);
+  const t = r.days[taipeiDay(0)] ?? { delivered: 0, tapped: 0 };
+  $('rDelivered').textContent = `${num(t.delivered)}／${num(t.tapped)}`;
+  $('rDeliveredNote').textContent = '要等他們今晚之後打開 App 才會進來';
+  bars('rPerm', Object.entries(r.perm).sort((x, y) => y[1] - x[1]), { total: r.reported, label: k => PERM[k] ?? k });
+  const days = Array.from({ length: r.windowDays }, (_, i) => taipeiDay(i));
+  $('rDays').innerHTML = days.map(d => {
+    const v = r.days[d] ?? { delivered: 0, tapped: 0 };
+    return `<tr><td>${d}</td><td>${num(v.delivered)}</td><td>${num(v.tapped)}</td><td>${pct(v.tapped, v.delivered)}</td></tr>`;
+  }).join('');
 }
 const dayOfMs = ms => new Date(ms + 8 * 3600e3).toISOString().slice(0, 10);
 
