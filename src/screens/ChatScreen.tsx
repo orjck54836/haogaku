@@ -61,9 +61,16 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
    * 第二次之後再出現就是整場最明顯的「它根本不記得我」——而且它是手機端自己塞的，
    * 後端的記憶再完整也蓋不掉它。練過就改走 AI 開場，讓它從記憶接上一次的話題。
    */
-  const opening = memory.times ? undefined : scenario.opening;
+  /**
+   * 從ゆい的訊息點進來的（首頁那張、通知），她傳的那句就是開場：
+   * 使用者看到的是「回她的訊息」，進來卻換成另一句開場白就接不上了。
+   * 也順便省掉一次 AI 開場的呼叫。
+   */
+  const opener = route.params.opener;
+  const opening = opener?.ja ?? (memory.times ? undefined : scenario.opening);
+  const openingZh = opener ? opener.zh : scenario.openingZh ?? '';
 
-  const [bubbles, setBubbles] = useState<Bubble[]>(opening ? [{ id: 'open', from: 'ai', ja: opening, zh: scenario.openingZh ?? '' }] : []);
+  const [bubbles, setBubbles] = useState<Bubble[]>(opening ? [{ id: 'open', from: 'ai', ja: opening, zh: openingZh }] : []);
   const [history, setHistory] = useState<ChatMsg[]>(opening ? [{ role: 'assistant', content: opening }] : []);
   const [hints, setHints] = useState<{ ja: string; zh: string }[]>([]);
   const [input, setInput] = useState('');
@@ -78,6 +85,12 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   const voice = scenario.voice ?? 'female';
   /** 自己要跳走（結束並分析）時不要再攔截 */
   const leaving = useRef(false);
+  /** 最後一則回覆帶的「下次ゆい要傳的訊息」，離開時才存（見 lib/inbox.ts） */
+  const followUp = useRef<{ ja: string; zh: string } | null>(null);
+  /** 離開的每一條路都要留。輪數不夠的不留：一兩句就走的通常是點錯，接著問只會很突兀 */
+  function queueFollowUp(turns: number) {
+    if (turns >= 2 && followUp.current) d.queueYui({ ...followUp.current, from: scenario.id });
+  }
 
   /** 播放並在語音準備好之前，於喇叭圖示顯示轉圈 */
   async function play(id: string, ja: string, audio?: string) {
@@ -111,6 +124,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
      */
     const tail = [...history].reverse().find(m => m.role === 'user')?.content ?? '';
     d.saveChatNote(scenario.id, userTurns, tail);
+    queueFollowUp(userTurns);
     stopSpeech();
     stopRef.current?.();
     navigation.goBack();
@@ -133,6 +147,10 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
   }
 
   useEffect(() => {
+    // 補上會話漏斗的入口：以前只有 chat_finish，分不出是沒人進來還是進來就走
+    track('chat_open', { scenario: scenario.id, inbox: !!opener });
+    // 打開了就算讀過。放在這裡不放在點擊處：通知點進來的那條路不經過首頁
+    if (opener) d.clearInbox();
     if (opening) play('open', opening);
     else openWithAI();
     return () => { stopSpeech(); stopRef.current?.(); };
@@ -147,6 +165,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
       setHistory([{ role: 'assistant', content: r.reply }]);
       setBubbles([{ id: 'open', from: 'ai', ja: r.reply, reading: r.reading || undefined, zh: r.replyZh }]);
       setHints(r.hints ?? []);
+      if (r.followUp) followUp.current = r.followUp;
       play('open', r.reply, r.audio);
     } catch (e: any) {
       Alert.alert('無法開始會話', e.message, [{ text: '返回', onPress: () => navigation.goBack() }]);
@@ -184,6 +203,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
     setBubbles(b => [...b, { id: myId, from: 'me', text: msg }]);
     setHistory(nextHistory);
     setInput(''); setHints([]); setBusy(true);
+    if (userTurns === 0) track('chat_first_send', { scenario: scenario.id, inbox: !!opener });
     try {
       const r = await aiChat(scenario, level, nextHistory, { voice, rate: getSpeechRate() }, learner);
       d.setAiRemaining(r.remaining);
@@ -194,6 +214,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
         { id: aiId, from: 'ai', ja: r.reply, reading: r.reading || undefined, zh: r.replyZh },
       ]);
       setHints(r.hints ?? []);
+      if (r.followUp) followUp.current = r.followUp;
       play(aiId, r.reply, r.audio);
       if (r.missionComplete && !missionDone) setMissionDone(true);
     } catch (e: any) {
@@ -219,6 +240,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
       d.setAiRemaining(report.remaining);
       d.recordChat();
       d.saveReport(scenario.id, report, route.params.lessonId);
+      queueFollowUp(userTurns);
       track('chat_finish', { scenario: scenario.id, turns: userTurns, overall: report.overall, mission: report.missionComplete });
       d.addXp(CHAT_XP);
       if (route.params.lessonId) d.completeLesson(route.params.lessonId);
@@ -239,6 +261,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
         // 沒有分析可以當記憶，至少留下「聊到哪」給下一場
         const tail = [...history].reverse().find(m => m.role === 'user')?.content ?? '';
         d.saveChatNote(scenario.id, userTurns, tail);
+        queueFollowUp(userTurns);
         track('chat_finish', { scenario: scenario.id, turns: userTurns, report: false });
         stopSpeech();
         stopRef.current?.();

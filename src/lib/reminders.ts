@@ -6,6 +6,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { track } from './analytics';
 import { dayString, today } from './date';
 import { auth, db } from './firebase';
+import { InboxMsg, INBOX_TTL_MS, parseInbox } from './inbox';
 
 /**
  * 每日學習提醒（本機排程，不是遠端推播）。
@@ -112,12 +113,28 @@ export async function reminderHour(): Promise<number> {
  * 因為冷啟動重排（`syncReminders`）也必須套用同一條規則：
  * 今天練完了才關掉 App，再打開時不該又把今天那一則排回來。
  */
-async function scheduleAhead(N: any, hour: number) {
+/**
+ * 排程一律排隊，一次只跑一個。
+ *
+ * 這裡是「先全部取消、再逐則排」，中間有好幾個 await。冷啟動、完成課程、
+ * ゆい的訊息更新可能在同一秒各叫一次，兩個同時跑的話，A 排到一半被 B 取消、
+ * B 排完 A 又接著排剩下的——同一天會跳兩則。
+ */
+let chain: Promise<void> = Promise.resolve();
+function scheduleAhead(N: any, hour: number): Promise<void> {
+  const run = chain.then(() => scheduleAheadNow(N, hour));
+  chain = run.catch(() => {});
+  return run;
+}
+
+async function scheduleAheadNow(N: any, hour: number) {
   await N.cancelAllScheduledNotificationsAsync();
 
   const practiced = await lastPracticedDay();
   const skipToday = practiced === today();
   const now = Date.now();
+  const yui = await readYui();
+  let yuiPlaced = false;
 
   for (let i = 0; i < HORIZON_DAYS; i++) {
     const at = new Date();
@@ -134,15 +151,78 @@ async function scheduleAhead(N: any, hour: number) {
      * 備四句的意義正是讓他每天看到的不一樣。
      */
     const line = LINES[Math.floor(at.getTime() / 86400000) % LINES.length];
-    await N.scheduleNotificationAsync({
+    /**
+     * ゆい有話要說的話，送達後的第一則提醒換成她的訊息，不另外多排一則：
+     * 一天被叫兩次是讓人關通知的最快方法。只換第一則——連續好幾天都是同一句，
+     * 就從朋友的訊息變成系統在催。沒點開的話，下次開 App 重排時會再排到下一天
+     * （直到過期，見 INBOX_TTL_MS），那時候首頁也看得到。
+     */
+    const useYui = !!yui && !yuiPlaced && at.getTime() >= yui.deliverAt && at.getTime() < yui.deliverAt + INBOX_TTL_MS;
+    if (useYui) yuiPlaced = true;
+    const content = useYui
+      ? {
+          title: 'ゆい',
+          // 日文一行、中文一行：看不懂日文的人也知道她在問什麼，才會點進來
+          body: yui!.zh ? `${yui!.ja}\n${yui!.zh}` : yui!.ja,
+          // 訊息內容跟著通知走：點開時就算雲端那份已經被別台手機讀掉，這裡還是開得起來
+          data: { kind: 'yui', day: dayString(at), id: yui!.id, ja: yui!.ja, zh: yui!.zh },
+        }
       // day 給回報用：跳出來之後從通知中心讀回來，就知道是哪一天的那則（見 reportStatus）
-      content: { title: line.title, body: line.body, data: { kind: 'daily', day: dayString(at) } },
+      : { title: line.title, body: line.body, data: { kind: 'daily', day: dayString(at) } };
+    await N.scheduleNotificationAsync({
+      content,
       trigger: {
         type: N.SchedulableTriggerInputTypes?.DATE ?? 'date',
         date: at, channelId: CHANNEL_ID,
       },
     });
   }
+}
+
+// ---------- ゆい的訊息 ----------
+
+/**
+ * 訊息本身存在 progress.inbox（跟著雲端走），這裡只放一份給排程讀。
+ * 排程在冷啟動時就要跑，那時候學習資料可能還沒載入完，不能等 data.tsx。
+ */
+const YUI_KEY = 'yui-inbox-v1';
+
+async function readYui(): Promise<InboxMsg | null> {
+  try { return parseInbox(JSON.parse((await AsyncStorage.getItem(YUI_KEY)) ?? 'null')); } catch { return null; }
+}
+
+let lastYui = '';
+/** 訊息變了（新的一則、讀掉了）就重排。data.tsx 在 inbox 變動時呼叫 */
+export async function setYuiReminder(m: InboxMsg | null) {
+  const key = m ? m.id : '';
+  if (key === lastYui) return;
+  lastYui = key;
+  try {
+    if (m) await AsyncStorage.setItem(YUI_KEY, JSON.stringify(m));
+    else await AsyncStorage.removeItem(YUI_KEY);
+  } catch { return; }
+  const N = load();
+  if (!N) return;
+  try {
+    if (!(await N.getPermissionsAsync()).granted) return;
+    await scheduleAhead(N, await reminderHour());
+  } catch { /* 下次冷啟動會補排 */ }
+}
+
+export type YuiOpen = { id: string; ja: string; zh: string };
+let yuiHandler: ((m: YuiOpen) => void) | null = null;
+let yuiPending: YuiOpen | null = null;
+
+/**
+ * 點了ゆい的通知要直接進對話，不是停在首頁——像點開 LINE 通知一樣。
+ *
+ * 冷啟動是被通知點開的話，那一刻導覽還沒建好，所以先記著，
+ * 等導覽準備好呼叫這裡登記的時候再補跳一次。
+ */
+export function onYuiOpen(cb: (m: YuiOpen) => void): () => void {
+  yuiHandler = cb;
+  if (yuiPending) { const m = yuiPending; yuiPending = null; cb(m); }
+  return () => { if (yuiHandler === cb) yuiHandler = null; };
 }
 
 async function lastPracticedDay(): Promise<string | null> {
@@ -320,6 +400,36 @@ function dayOfNotification(n: any): string | null {
   return dayString(new Date(t < 1e11 ? t * 1000 : t));
 }
 
+/**
+ * 處理過的那一次點擊。`getLastNotificationResponseAsync` 每次問都會回同一筆，
+ * 而 reportStatus 一次啟動會跑好幾次——不擋的話同一次點擊會被記好幾次、
+ * ゆい的對話也會被打開好幾次。存手機上，下次冷啟動才不會又拿舊的那筆跳進對話。
+ */
+const HANDLED_KEY = 'reminder-handled-v1';
+let handled: string | null = null;
+// 只讀一次，大家等同一個 promise：listener 和冷啟動那條可能同時進來，
+// 各讀一次的話後回來的那個會把前一個剛記下的 id 蓋回舊值，兩邊都放行
+let handledLoad: Promise<void> | null = null;
+
+async function handleResponse(r: any) {
+  const n = r?.notification;
+  const id = `${n?.request?.identifier ?? ''}|${n?.date ?? ''}`;
+  handledLoad ??= AsyncStorage.getItem(HANDLED_KEY).then(v => { handled = v; }, () => {});
+  await handledLoad;
+  // await 之後到這裡是同步的：比對和記下之間不會被另一個呼叫插隊
+  if (id === handled) return;
+  handled = id;
+  AsyncStorage.setItem(HANDLED_KEY, id).catch(() => {});
+
+  const data = n?.request?.content?.data;
+  if (data?.kind === 'yui' && typeof data.ja === 'string') {
+    const m = { id: String(data.id ?? ''), ja: data.ja, zh: typeof data.zh === 'string' ? data.zh : '' };
+    track('inbox_open', { via: 'push' });
+    if (yuiHandler) yuiHandler(m); else yuiPending = m;
+  }
+  await recordTap(n);
+}
+
 async function recordTap(n: any) {
   const day = dayOfNotification(n);
   if (!day) return;
@@ -338,7 +448,7 @@ function listenTaps() {
   if (!N?.addNotificationResponseReceivedListener) return;
   listening = true;
   try {
-    N.addNotificationResponseReceivedListener((r: any) => { void recordTap(r?.notification).then(reportStatus); });
+    N.addNotificationResponseReceivedListener((r: any) => { void handleResponse(r).then(reportStatus); });
   } catch { /* 忽略 */ }
 }
 
@@ -364,7 +474,7 @@ async function reportStatus(): Promise<void> {
       perm = p.granted ? 'granted' : p.canAskAgain === false ? 'denied' : 'undetermined';
       // 冷啟動是被通知點開的：listener 掛上之前就發生了，只能事後問
       const last = await N.getLastNotificationResponseAsync?.().catch(() => null);
-      if (last) await recordTap(last.notification);
+      if (last) await handleResponse(last);
       const shown = await N.getPresentedNotificationsAsync?.().catch(() => []) ?? [];
       seen = await readSeen();
       seen = { ...seen, delivered: mergeDays(seen.delivered, shown.map(dayOfNotification).filter(Boolean)) };

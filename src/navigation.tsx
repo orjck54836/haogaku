@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator, NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -11,6 +11,9 @@ import { useData } from './state/data';
 import type { ReportBody } from './lib/reports';
 import { PlanId } from './content/plans';
 import { trackScreen } from './lib/analytics';
+import { onYuiOpen } from './lib/reminders';
+import { YUI_SCENARIO } from './lib/inbox';
+import { useYuiInbox } from './ui/YuiMessage';
 
 import LoginScreen from './screens/LoginScreen';
 import OnboardingScreen from './screens/OnboardingScreen';
@@ -43,7 +46,8 @@ export type RootStack = {
   Lesson: { lessonId: string; step?: number; at?: number };
   LessonContent: { lessonId: string };
   EditProfile: undefined;
-  Chat: { scenarioId: string; lessonId?: string };
+  /** opener：從ゆい的訊息點進來時，她傳的那句（見 lib/inbox.ts） */
+  Chat: { scenarioId: string; lessonId?: string; opener?: { ja: string; zh: string } };
   /** savedAt 有值代表是從歷史點進來看的，不是剛練完——畫面和返回行為都不同 */
   Report: { report: ReportBody; scenarioId: string; lessonId?: string; savedAt?: number };
   Reports: undefined;
@@ -75,6 +79,8 @@ const tabIcons: Record<keyof Tabs, [keyof typeof Ionicons.glyphMap, keyof typeof
 
 function MainTabs() {
   const t = useTheme();
+  // 有未讀的ゆい訊息時，AI 教練那格掛紅點——跟聊天 App 的未讀數一樣，是全 App 最認得的「有人找你」
+  const yui = useYuiInbox();
   return (
     <Tab.Navigator screenOptions={({ route }) => ({
       headerShown: false,
@@ -93,7 +99,11 @@ function MainTabs() {
       <Tab.Screen name="Home" component={HomeScreen} options={{ title: '首頁' }} />
       <Tab.Screen name="Course" component={CourseScreen} options={{ title: '主題' }} />
       <Tab.Screen name="Readings" component={ReadingsScreen} options={{ title: '讀物' }} />
-      <Tab.Screen name="AI" component={AIHubScreen} options={{ title: 'AI 教練' }} />
+      <Tab.Screen name="AI" component={AIHubScreen} options={{
+        title: 'AI 教練',
+        tabBarBadge: yui.msg ? 1 : undefined,
+        tabBarBadgeStyle: { backgroundColor: t.primary, color: t.onPrimary, fontSize: 10, fontWeight: '800' },
+      }} />
       <Tab.Screen name="Words" component={WordbookScreen} options={{ title: '單字本' }} />
       <Tab.Screen name="Me" component={ProfileScreen} options={{ title: '我的' }} />
     </Tab.Navigator>
@@ -150,6 +160,22 @@ export default function AppNavigator() {
     trackScreen(name);
   };
 
+  /**
+   * 點ゆい的通知直接進對話。要等導覽建好才登記（onReady）：冷啟動被通知點開時，
+   * reminders 會先把那則記著，登記的這一刻才補跳。
+   * 登出時 NavigationContainer 被拆掉、navRef 變 null，舊的 handler 碰到 `?.` 就什麼都不做；
+   * 重新登入時 onReady 會再登記一次，蓋掉舊的。
+   */
+  const offYui = useRef<(() => void) | null>(null);
+  const listenYui = () => {
+    report();
+    offYui.current?.();
+    offYui.current = onYuiOpen(m => {
+      navRef.current?.navigate('Chat', { scenarioId: YUI_SCENARIO, opener: { ja: m.ja, zh: m.zh } });
+    });
+  };
+  useEffect(() => () => { offYui.current?.(); }, []);
+
   if (!ready) return <Loading />;
   if (!user) return <LoginScreen />;
   // 要排在 loaded 前面：讀不到資料時 loaded 會一直是 false，不攔就是永遠轉圈
@@ -158,7 +184,7 @@ export default function AppNavigator() {
   if (!profile.onboarded) return <OnboardingScreen />;
 
   return (
-    <NavigationContainer theme={navTheme} ref={navRef} onReady={report} onStateChange={report}>
+    <NavigationContainer theme={navTheme} ref={navRef} onReady={listenYui} onStateChange={report}>
       <Stack.Navigator screenOptions={{
         headerTintColor: t.ink, headerStyle: { backgroundColor: t.bg }, headerShadowVisible: false,
         headerTitleStyle: { color: t.heading, fontSize: 17, fontWeight: '700' },

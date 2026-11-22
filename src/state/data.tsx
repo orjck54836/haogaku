@@ -12,7 +12,9 @@ import { rankOf } from '../lib/rank';
 import { ReviewState, emptyReview } from '../lib/review';
 import { isReadingLesson } from '../content/readings';
 import { track, setUserProps } from '../lib/analytics';
-import { practicedToday } from '../lib/reminders';
+import { practicedToday, reminderHour, setYuiReminder } from '../lib/reminders';
+import { InboxMsg, nextDelivery, parseInbox, YUI_SCENARIO } from '../lib/inbox';
+import { scenarioById } from '../content/scenarios';
 import { PlanId, planById, guestLimits } from '../content/plans';
 import { SavedReport, addReport, trimReports, makeReport, retentionOf, fetchReports, pushReport, dropReport, pruneReports, ChatNote, addChatNote } from '../lib/reports';
 import type { ChatReport } from '../lib/ai';
@@ -65,6 +67,13 @@ export type Progress = {
    * 跟著 commit 一起走就有同步和離線快取，不值得為它多一次讀寫。
    */
   chatNotes: ChatNote[];
+  /**
+   * ゆい主動傳來、還沒打開的那則訊息（見 lib/inbox.ts）。只留一則，打開或按掉就清成 null。
+   * 放 progress 跟著雲端走：換手機也看得到同一則，而且「重設進度」會一起清掉。
+   */
+  inbox: InboxMsg | null;
+  /** 「第一次見面」那則送過了沒。只送一次：按掉之後每上完一堂課又跳出來就是騷擾 */
+  yuiWelcomed: boolean;
 };
 
 export type Word = {
@@ -89,7 +98,7 @@ type Store = { profile: Profile; progress: Progress; words: Word[]; reports: Sav
 
 const emptyStore: Store = {
   profile: { onboarded: false, nickname: '', jaName: '', intro: '', photo: '', goal: 'travel', startLevel: 'L2', dailyGoal: 50, speechRate: 1.0, leaderboard: true, plan: 'free' },
-  progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null, review: emptyReview, chatNotes: [] },
+  progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null, review: emptyReview, chatNotes: [], inbox: null, yuiWelcomed: false },
   words: [],
   reports: [],
 };
@@ -198,6 +207,10 @@ type DataCtx = Store & {
   saveReport: (scenarioId: string, report: ChatReport, lessonId?: string) => void;
   /** 沒做分析就離開的會話，留一筆「聊到哪」。下次進同一個情境時當記憶用 */
   saveChatNote: (scenarioId: string, turns: number, tail: string) => void;
+  /** 一場會話結束時，留一則下次由ゆい主動傳的訊息 */
+  queueYui: (m: { ja: string; zh: string; from: string }) => void;
+  /** 打開或按掉ゆい的訊息 */
+  clearInbox: () => void;
   removeReport: (id: string) => void;
   isSaved: (ja: string) => boolean;
   toggleWord: (w: { ja: string; kana?: string; zh?: string; source: string }) => void;
@@ -559,6 +572,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const withProgress = (fn: (p: Progress) => Progress) => commit(s => ({ ...s, progress: fn(s.progress) }));
 
+  /**
+   * 從沒聊過的人，在完成一堂課之後收到ゆい的第一則訊息。
+   *
+   * AI 會話用的人少，最大的原因是要自己決定「去聊」和「聊什麼」。
+   * 這則讓他什麼都不用決定：ゆい先開口了，回她就好。
+   * 用「交朋友」情境本來就有的開場白，不花 API。
+   * 訪客也送：訪客額度提到每天 5 次之後，回得了幾句，不會一回就撞牆。
+   */
+  function maybeWelcome(lessonId: string) {
+    const p = ref.current.progress;
+    if (isReadingLesson(lessonId) || p.yuiWelcomed || p.inbox) return;
+    if (p.chats > 0 || p.chatNotes.length > 0 || ref.current.reports.length > 0) return;
+    const sc = scenarioById(YUI_SCENARIO);
+    if (!sc?.opening) return;
+    const now = Date.now();
+    withProgress(q => ({
+      ...q, yuiWelcomed: true,
+      // 立刻送達：完成頁一按返回，首頁最上面就是她的訊息
+      inbox: { id: String(now), ja: sc.opening!, zh: sc.openingZh ?? '', kind: 'welcome', deliverAt: now },
+    }));
+  }
+
+  // 訊息變了就讓提醒重排：送達那天的提醒會換成她的訊息
+  const inboxId = store.progress.inbox?.id ?? '';
+  useEffect(() => {
+    if (loaded) void setYuiReminder(ref.current.progress.inbox);
+  }, [loaded, inboxId]);
+
   const value: DataCtx = {
     ...store,
     loaded,
@@ -593,6 +634,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       practicedToday();
       if (first) {
         const done = ref.current.progress.completed.filter(x => !isReadingLesson(x)).length;
+        maybeWelcome(id);
         track(isReadingLesson(id) ? 'reading_complete' : 'lesson_complete', { level: ref.current.profile.startLevel });
         // 「有沒有完成第一堂課」是留存最強的單一指標，所以另外送一筆。
         // GA4 的轉換要能單獨選一個事件名，混在 lesson_complete 的參數裡挑不出來。
@@ -622,6 +664,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (turns < 2 || !tail.trim()) return;
       withProgress(p => ({ ...p, chatNotes: addChatNote(p.chatNotes, { scenarioId, at: Date.now(), turns, tail: tail.trim().slice(0, 120) }) }));
     },
+    queueYui: ({ ja, zh, from }) => {
+      if (!ja.trim()) return;
+      // 送達時間要對齊每日提醒（見 nextDelivery），所以要先讀使用者設的鐘點
+      void reminderHour().then(hour => {
+        const now = Date.now();
+        withProgress(p => ({
+          ...p, yuiWelcomed: true,
+          inbox: { id: String(now), ja: ja.trim(), zh: zh.trim(), kind: 'followup', from, deliverAt: nextDelivery(now, hour) },
+        }));
+      });
+    },
+    clearInbox: () => { if (ref.current.progress.inbox) withProgress(p => ({ ...p, inbox: null })); },
     saveReport: (scenarioId, report, lessonId) => {
       const uid = uidRef.current;
       const entry = makeReport(scenarioId, report, lessonId);
@@ -696,6 +750,8 @@ function merge(d: Partial<Store>): Store {
       review: { ...emptyReview, ...(d.progress?.review ?? {}) },
       // chatNotes 也是後來才加的，舊資料沒有這個欄位
       chatNotes: Array.isArray(d.progress?.chatNotes) ? d.progress.chatNotes : [],
+      inbox: parseInbox(d.progress?.inbox),
+      yuiWelcomed: d.progress?.yuiWelcomed === true,
       // 存下來的剩餘次數是「上次呼叫 AI 當下」的，跨日或換手機就是錯的數字。
       // 一律當成還不知道，由 refreshQuota() 讀 usage/{uid} 補上——
       // 寧願先不顯示次數，也不要顯示一個錯的

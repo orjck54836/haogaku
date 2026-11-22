@@ -14,6 +14,8 @@ export type ChatReply = {
   remaining: number;
   /** 回覆的語音（base64 MP3），後端產生失敗時沒有 */
   audio?: string;
+  /** 下次由ゆい主動傳的訊息（見 lib/inbox.ts）。舊版後端和第一句之前沒有 */
+  followUp?: { ja: string; zh: string };
 };
 
 export type ChatReport = {

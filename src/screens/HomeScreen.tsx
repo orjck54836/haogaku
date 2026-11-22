@@ -22,6 +22,8 @@ import { RootStack } from '../navigation';
 import { useAuth } from '../state/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BindCard from '../ui/BindCard';
+import YuiMessage, { useYuiInbox } from '../ui/YuiMessage';
+import { YUI_SCENARIO } from '../lib/inbox';
 import { consumeFirstLesson } from '../lib/firstRun';
 import { isReadingLesson } from '../content/readings';
 
@@ -64,6 +66,7 @@ export default function HomeScreen() {
     : coll ? collectionMeta[coll].title : '基礎';
   const tp = topicProgress(next.topic?.id ?? coll ?? 'basics', progress.completed);
   const goTab = (screen: string) => (nav as any).navigate('Tabs', { screen });
+  const yui = useYuiInbox();
 
   const open = () => next.lesson.kind === 'ai'
     ? nav.navigate('Chat', { scenarioId: next.lesson.scenarioId!, lessonId: next.lesson.id })
@@ -83,7 +86,9 @@ export default function HomeScreen() {
    * 2. 收藏一個單字——單字本是讓人隔天回來的理由（有東西到期要複習）
    * 3. 訪客：綁定帳號；已登入：試一場 AI 會話
    *
-   * 第 3 步訪客和登入者不同，是因為訪客的 AI 每天只有 1 次（後端 GUEST_ALLOWANCE），
+   * 第 3 步訪客和登入者不同。當初是因為訪客的 AI 每天只有 1 次；提到 5 次之後
+   * 仍然讓訪客先綁定——綁定是唯一保得住紀錄的事，而 AI 已經由ゆい的訊息帶進去了。
+   * 舊理由留著備查：1 次的時候
    * 叫他去試一場會話，第二句就撞到「試用次數已用完」，那是反效果。
    * 三步都做完就自己消失；也可以按「先不用」收起來，不做成擋不掉的東西。
    */
@@ -114,6 +119,14 @@ export default function HomeScreen() {
       <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
         {/* 左邊不放漢堡：它去的「單字複習」下面的白面板已經有一格，重複的入口只是噪音 */}
         <TopBar right={<PlanButton />} />
+
+        {/* ゆい的訊息排在「下一站」上面：一則別人傳來的未讀訊息，比 App 推薦的下一課更讓人想點 */}
+        {yui.msg ? (
+          <View style={{ marginTop: space.lg }}>
+            <YuiMessage msg={yui.msg} where="home" onDismiss={yui.hide}
+              onOpen={() => nav.navigate('Chat', { scenarioId: YUI_SCENARIO, opener: { ja: yui.msg!.ja, zh: yui.msg!.zh } })} />
+          </View>
+        ) : null}
 
         <WineCard style={{ marginTop: space.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>

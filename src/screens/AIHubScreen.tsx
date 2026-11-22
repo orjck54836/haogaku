@@ -14,6 +14,8 @@ import { topics, categories } from '../content/topics';
 import { photoFor, uiPhotos } from '../ui/images';
 import { RootStack } from '../navigation';
 import { whenLabel } from '../lib/date';
+import YuiMessage, { useYuiInbox } from '../ui/YuiMessage';
+import { YUI_SCENARIO } from '../lib/inbox';
 
 export default function AIHubScreen() {
   const t = useTheme();
@@ -39,6 +41,7 @@ export default function AIHubScreen() {
     d.profile.intro ? '你的自我介紹' : null,
   ].filter(Boolean).slice(0, 3) as string[];
   const missing = !d.profile.intro || !d.profile.jaName;
+  const yui = useYuiInbox();
   const [cat, setCat] = useState<CatFilter>('all');
   const list = cat === 'all' ? topics : topics.filter(x => x.cat === cat);
 
@@ -48,6 +51,14 @@ export default function AIHubScreen() {
       <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
         {/* 和首頁放同一顆方案鈕：方案和今天剩的 AI 次數併在那一顆上 */}
         <TopBar right={<PlanButton />} />
+
+        {/* 分頁上的紅點是這則訊息造成的，點進來第一眼要看到它，不能讓人自己找 */}
+        {yui.msg ? (
+          <View style={{ marginTop: space.lg }}>
+            <YuiMessage msg={yui.msg} where="ai" onDismiss={yui.hide}
+              onOpen={() => nav.navigate('Chat', { scenarioId: YUI_SCENARIO, opener: { ja: yui.msg!.ja, zh: yui.msg!.zh } })} />
+          </View>
+        ) : null}
 
         <WineCard style={{ marginTop: space.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>

@@ -222,7 +222,7 @@ export const IAP_AVAILABLE = true;
  *
  * **刻意只給「嘗一口」的量。** 額度綁在 uid 上，而匿名 uid 重裝就換一個——
  * 免費方案的成本算得出上限（人數 × NT$5.2），匿名的算不出來。
- * 所以分析和朗讀對訪客是 0，AI 只留 1 次/天：還摸得到 AI 教練，但刷不出成本。
+ * 所以分析對訪客是 0。AI 給 5 次/天（原本 1 次，只夠回一句，理由見後端 GUEST_ALLOWANCE）。
  *
  * 不列進 `plans` 是因為它不是一個「可以選的方案」，是還沒登入的暫時狀態；
  * 混進方案比較表會多出一欄沒人需要選的東西。但規則頁必須寫出來——
@@ -230,7 +230,7 @@ export const IAP_AVAILABLE = true;
  *
  * 真正的數字在 functions/src/index.ts 的 GUEST_ALLOWANCE，這裡只負責顯示，要一起改。
  */
-export const guestLimits = { aiPerDay: 1, reportsPerDay: 0, ttsCharsPerMonth: 500 };
+export const guestLimits = { aiPerDay: 5, reportsPerDay: 0, ttsCharsPerMonth: 500 };
 
 /**
  * 一句日文的平均字數，把「字數」換算成使用者有感的「句數」。

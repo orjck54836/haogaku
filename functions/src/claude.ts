@@ -80,6 +80,9 @@ export const chatSchema = obj({
   correction: { anyOf: [{ type: 'null' }, obj({ corrected: str, explanation: str })] },
   hints: arr(obj({ ja: str, zh: str })),
   missionComplete: { type: 'boolean' },
+  // 下次由ゆい主動傳的訊息。每則回覆都帶，手機只留最後一則——
+  // 使用者什麼時候離開沒有人知道，等到離開才另外叫一次 AI 要多付一整次的錢
+  followUp: obj({ ja: str, zh: str }),
 });
 
 export const reportSchema = obj({
