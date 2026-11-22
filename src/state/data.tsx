@@ -573,26 +573,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const withProgress = (fn: (p: Progress) => Progress) => commit(s => ({ ...s, progress: fn(s.progress) }));
 
   /**
-   * 從沒聊過的人，在完成一堂課之後收到ゆい的第一則訊息。
+   * 從沒聊過的人，一進 App 就有一則ゆい的訊息在首頁等著。
    *
    * AI 會話用的人少，最大的原因是要自己決定「去聊」和「聊什麼」。
    * 這則讓他什麼都不用決定：ゆい先開口了，回她就好。
    * 用「交朋友」情境本來就有的開場白，不花 API。
-   * 訪客也送：訪客額度提到每天 5 次之後，回得了幾句，不會一回就撞牆。
+   *
+   * 不等第一堂課：原本排在第一堂課之後，但沒上完課就離開的人（最多的那一群）
+   * 永遠看不到它。新手設定一走完就送，新手會被直接帶進第一堂課，
+   * 回到首頁時最上面就是她的訊息。
+   * 已經在用、但從沒聊過的老使用者也會收到一次（更新後第一次開 App）。
    */
-  function maybeWelcome(lessonId: string) {
+  const onboarded = store.profile.onboarded;
+  useEffect(() => {
+    if (!loaded || !onboarded) return;
     const p = ref.current.progress;
-    if (isReadingLesson(lessonId) || p.yuiWelcomed || p.inbox) return;
+    if (p.yuiWelcomed || p.inbox) return;
     if (p.chats > 0 || p.chatNotes.length > 0 || ref.current.reports.length > 0) return;
     const sc = scenarioById(YUI_SCENARIO);
     if (!sc?.opening) return;
     const now = Date.now();
     withProgress(q => ({
       ...q, yuiWelcomed: true,
-      // 立刻送達：完成頁一按返回，首頁最上面就是她的訊息
       inbox: { id: String(now), ja: sc.opening!, zh: sc.openingZh ?? '', kind: 'welcome', deliverAt: now },
     }));
-  }
+  }, [loaded, onboarded]);
 
   // 訊息變了就讓提醒重排：送達那天的提醒會換成她的訊息
   const inboxId = store.progress.inbox?.id ?? '';
@@ -634,7 +639,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       practicedToday();
       if (first) {
         const done = ref.current.progress.completed.filter(x => !isReadingLesson(x)).length;
-        maybeWelcome(id);
         track(isReadingLesson(id) ? 'reading_complete' : 'lesson_complete', { level: ref.current.profile.startLevel });
         // 「有沒有完成第一堂課」是留存最強的單一指標，所以另外送一筆。
         // GA4 的轉換要能單獨選一個事件名，混在 lesson_complete 的參數裡挑不出來。
