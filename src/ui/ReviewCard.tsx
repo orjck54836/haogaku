@@ -25,7 +25,7 @@ import { track } from '../lib/analytics';
  * `list` 是常駐版位，不記的話每次進首頁都會再長出來。所以照 `FollowInvite`
  * 的做法：真的 render 出來才 `markAsked()`，判斷和記錄分開，
  * 重新 render 不會重複燒額度（`counted` 擋住）。
- * 60 天之後才會再出現一次，三次用完就永遠不再出現。
+ * 30 天之後才會再出現一次，三次用完就永遠不再出現。
  */
 
 type Props = {

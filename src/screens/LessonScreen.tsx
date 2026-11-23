@@ -162,7 +162,9 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
      * 以前寫成升段就讓位，結果第一堂的綁定卡一次都沒出現過——最關鍵的那一次。
      */
     const lessonsDone = d.progress.completed.filter(id => !isReadingLesson(id)).length;
-    const askBind = isGuest && !reviewing
+    // 不看 reviewing：綁定優先，評價卡那邊用 !askBind 讓位。以前這裡寫了 !reviewing，
+    // 結果反過來變成綁定讓位給評價，訪客第 5、10 堂的綁定卡被吃掉
+    const askBind = isGuest
       && (lessonsDone === 1 || lessonsDone === 3 || lessonsDone % 5 === 0);
     const goNext = () => {
       if (!nextRef) return navigation.goBack();

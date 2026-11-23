@@ -19,8 +19,9 @@ import { today } from './date';
  * 被抓到是帳號層級的處分，不是退一次件而已。
  *
  * 時機的三條規則，都是為了不要在人家學到一半時打斷：
- * 1. 至少完成 5 堂課或讀物——沒用過幾次就問，答案沒有意義
- * 2. 距上次詢問至少 60 天
+ * 1. 至少完成 2 堂課或讀物。原本是 5，結果完全沒人評價：大部分人根本用不到 5 次。
+ *    2 是最早能問的時機——第 1 堂一定升段（Lv.2 只要 150 XP），升段時評價卡讓位給慶祝
+ * 2. 距上次詢問至少 30 天。只出現在完成頁、不理它就滑過去，間隔太長等於只問一次
  * 3. 一輩子最多問 3 次；說過喜歡或留過意見就不再問
  */
 
@@ -35,8 +36,8 @@ export type ReviewState = {
 
 export const emptyReview: ReviewState = { asked: 0, lastAskedAt: null, done: false };
 
-const MIN_COMPLETED = 5;
-const MIN_DAYS_BETWEEN = 60;
+const MIN_COMPLETED = 2;
+const MIN_DAYS_BETWEEN = 30;
 const MAX_ASKS = 3;
 
 function daysSince(day: string | null): number {
