@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import * as FirebaseAuth from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -30,5 +30,15 @@ function createAuth() {
 }
 
 export const auth = createAuth();
-export const db = getFirestore(app);
+// users/{uid} 每次 commit 是整份重寫，裡面只要有一個 undefined（例如課程書籤
+// 沒有 kana 的句子），setDoc 就整份拒收，而且之後每次同步都會再失敗一次——
+// 學習紀錄只留在手機上。選填欄位到處都是，逐個呼叫點擋不完，在這裡統一略過。
+function createDb() {
+  try {
+    return initializeFirestore(app, { ignoreUndefinedProperties: true });
+  } catch {
+    return getFirestore(app); // 熱重載時已初始化
+  }
+}
+export const db = createDb();
 export const functions = getFunctions(app, 'asia-east1');
