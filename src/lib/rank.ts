@@ -135,3 +135,16 @@ export const REVIEW_XP = { known: 3, forgot: 1 } as const;
 export function weightLabel(w: number): string | null {
   return w > 1 ? `XP ×${w}` : null;
 }
+
+/**
+ * 每日簽到。
+ *
+ * 簽到看的是**累計**天數，不是連續：漏一天不歸零，第 7、14、21…次簽到給大的那份。
+ * 連續的壓力已經由「連續學習」那條在擔（還有保護卡可以救），
+ * 簽到再做一條會斷的，等於一天斷兩次——第二條斷掉的人最容易就此不回來。
+ *
+ * 數字刻意小：一堂課 60〜130 XP，簽到 5 分只是「打開就有」的手感，
+ * 大到能拿來刷排行榜就變成在獎勵只打開不學。
+ */
+export const CHECKIN_XP = { daily: 5, seventh: 25 } as const;
+export const checkinXp = (nth: number) => (nth > 0 && nth % 7 === 0 ? CHECKIN_XP.seventh : CHECKIN_XP.daily);

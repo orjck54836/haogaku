@@ -135,6 +135,7 @@ async function scheduleAheadNow(N: any, hour: number) {
   const now = Date.now();
   const yui = await readYui();
   let yuiPlaced = false;
+  const st = await readStreak();
 
   for (let i = 0; i < HORIZON_DAYS; i++) {
     const at = new Date();
@@ -150,7 +151,17 @@ async function scheduleAheadNow(N: any, hour: number) {
      * 隨機的話連續兩天可能拿到同一句，而使用者實際感受到的就是「又是這句」——
      * 備四句的意義正是讓他每天看到的不一樣。
      */
-    const line = LINES[Math.floor(at.getTime() / 86400000) % LINES.length];
+    const rotating = LINES[Math.floor(at.getTime() / 86400000) % LINES.length];
+    /**
+     * 連續紀錄會在今晚斷掉的那一天，文案換成講天數的那句。
+     * 「連續 12 天」比任何一句通用的提醒都有動機——那是他自己累積的東西。
+     * 只換「最後一次學習的隔天」那一則：再往後他沒練的話紀錄已經斷了，講天數是在說謊。
+     * 2 天以上才講：連續 1 天叫人「別斷了」很奇怪。
+     */
+    const atRisk = !!st && st.streak >= 2 && st.lastDay === dayString(new Date(at.getTime() - 86400000));
+    const line = atRisk
+      ? { title: `連續 ${st!.streak} 天，今天還沒練`, body: '練一堂課或複習幾個單字，就能接到第 ' + (st!.streak + 1) + ' 天。' }
+      : rotating;
     /**
      * ゆい有話要說的話，送達後的第一則提醒換成她的訊息，不另外多排一則：
      * 一天被叫兩次是讓人關通知的最快方法。只換第一則——連續好幾天都是同一句，
@@ -177,6 +188,37 @@ async function scheduleAheadNow(N: any, hour: number) {
       },
     });
   }
+}
+
+// ---------- 連續紀錄 ----------
+
+/** 理由同 YUI_KEY：排程在冷啟動就要跑，不能等 data.tsx 載入 */
+const STREAK_KEY = 'reminder-streak-v1';
+type StreakInfo = { streak: number; lastDay: string | null };
+
+async function readStreak(): Promise<StreakInfo | null> {
+  try {
+    const v = JSON.parse((await AsyncStorage.getItem(STREAK_KEY)) ?? 'null');
+    return v && typeof v.streak === 'number' ? v : null;
+  } catch { return null; }
+}
+
+let lastStreak = '';
+/**
+ * 連續天數變了就記下來並重排。data.tsx 在 streak／lastDay 變動時呼叫。
+ * 今天第一次學習時 `practicedToday()` 也會重排，這裡只是確保明天那則拿到的是新的天數。
+ */
+export async function setStreakReminder(streak: number, lastDay: string | null) {
+  const key = `${streak}|${lastDay}`;
+  if (key === lastStreak) return;
+  lastStreak = key;
+  try { await AsyncStorage.setItem(STREAK_KEY, JSON.stringify({ streak, lastDay })); } catch { return; }
+  const N = load();
+  if (!N) return;
+  try {
+    if (!(await N.getPermissionsAsync()).granted) return;
+    await scheduleAhead(N, await reminderHour());
+  } catch { /* 下次冷啟動會補排 */ }
 }
 
 // ---------- ゆい的訊息 ----------

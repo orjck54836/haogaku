@@ -447,3 +447,18 @@ delete-account），**不要為了省事改回首頁**，指向首頁會被退�
 - 「稍後」只在這次開 App 期間藏起來，不刪——刪了晚上那則通知也會跟著沒了。
 - 點通知直接進對話（`onYuiOpen`）；排程一律排隊跑（`scheduleAhead`），同時重排會讓同一天跳兩則。
 - 漏斗：`inbox_shown` → `inbox_open {via}` → `chat_first_send {inbox}`；會話入口另有 `chat_open`。
+
+## 連續學習與簽到
+
+`src/lib/streak.ts`（純函式）＋ `src/ui/StreakCard.tsx`（首頁圖示磚上面那張）。兩條線刻意分開：
+
+- **連續學習**：有賺 XP 的日子才算（上課、讀物、複習單字），會斷。
+- **簽到**：按一下 +5 XP，第 7、14、21…次 +25（`rank.ts` 的 `CHECKIN_XP`）。**累計不歸零**——
+  連續的壓力由上面那條擔，簽到再做一條會斷的，等於一天斷兩次。
+  簽到不走 `addXp`：走了的話「打開按一下」就能維持連續學習，那條紀錄就沒意義了。也不算進每日目標。
+- **保護卡**：新人送 1 張、每連續 7 天再送 1 張、最多 2 張。漏的天數夠補就在開 App／回前景時**自動用掉**，
+  不夠補一張都不扣（斷了還吃卡是雙重懲罰）。補的日子進 `frozenDays`，不算進天數。
+- **晚上提醒**：最後一次學習的隔天、連續 2 天以上時，那則換成「連續 N 天，今天還沒練」
+  （`reminders.ts` 的 `setStreakReminder`）。只換那一則：再往後紀錄已經斷了，講天數是在說謊。
+- 排行榜的 `streak` 用 `liveStreak()`，存著的 `progress.streak` 斷了不會自己歸零。
+- 漏斗：`checkin`、`streak_day`、`streak_freeze_earned`、`streak_freeze_used`。

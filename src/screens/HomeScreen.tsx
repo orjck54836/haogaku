@@ -22,6 +22,7 @@ import { RootStack } from '../navigation';
 import { useAuth } from '../state/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BindCard from '../ui/BindCard';
+import StreakCard from '../ui/StreakCard';
 import YuiMessage, { useYuiInbox } from '../ui/YuiMessage';
 import { YUI_SCENARIO } from '../lib/inbox';
 import { consumeFirstLesson } from '../lib/firstRun';
@@ -183,6 +184,10 @@ export default function HomeScreen() {
               等第一堂課完成才出現——還沒有 XP 的時候叫人保存紀錄，他沒有東西可以保存 */}
           {a.isGuest && lessonsDone > 0 ? <BindCard placement="home" style={{ marginTop: space.md }} /> : null}
         </View> : null}
+        {/* 連續學習和簽到排在圖示磚上面：它是「明天為什麼要回來」的答案，要在第一屏 */}
+        <View style={{ marginBottom: space.lg }}>
+          <StreakCard />
+        </View>
         <View style={{ flexDirection: 'row', gap: space.md }}>
           {/* 習字紙是淺色的，遮罩要比另外兩張重，不然白字浮不出來 */}
           <IconTile kanji="音" label="五十音" photo={photoFor('basics') ?? undefined} photoScrim={0.56}

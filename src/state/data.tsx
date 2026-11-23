@@ -6,13 +6,14 @@ import { db } from '../lib/firebase';
 import { syncPlan, freeEntitlement, type Entitlement } from '../lib/iap';
 import { useAuth } from './auth';
 import { LevelId } from '../content/types';
-import { today, yesterday, addDays } from '../lib/date';
+import { today, addDays } from '../lib/date';
 import { setSpeechRate } from '../lib/speech';
-import { rankOf } from '../lib/rank';
+import { rankOf, checkinXp } from '../lib/rank';
+import { settle, recordDay, liveStreak, backfillDays, MAX_FREEZES } from '../lib/streak';
 import { ReviewState, emptyReview } from '../lib/review';
 import { isReadingLesson } from '../content/readings';
 import { track, setUserProps } from '../lib/analytics';
-import { practicedToday, reminderHour, setYuiReminder } from '../lib/reminders';
+import { practicedToday, reminderHour, setYuiReminder, setStreakReminder } from '../lib/reminders';
 import { InboxMsg, nextDelivery, parseInbox, YUI_SCENARIO } from '../lib/inbox';
 import { scenarioById } from '../content/scenarios';
 import { PlanId, planById, guestLimits } from '../content/plans';
@@ -74,6 +75,15 @@ export type Progress = {
   inbox: InboxMsg | null;
   /** 「第一次見面」那則送過了沒。只送一次：按掉之後每上完一堂課又跳出來就是騷擾 */
   yuiWelcomed: boolean;
+  /** 有學習的日子，最近兩週。週曆用（見 lib/streak.ts） */
+  days: string[];
+  /** 被保護卡補起來的日子 */
+  frozenDays: string[];
+  /** 手上的連續保護卡，0〜MAX_FREEZES */
+  freezes: number;
+  /** 累計簽到天數。不會因為漏一天歸零（理由見 rank.ts 的 CHECKIN_XP） */
+  checkins: number;
+  lastCheckin: string | null;
 };
 
 export type Word = {
@@ -98,7 +108,9 @@ type Store = { profile: Profile; progress: Progress; words: Word[]; reports: Sav
 
 const emptyStore: Store = {
   profile: { onboarded: false, nickname: '', jaName: '', intro: '', photo: '', goal: 'travel', startLevel: 'L2', dailyGoal: 50, speechRate: 1.0, leaderboard: true, plan: 'free' },
-  progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null, review: emptyReview, chatNotes: [], inbox: null, yuiWelcomed: false },
+  progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null, review: emptyReview, chatNotes: [], inbox: null, yuiWelcomed: false,
+    // 新的人先送一張：第一週最容易斷，斷在第三天的人幾乎不會再開始第二次
+    days: [], frozenDays: [], freezes: 1, checkins: 0, lastCheckin: null },
   words: [],
   reports: [],
 };
@@ -149,7 +161,8 @@ function leaderRow(uid: string, s: Store): Omit<LeaderRow, 'uid'> {
     photo: s.profile.photo || '',
     xp: s.progress.xp,
     lv: rankOf(s.progress.xp).n,
-    streak: s.progress.streak,
+    // 用畫面上的那個數字：存著的 streak 斷了也不會自己歸零，榜上會一直掛著三個月前的火
+    streak: liveStreak(s.progress, today()),
     lessons: s.progress.completed.filter(id => !isReadingLesson(id)).length,
     updatedAt: Date.now(),
   };
@@ -223,6 +236,9 @@ type DataCtx = Store & {
   dueWords: () => Word[];
   todayXp: () => number;
   streak: () => number;
+  /** 今天簽到。已經簽過回 0，否則回這次拿到的 XP */
+  checkin: () => number;
+  checkedInToday: boolean;
   resetProgress: () => void;
 };
 
@@ -355,6 +371,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // 啟動時離線、雲端一直沒讀到的人：回前景是最自然的重試時機
         if (!cloudReady.current && uidRef.current) void syncCloud(uidRef.current);
         syncAllRef.current();
+        // 前一晚開著 App 放到隔天的人，冷啟動那次結算不會再跑
+        settleRef.current();
       } else {
         // 切到背景之後 JS 的 timer 隨時會被凍住，而 app 在背景被系統收掉是常態——
         // 等那 1.5 秒的 debounce 等於賭它不會被收。趁還在跑先送出去
@@ -605,6 +623,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (loaded) void setYuiReminder(ref.current.progress.inbox);
   }, [loaded, inboxId]);
 
+  /**
+   * 結算連續紀錄：漏掉的日子保護卡夠補就補上。
+   * 要在載入完成後跑（之前 ref 裡可能還是空白資料），回前景再跑一次。
+   */
+  function settleStreak() {
+    if (!loadedRef.current) return;
+    const { next, used } = settle(ref.current.progress, today());
+    if (!used) return;
+    track('streak_freeze_used', { n: used, streak: next.streak });
+    withProgress(p => ({ ...p, ...next }));
+  }
+  const loadedRef = useRef(false);
+  loadedRef.current = loaded;
+  const settleRef = useRef(settleStreak);
+  settleRef.current = settleStreak;
+  useEffect(() => { if (loaded) settleRef.current(); }, [loaded]);
+
+  // 晚上那則提醒要知道「連續幾天、最後是哪天」才講得出「連續 12 天就要斷了」
+  const { streak: rawStreak, lastDay } = store.progress;
+  useEffect(() => {
+    if (loaded) void setStreakReminder(rawStreak, lastDay);
+  }, [loaded, rawStreak, lastDay]);
+
   const value: DataCtx = {
     ...store,
     loaded,
@@ -622,12 +663,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // 降級砍掉的那幾筆也要從雲端清掉
       if (uidRef.current) pruneReports(uidRef.current, ref.current.reports);
     },
-    addXp: n => withProgress(p => {
+    addXp: n => {
       const t = today();
-      const streak = p.lastDay === t ? p.streak : p.lastDay === yesterday() ? p.streak + 1 : 1;
-      const todayXp = p.todayXp.date === t ? p.todayXp.xp + n : n;
-      return { ...p, xp: p.xp + n, streak, lastDay: t, todayXp: { date: t, xp: todayXp } };
-    }),
+      // 先結算再記今天：前一晚開著 App 到隔天才上課的人，回前景那次結算可能還沒跑
+      const settled = settle(ref.current.progress, t).next;
+      const { next, earned } = recordDay(settled, t);
+      if (earned) track('streak_freeze_earned', { streak: next.streak });
+      if (next.streak !== settled.streak) track('streak_day', { streak: next.streak });
+      withProgress(p => {
+        const todayXp = p.todayXp.date === t ? p.todayXp.xp + n : n;
+        return { ...p, ...next, xp: p.xp + n, todayXp: { date: t, xp: todayXp } };
+      });
+    },
     completeLesson: id => {
       // 只在第一次完成時記：重做一次不是新的學習行為，算進去會讓留存率看起來比實際好
       const first = !ref.current.progress.completed.includes(id);
@@ -724,9 +771,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     })),
     dueWords: () => store.words.filter(w => w.due <= today()),
     todayXp: () => (store.progress.todayXp.date === today() ? store.progress.todayXp.xp : 0),
-    streak: () => {
-      const p = store.progress;
-      return p.lastDay === today() || p.lastDay === yesterday() ? p.streak : 0;
+    streak: () => liveStreak(store.progress, today()),
+    checkedInToday: store.progress.lastCheckin === today(),
+    checkin: () => {
+      const t = today();
+      if (ref.current.progress.lastCheckin === t) return 0;
+      const nth = ref.current.progress.checkins + 1;
+      const gain = checkinXp(nth);
+      track('checkin', { n: nth });
+      // 不走 addXp：簽到不算「今天有學」，算進去的話打開按一下就能維持連續學習，
+      // 那條紀錄就失去意義了。也不算進 todayXp（每日目標是學習目標）
+      withProgress(p => ({ ...p, xp: p.xp + gain, checkins: nth, lastCheckin: t }));
+      return gain;
     },
     resetProgress: () => commit(s => ({ ...s, progress: emptyStore.progress })),
   };
@@ -756,6 +812,14 @@ function merge(d: Partial<Store>): Store {
       chatNotes: Array.isArray(d.progress?.chatNotes) ? d.progress.chatNotes : [],
       inbox: parseInbox(d.progress?.inbox),
       yuiWelcomed: d.progress?.yuiWelcomed === true,
+      // 以下是連續保護和簽到，後來才加的。舊資料的週曆用 streak 往回推，不然更新後整排空白
+      days: Array.isArray(d.progress?.days) ? d.progress.days
+        : backfillDays(Number(d.progress?.streak) || 0, d.progress?.lastDay ?? null, today()),
+      frozenDays: Array.isArray(d.progress?.frozenDays) ? d.progress.frozenDays : [],
+      freezes: typeof d.progress?.freezes === 'number'
+        ? Math.max(0, Math.min(MAX_FREEZES, d.progress.freezes)) : emptyStore.progress.freezes,
+      checkins: Number(d.progress?.checkins) || 0,
+      lastCheckin: typeof d.progress?.lastCheckin === 'string' ? d.progress.lastCheckin : null,
       // 存下來的剩餘次數是「上次呼叫 AI 當下」的，跨日或換手機就是錯的數字。
       // 一律當成還不知道，由 refreshQuota() 讀 usage/{uid} 補上——
       // 寧願先不顯示次數，也不要顯示一個錯的
