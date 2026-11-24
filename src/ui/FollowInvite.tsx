@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View, Pressable } from 'react-native';
+import { View } from 'react-native';
+import { Pressable } from './Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { T } from './index';
 import { useTheme, space, radius } from '../theme';
@@ -67,7 +68,7 @@ export default function FollowInvite({ placement, reviewing = false, style }: Pr
     : { title: '追蹤 IG，每天多學一句', desc: '每日一句、日本生活與學員心得' };
 
   return (
-    <Pressable accessibilityRole="link" accessibilityLabel={`追蹤 Instagram，${copy.desc}`}
+    <Pressable tapId="追蹤 IG" accessibilityRole="link" accessibilityLabel={`追蹤 Instagram，${copy.desc}`}
       onPress={() => openFollow(placement)}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: space.md,

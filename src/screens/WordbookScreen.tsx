@@ -1,5 +1,6 @@
 import { ComponentRef, useRef, useState } from 'react';
-import { View, Pressable, Alert, TextInput, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Alert, TextInput, ActivityIndicator, ScrollView } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -185,7 +186,7 @@ export default function WordbookScreen() {
               {list.map((w, i) => (
                 <View key={w.ja}>
                   {i > 0 ? <Rule /> : null}
-                  <Pressable accessibilityRole="button" accessibilityLabel={`播放 ${w.ja}`}
+                  <Pressable tapId="播放單字" accessibilityRole="button" accessibilityLabel={`播放 ${w.ja}`}
                     onPress={() => speakWord(w.ja, w.kana)} onLongPress={() => confirmRemove(w.ja)}
                     style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingVertical: space.md, gap: space.md, opacity: pressed ? 0.7 : 1 })}>
                     <View style={{ flex: 1 }}>
@@ -204,13 +205,13 @@ export default function WordbookScreen() {
                       </View>
                     </View>
                     <RoundButton icon="volume-high" size={38} bg="#FFFFFF" fg={t.primary}
-                      accessibilityLabel={`播放 ${w.ja}`} onPress={() => speakWord(w.ja, w.kana)} />
+                      tapId="播放單字" accessibilityLabel={`播放 ${w.ja}`} onPress={() => speakWord(w.ja, w.kana)} />
                   </Pressable>
 
                   {/* 例句的開關和列表都在 Pressable 外面：
                       包在裡面的話點例句會連帶觸發整列的「播放單字」 */}
                   {w.examples?.length ? (
-                    <Pressable accessibilityRole="button" onPress={() => setOpen(open === w.ja ? null : w.ja)}
+                    <Pressable tapId="展開例句" accessibilityRole="button" onPress={() => setOpen(open === w.ja ? null : w.ja)}
                       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 4,
                         paddingBottom: space.md, opacity: pressed ? 0.6 : 1 })}>
                       {/* 只有一句時數字沒有資訊，寫出來反而像在強調「只有一句」 */}
@@ -222,7 +223,7 @@ export default function WordbookScreen() {
                   ) : w.source === '自己新增' ? (
                     busy === w.ja
                       ? <View style={{ flexDirection: 'row', paddingBottom: space.md }}><ActivityIndicator size="small" color={t.primary} /></View>
-                      : <Pressable accessibilityRole="button" onPress={() => retry(w.ja)}
+                      : <Pressable tapId="重試例句" accessibilityRole="button" onPress={() => retry(w.ja)}
                           style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 4,
                             paddingBottom: space.md, opacity: pressed ? 0.6 : 1 })}>
                           <Ionicons name="sparkles-outline" size={12} color={t.primary} />
@@ -233,7 +234,7 @@ export default function WordbookScreen() {
                   {open === w.ja && w.examples?.length ? (
                     <View style={{ paddingBottom: space.md, gap: space.md }}>
                       {w.examples.map((ex, j) => (
-                        <Pressable key={j} accessibilityRole="button" accessibilityLabel={`播放例句 ${ex.ja}`}
+                        <Pressable tapId="播放例句" key={j} accessibilityRole="button" accessibilityLabel={`播放例句 ${ex.ja}`}
                           onPress={() => speakJa(ex.ja)}
                           style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'flex-start',
                             gap: space.sm, opacity: pressed ? 0.6 : 1 })}>

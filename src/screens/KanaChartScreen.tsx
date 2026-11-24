@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { View, Pressable, Modal } from 'react-native';
+import { View, Modal } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Screen, T, Segmented, Button, RoundButton } from '../ui';
 import { StrokePlayer, WritingPad } from '../ui/strokes';
@@ -82,7 +83,7 @@ export default function KanaChartScreen() {
               // 92 個字都有筆畫資料了，沒有的話仍然退回「點了就唸」
               const drawable = char in kanaStrokes;
               return (
-                <Pressable key={k[2]} accessibilityRole="button"
+                <Pressable tapId="五十音格" key={k[2]} accessibilityRole="button"
                   accessibilityLabel={`${char} ${k[2]}${drawable ? '，看筆順' : ''}`}
                   onPress={() => (drawable ? setOpen({ kana: char, roma: k[2] }) : speakJa(char))}
                   style={({ pressed }) => ({ flex: 1, aspectRatio: 0.9, maxWidth: 64, backgroundColor: pressed ? t.primarySoft : t.surface,

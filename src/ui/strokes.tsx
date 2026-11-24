@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Animated, Easing, PanResponder, Pressable, GestureResponderEvent } from 'react-native';
+import { View, Animated, Easing, PanResponder, GestureResponderEvent } from 'react-native';
+import { Pressable } from './Tap';
 import Svg, { Path, Circle, Line, Rect, G, Defs, Mask, Text as SvgText } from 'react-native-svg';
 import { T } from './index';
 import { useTheme, space, radius, fonts } from '../theme';

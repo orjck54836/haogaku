@@ -1,12 +1,13 @@
-import { useState } from 'react';
-import { View, Pressable, TextInput } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, TextInput } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { useAuth } from '../state/auth';
 import { Logo } from '../ui/brand';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Button, ProgressBar, IconName } from '../ui';
 import { useTheme, space, radius } from '../theme';
 import { useData, Goal } from '../state/data';
-import { track } from '../lib/analytics';
+import { track, setScreen } from '../lib/analytics';
 import { LevelId } from '../content/types';
 import { requestFirstLesson } from '../lib/firstRun';
 
@@ -52,6 +53,8 @@ function Choice<V>({ opts, value, onChange }: { opts: Opt<V>[]; value: V | null;
 }
 
 export default function OnboardingScreen() {
+  // 同登入頁：在導覽外面，要自己標畫面
+  useEffect(() => { setScreen('Onboarding'); }, []);
   const t = useTheme();
   const { setProfile } = useData();
   const a = useAuth();

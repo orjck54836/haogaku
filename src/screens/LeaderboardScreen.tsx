@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, ScrollView, RefreshControl, ActivityIndicator, Pressable, Text } from 'react-native';
+import { View, ScrollView, RefreshControl, ActivityIndicator, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';

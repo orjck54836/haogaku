@@ -1,4 +1,5 @@
-import { Pressable, Text } from 'react-native';
+import { Text } from 'react-native';
+import { Pressable } from './Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../state/data';
 import { useTheme } from '../theme';
@@ -11,7 +12,7 @@ export default function SaveButton({ ja, kana, zh, source, color, compact }: {
   const saved = isSaved(ja);
   const c = saved ? t.accent : color ?? t.sub;
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={saved ? `取消收藏 ${ja}` : `收藏 ${ja}`} accessibilityState={{ selected: saved }}
+    <Pressable tapId="收藏單字" accessibilityRole="button" accessibilityLabel={saved ? `取消收藏 ${ja}` : `收藏 ${ja}`} accessibilityState={{ selected: saved }}
       onPress={() => toggleWord({ ja, kana, zh, source })} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
       <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={18} color={c} />
       {compact ? null : <Text style={{ fontSize: 13, color: c, fontWeight: '600' }}>{saved ? '已收藏' : '收藏'}</Text>}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { View, Pressable, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Button, ProgressBar, Pill, IconName } from '../ui';
 import { useTheme, space, radius, fonts } from '../theme';
@@ -180,7 +181,7 @@ function Session({ mode, due, allWords, onClose, onAgain }: {
                     const isRight = picked !== null && o === w.ja;
                     const isBad = picked === n && o !== w.ja;
                     return (
-                      <Pressable key={o + n} accessibilityRole="button" disabled={picked !== null}
+                      <Pressable tapId="選項" key={o + n} accessibilityRole="button" disabled={picked !== null}
                         onPress={() => { setPicked(n); setShown(true); grade(o === w.ja); speakWord(w.ja, w.kana); }}
                         style={({ pressed }) => ({
                           flexDirection: 'row', alignItems: 'center', borderRadius: radius.lg, padding: space.lg,

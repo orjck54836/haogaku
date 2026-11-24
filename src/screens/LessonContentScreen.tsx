@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState } from 'react';
-import { View, Pressable, ScrollView, ActivityIndicator, Text, Image } from 'react-native';
+import { View, ScrollView, ActivityIndicator, Text, Image } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { T, Button, Card, Pill } from '../ui';
@@ -94,7 +95,7 @@ export default function LessonContentScreen({ route, navigation }: StackProps<'L
                 <Card key={i} style={{ padding: space.md }}>
                   <View style={{ flexDirection: 'row', gap: space.md }}>
                     <Text style={{ width: 22, fontFamily: fonts.serif, fontSize: 14, color: t.gold, marginTop: 3 }}>{n + 1}</Text>
-                    <Pressable style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`播放 ${s.ja}`} onPress={() => speakJa(s.ja)}>
+                    <Pressable tapId="播放句子" style={{ flex: 1 }} accessibilityRole="button" accessibilityLabel={`播放 ${s.ja}`} onPress={() => speakJa(s.ja)}>
                       <Text style={{ fontFamily: fonts.serifMedium, fontSize: kana && s.ja.length <= 2 ? 30 : 18, lineHeight: kana && s.ja.length <= 2 ? 40 : 27, color: t.heading }}>{s.ja}</Text>
                       {s.reading ? <T variant="caption" color={t.sub} style={{ marginTop: 2 }}>{s.reading}</T> : null}
                       <T style={{ fontWeight: '700', marginTop: 4 }}>{s.zh}</T>

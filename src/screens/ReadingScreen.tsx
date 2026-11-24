@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
-import { View, Image, Pressable, ScrollView, Text } from 'react-native';
+import { trackTap } from '../lib/analytics';
+import { View, Image, ScrollView, Text } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { T, Card, Button, Pill, Rule, SectionTitle, RoundButton } from '../ui';
@@ -147,7 +149,7 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
             {r.lines.map((l, i) => {
               const shown = showAll || open[i];
               return (
-                <Pressable key={i} accessibilityRole="button" accessibilityLabel={`播放：${l.ja}`}
+                <Pressable tapId="播放這一行" key={i} accessibilityRole="button" accessibilityLabel={`播放：${l.ja}`}
                   onPress={() => say(i, speechTextFor(r.id, i, l.ja))}
                   style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
                   <View style={{ flexDirection: 'row', gap: space.sm }}>
@@ -159,7 +161,8 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
                         return (
                           <Text key={k} suppressHighlighting accessibilityRole="button"
                             accessibilityLabel={`${s.text}：看意思`}
-                            onPress={() => pickWord(i, s.word!)}
+                            // 這是 Text 不是 Pressable，自動記錄抓不到，手動補
+                            onPress={() => { trackTap('查生字'); pickWord(i, s.word!); }}
                             style={{
                               color: on ? '#FFFFFF' : t.heading,
                               backgroundColor: on ? t.primary : undefined,
@@ -194,7 +197,7 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
               <View key={w.ja}>
                 {i > 0 ? <Rule /> : null}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md }}>
-                  <Pressable accessibilityRole="button" accessibilityLabel={`播放 ${w.ja}`} onPress={() => speakWord(w.ja, kanaFor(r.id, w.ja))}
+                  <Pressable tapId="播放單字" accessibilityRole="button" accessibilityLabel={`播放 ${w.ja}`} onPress={() => speakWord(w.ja, kanaFor(r.id, w.ja))}
                     style={({ pressed }) => ({ flex: 1, opacity: pressed ? 0.6 : 1 })}>
                     <T style={{ fontSize: 18, lineHeight: 26, fontFamily: fonts.serifMedium }} color={t.heading}>{w.ja}</T>
                     <T variant="caption" color={t.faint} style={{ marginTop: 1 }}>{w.reading}</T>
@@ -254,7 +257,7 @@ export default function ReadingScreen({ route, navigation }: StackProps<'Reading
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
                 <RoundButton icon="volume-high" size={38} bg={t.primarySoft} fg={t.primary}
-                  accessibilityLabel={`播放 ${picked.word.w}`}
+                  tapId="播放生字" accessibilityLabel={`播放 ${picked.word.w}`}
                   onPress={() => { stopSpeech(); speakWord(picked.word.w, picked.word.kana); }} />
                 <SaveButton ja={picked.word.w} kana={picked.word.kana} zh={picked.word.zh}
                   source={`讀物・${r.titleZh}`} compact />

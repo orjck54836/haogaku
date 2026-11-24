@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View, Pressable, Alert, Linking, Image, ActivityIndicator, Share } from 'react-native';
+import { View, Alert, Linking, Image, ActivityIndicator, Share } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -651,7 +652,7 @@ function CycleOption({ label, sub, note, badge, on, onPress, disabled }: {
 }) {
   const t = useTheme();
   return (
-    <Pressable accessibilityRole="radio" accessibilityState={{ selected: on, disabled }}
+    <Pressable tapId={`選方案 ${label}`} accessibilityRole="radio" accessibilityState={{ selected: on, disabled }}
       accessibilityLabel={`${label}，${sub}`} onPress={onPress} disabled={disabled}
       style={({ pressed }) => ({
         flexDirection: 'row', alignItems: 'center', gap: space.md,

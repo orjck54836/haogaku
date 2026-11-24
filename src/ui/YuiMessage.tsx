@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View, Pressable, Text } from 'react-native';
+import { View, Text } from 'react-native';
+import { Pressable } from './Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { T } from './index';
 import { useTheme, space, radius, fonts } from '../theme';
@@ -57,7 +58,7 @@ export default function YuiMessage({ msg, where, onOpen, onDismiss }: {
   useEffect(() => { track('inbox_shown', { kind: msg.kind, where }); }, [msg.id, where]);
 
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`ゆい傳來訊息：${msg.zh || msg.ja}。點一下回覆`}
+    <Pressable tapId="ゆい訊息" accessibilityRole="button" accessibilityLabel={`ゆい傳來訊息：${msg.zh || msg.ja}。點一下回覆`}
       onPress={() => { track('inbox_open', { via: where, kind: msg.kind }); onOpen(); }}
       style={({ pressed }) => ({
         flexDirection: 'row', gap: space.md,

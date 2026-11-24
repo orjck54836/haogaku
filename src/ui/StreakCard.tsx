@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { View, Pressable, Text } from 'react-native';
+import { View, Text } from 'react-native';
+import { Pressable } from './Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { T, Pill } from '.';
 import { useTheme, space, radius } from '../theme';
@@ -61,7 +62,7 @@ export default function StreakCard() {
               <Pill square icon="checkmark" label={gained ? `+${gained} XP` : '已簽到'} color={t.onPrimary} bg={t.primary} />
               <T variant="caption" color={t.faint} style={{ marginTop: 4 }}>累計第 {p.checkins} 天</T>
             </View>
-          : <Pressable accessibilityRole="button" accessibilityLabel={`簽到，獲得 ${upcoming} XP`}
+          : <Pressable tapId="簽到" accessibilityRole="button" accessibilityLabel={`簽到，獲得 ${upcoming} XP`}
               onPress={() => setGained(d.checkin())}
               style={({ pressed }) => ({ backgroundColor: upcoming > checkinXp(1) ? t.gold : t.primary, borderRadius: radius.sm,
                 paddingVertical: 10, paddingHorizontal: 16, opacity: pressed ? 0.8 : 1, alignItems: 'center' })}>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Pressable } from 'react-native';
+import { View } from 'react-native';
+import { Pressable } from './Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { T } from './index';
 import { useTheme, space, radius } from '../theme';

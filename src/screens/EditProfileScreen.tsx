@@ -1,5 +1,6 @@
 import { ReactNode, useLayoutEffect, useState } from 'react';
-import { View, TextInput, Pressable, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
+import { View, TextInput, Alert, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { updateProfile } from 'firebase/auth';

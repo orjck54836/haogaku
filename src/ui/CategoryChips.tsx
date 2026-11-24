@@ -1,4 +1,5 @@
-import { ScrollView, Pressable, View, Text } from 'react-native';
+import { ScrollView, View, Text } from 'react-native';
+import { Pressable } from './Tap';
 import { useTheme, space } from '../theme';
 import { gridCategories } from '../content/curriculum';
 import { CategoryId } from '../content/topics';

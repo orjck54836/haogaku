@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { View, TextInput, Pressable, FlatList, KeyboardAvoidingView, Platform, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { View, TextInput, FlatList, KeyboardAvoidingView, Platform, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { T, Pill } from '../ui';
@@ -441,7 +442,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
             {missionDone ? <Pill icon="checkmark-circle" label="任務完成" color={t.success} bg={t.successSoft} /> : null}
             <Pill icon="bulb-outline" label="可以這樣說" color={t.sub} bg={t.surface2} />
             {hints.map(h => (
-              <Pressable key={h.ja} accessibilityRole="button" onPress={() => setInput(h.ja)}
+              <Pressable tapId="提示句" key={h.ja} accessibilityRole="button" onPress={() => setInput(h.ja)}
                 style={{ backgroundColor: t.surface, borderWidth: 1, borderColor: t.line, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: 8, maxWidth: 260 }}>
                 <T variant="small" style={{ fontWeight: '600', lineHeight: 20 }} numberOfLines={1}>{h.ja}</T>
                 <T variant="caption" color={t.faint} style={{ lineHeight: 17, marginTop: 2 }} numberOfLines={1}>{h.zh}</T>
@@ -459,7 +460,7 @@ export default function ChatScreen({ route, navigation }: StackProps<'Chat'>) {
         ) : null}
 
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, padding: space.md, borderTopWidth: 1, borderTopColor: t.line, backgroundColor: t.surface }}>
-          <Pressable accessibilityRole="button" accessibilityLabel={listening ? '停止收音' : '用說的'} onPress={toggleMic} disabled={busy}
+          <Pressable tapId="麥克風" accessibilityRole="button" accessibilityLabel={listening ? '停止收音' : '用說的'} onPress={toggleMic} disabled={busy}
             style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
               backgroundColor: listening ? t.primary : t.primarySoft, opacity: busy ? 0.4 : 1 }}>
             <Ionicons name={listening ? 'stop' : 'mic'} size={22} color={listening ? t.onPrimary : t.primary} />

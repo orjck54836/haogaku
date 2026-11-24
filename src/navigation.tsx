@@ -10,7 +10,7 @@ import { useAuth } from './state/auth';
 import { useData } from './state/data';
 import type { ReportBody } from './lib/reports';
 import { PlanId } from './content/plans';
-import { trackScreen } from './lib/analytics';
+import { trackScreen, trackTap } from './lib/analytics';
 import { onYuiOpen } from './lib/reminders';
 import { YUI_SCENARIO } from './lib/inbox';
 import { useYuiInbox } from './ui/YuiMessage';
@@ -82,7 +82,8 @@ function MainTabs() {
   // 有未讀的ゆい訊息時，AI 教練那格掛紅點——跟聊天 App 的未讀數一樣，是全 App 最認得的「有人找你」
   const yui = useYuiInbox();
   return (
-    <Tab.Navigator screenOptions={({ route }) => ({
+    // 底部分頁不是我們的 Pressable，自動記錄抓不到，在這裡補
+    <Tab.Navigator screenListeners={({ route }) => ({ tabPress: () => trackTap(`分頁 ${route.name}`) })} screenOptions={({ route }) => ({
       headerShown: false,
       tabBarActiveTintColor: t.primary,
       tabBarInactiveTintColor: t.faint,

@@ -153,7 +153,23 @@ export function track(name: string, params?: Record<string, string | number | bo
  * 只送自訂事件的話「使用者在哪一頁流失」這題永遠答不出來。
  */
 export function trackScreen(name: string) {
+  currentScreen = name;
   track('screen_view', { screen_name: name });
+}
+
+/**
+ * 按鈕點擊落在哪個畫面。不從導覽讀：登入頁和新手設定在 NavigationContainer 外面，
+ * 那兩頁要自己呼叫 `setScreen`。
+ */
+let currentScreen = '';
+export function setScreen(name: string) { currentScreen = name; }
+
+/**
+ * 點了哪顆按鈕。由 `ui/Tap.tsx` 的 Pressable 自動送，畫面不用自己埋。
+ * 後端除了轉給 GA4，還會依「畫面｜按鈕」逐日加總進 tapStats，後台直接讀那份。
+ */
+export function trackTap(button: string) {
+  track('tap', { screen: currentScreen || '?', button });
 }
 
 /**

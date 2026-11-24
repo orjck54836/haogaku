@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { View, Pressable } from 'react-native';
+import { View } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Button, Pill, RoundButton } from '../ui';
 import SaveButton from '../ui/SaveButton';
@@ -28,13 +29,13 @@ export default function SlangScreen() {
           <View style={{ flexDirection: 'row', gap: space.sm }}>
             {/* 分享的是「正在看的這一個」不是今日那個：翻到喜歡的詞才是最想分享的時候 */}
             <RoundButton icon="share-outline" size={42} bg={t.surface2} fg={t.primary}
-              accessibilityLabel={`分享 ${w.word} 到 Threads`} onPress={() => shareToThreads(slangPost(w), 'share-slang')} />
+              tapId="分享到 Threads" accessibilityLabel={`分享 ${w.word} 到 Threads`} onPress={() => shareToThreads(slangPost(w), 'share-slang')} />
             <RoundButton icon="volume-high" size={42} bg={t.primary} fg="#FFFFFF"
-              accessibilityLabel={`播放 ${w.word}`} onPress={() => speakJa(w.word)} />
+              tapId="播放流行語" accessibilityLabel={`播放 ${w.word}`} onPress={() => speakJa(w.word)} />
           </View>
         </View>
 
-        <Pressable accessibilityRole="button" accessibilityLabel={`播放 ${w.word}`} onPress={() => speakJa(w.word)}
+        <Pressable tapId="播放流行語" accessibilityRole="button" accessibilityLabel={`播放 ${w.word}`} onPress={() => speakJa(w.word)}
           style={({ pressed }) => ({ marginTop: space.lg, opacity: pressed ? 0.6 : 1 })}>
           {/* 明體大字：fontSize 放大時一定要一起給 lineHeight，不然會被 variant 的行高切掉 */}
           <T style={{ fontSize: 48, lineHeight: 62, fontFamily: fonts.serifRegular }} color={t.heading}>{w.word}</T>
@@ -45,7 +46,7 @@ export default function SlangScreen() {
 
         <T variant="heading" style={{ marginTop: space.lg, fontSize: 19 }}>{w.meaning}</T>
 
-        <Pressable accessibilityRole="button" accessibilityLabel={`播放例句 ${w.example}`} onPress={() => speakJa(w.example)}
+        <Pressable tapId="播放例句" accessibilityRole="button" accessibilityLabel={`播放例句 ${w.example}`} onPress={() => speakJa(w.example)}
           style={({ pressed }) => ({ backgroundColor: t.surface2, borderRadius: radius.lg, padding: space.lg, marginTop: space.lg, opacity: pressed ? 0.75 : 1 })}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
             <T style={{ flex: 1, fontSize: 18, lineHeight: 28, fontFamily: fonts.serifRegular }} color={t.ink}>{w.example}</T>

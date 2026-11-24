@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { setScreen } from '../lib/analytics';
 import { View, Text, Alert, Platform, Image } from 'react-native';
 import { Screen, T, Button } from '../ui';
 import { useTheme, space, radius, type } from '../theme';
@@ -8,6 +9,8 @@ import { Seal } from '../ui/seal';
 import { heroImage } from '../ui/images';
 
 export default function LoginScreen() {
+  // 登入頁在 NavigationContainer 外面，不會有 screen_view，按鈕點擊要自己標畫面
+  useEffect(() => { setScreen('Login'); }, []);
   const t = useTheme();
   const { signInGoogle, signInApple, signInGuest } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);

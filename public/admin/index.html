@@ -74,7 +74,7 @@
 
   <div id="app" class="hide">
     <nav class="row toc" style="margin-top:16px">
-      <a href="#sUsers">使用者</a><a href="#sTrend">趨勢與留存</a><a href="#sLearn">學習</a><a href="#sRemind">提醒</a><a href="#sPaid">付費</a>
+      <a href="#sUsers">使用者</a><a href="#sTrend">趨勢與留存</a><a href="#sLearn">學習</a><a href="#sTap">按鈕點擊</a><a href="#sRemind">提醒</a><a href="#sPaid">付費</a>
       <a href="#sCost">成本</a><a href="#sLogs">紀錄</a><a href="#sReports">檢舉</a>
       <span class="faint" id="statsAt"></span>
       <button id="reloadStats" type="button">重新整理</button>
@@ -203,6 +203,42 @@
         </table>
       </div>
       <p class="faint" style="margin:10px 0 0">點 uid 會帶進下方的查詢框，一次看他的訂閱、Apple 通知和錯誤紀錄。</p>
+    </div>
+
+    <h2 id="sTap">按鈕點擊</h2>
+    <div class="row between">
+      <p class="faint" style="margin:0" id="tapNote">App 裡每一顆按鈕被點了幾下，逐日加總。不含內部帳號。</p>
+      <div class="row">
+        <button type="button" data-tapdays="1" aria-pressed="false">今天</button>
+        <button type="button" data-tapdays="7" aria-pressed="true">7 天</button>
+        <button type="button" data-tapdays="30" aria-pressed="false">30 天</button>
+        <button type="button" data-tapdays="90" aria-pressed="false">90 天</button>
+      </div>
+    </div>
+    <div class="kpis">
+      <div class="panel kpi"><div class="label">總點擊</div><div class="value" id="tapTotal">—</div><div class="note" id="tapTotalNote"></div></div>
+      <div class="panel kpi"><div class="label">被點過的按鈕</div><div class="value" id="tapKinds">—</div><div class="note">畫面 × 按鈕的組合數</div></div>
+      <div class="panel kpi"><div class="label">最常點</div><div class="value" id="tapTop" style="font-size:20px">—</div><div class="note" id="tapTopNote"></div></div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <div class="row between"><strong>每日點擊</strong><span class="faint" id="tapDailyMax"></span></div>
+        <div class="chart" id="tapDaily"></div>
+        <div class="row between" style="margin-top:6px"><span class="faint" id="tapFrom"></span><span class="faint">今天</span></div>
+      </div>
+      <div class="panel"><strong>依畫面</strong><div id="tapScreens" class="bars"></div></div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <div class="row between">
+        <strong>每一顆按鈕</strong>
+        <select id="tapFilter" style="font:inherit;border:1px solid var(--line);border-radius:999px;padding:6px 12px;background:var(--panel)"></select>
+      </div>
+      <table style="margin-top:8px">
+        <thead><tr><th>按鈕</th><th>畫面</th><th>次數</th><th style="width:38%">佔比</th></tr></thead>
+        <tbody id="tapRows"></tbody>
+      </table>
+      <p class="faint" style="margin:10px 0 0">按鈕名稱是程式自動抓的（按鈕上的字或無障礙標籤）。出現「（未命名）」或很怪的名稱，代表那顆按鈕要在程式裡補 <code>tapId</code>。
+      從 2026-11-24 那版開始記錄，在那之前沒有資料。</p>
     </div>
 
     <h2 id="sRemind">每日提醒</h2>
@@ -508,6 +544,94 @@ async function loadLogs(q = '') {
   } catch (e) {
     $('clientLogs').innerHTML = `<tr><td colspan="5" class="err">讀取失敗：${esc(e?.message ?? e)}</td></tr>`;
   }
+}
+
+// ---------- 按鈕點擊（tapStats）----------
+
+/** 路由名稱 → 畫面上的名字。新增畫面時補一筆，沒補的會直接顯示英文名 */
+const SCREEN_ZH = {
+  Login: '登入', Onboarding: '新手設定', Home: '首頁', Course: '主題', Readings: '讀物', AI: 'AI 教練',
+  Words: '單字本', Me: '我的', Topic: '主題內頁', Lesson: '課程', LessonContent: '單元內容',
+  EditProfile: '編輯個人資料', Chat: 'AI 會話', Report: '會話分析', Reports: '分析紀錄', Review: '單字複習',
+  KanaChart: '五十音表', Slang: '流行語', Reading: '讀物內頁', Leaderboard: '排行榜', Ranks: '段位',
+  Plans: '方案', Purchase: '購買', Quota: '次數怎麼算', '?': '（不明）',
+};
+const screenZh = k => SCREEN_ZH[k] ?? k;
+// 底部分頁記成「分頁 Home」，換成中文才看得懂
+const buttonZh = b => b.replace(/^分頁 (\w+)$/, (_, r) => `分頁：${screenZh(r)}`);
+
+let tapDays = 7, tapAgg = null;
+
+for (const b of document.querySelectorAll('[data-tapdays]')) {
+  b.onclick = () => {
+    tapDays = Number(b.dataset.tapdays);
+    for (const x of document.querySelectorAll('[data-tapdays]')) x.setAttribute('aria-pressed', String(x === b));
+    loadTaps();
+  };
+}
+$('tapFilter').onchange = () => renderTapRows();
+
+async function loadTaps() {
+  try {
+    const span = Math.max(tapDays, 14);   // 每日圖至少畫 14 天，和趨勢圖一致
+    const snap = await getDocs(query(collection(db, 'tapStats'), where('date', '>=', taipeiDay(span - 1))));
+    renderTaps(new Map(snap.docs.map(d => [d.id, d.data()])), span);
+  } catch (e) {
+    $('tapNote').innerHTML = `<span class="err">點擊紀錄讀取失敗：${esc(e?.message ?? e)}</span>`;
+  }
+}
+
+function renderTaps(byDate, span) {
+  const from = taipeiDay(tapDays - 1);
+  const rows = new Map(), screens = {};
+  let total = 0;
+  for (const [d, x] of byDate) {
+    if (d < from) continue;
+    for (const [key, n] of Object.entries(x.c ?? {})) {
+      const [scr, btn] = key.split('｜');
+      const r = rows.get(key) ?? { scr, btn, n: 0 };
+      r.n += n; rows.set(key, r);
+      screens[scr] = (screens[scr] ?? 0) + n;
+      total += n;
+    }
+  }
+  const list = [...rows.values()].sort((a, b) => b.n - a.n);
+  tapAgg = { list, total };
+
+  $('tapTotal').textContent = num(total);
+  $('tapTotalNote').textContent = total ? `平均每天 ${num(total / tapDays)} 下` : '';
+  $('tapKinds').textContent = num(list.length);
+  $('tapTop').textContent = list[0] ? buttonZh(list[0].btn) : '—';
+  $('tapTopNote').textContent = list[0] ? `${screenZh(list[0].scr)}・${num(list[0].n)} 下` : '';
+
+  const dayList = Array.from({ length: span }, (_, i) => taipeiDay(span - 1 - i));
+  $('tapFrom').textContent = dayList[0];
+  $('tapDaily').classList.toggle('dense', dayList.length > 45);
+  dayBars('tapDaily', dayList, d => byDate.get(d)?.total ?? null, { maxId: 'tapDailyMax' });
+
+  bars('tapScreens', Object.entries(screens).sort((a, b) => b[1] - a[1]), { total, label: screenZh });
+
+  const keep = $('tapFilter').value;
+  const opts = Object.entries(screens).sort((a, b) => b[1] - a[1]);
+  $('tapFilter').innerHTML = `<option value="">全部畫面（${opts.length}）</option>`
+    + opts.map(([k, n]) => `<option value="${esc(k)}">${esc(screenZh(k))}（${num(n)}）</option>`).join('');
+  if (opts.some(([k]) => k === keep)) $('tapFilter').value = keep;
+  renderTapRows();
+}
+
+function renderTapRows() {
+  if (!tapAgg) return;
+  const f = $('tapFilter').value;
+  const list = f ? tapAgg.list.filter(r => r.scr === f) : tapAgg.list;
+  // 佔比的分母跟著篩選走：看單一畫面時要比的是「這頁裡哪顆最常被點」
+  const base = list.reduce((t, r) => t + r.n, 0);
+  const max = Math.max(1, ...list.map(r => r.n));
+  $('tapRows').innerHTML = list.length ? list.map(r => `<tr>
+    <td>${esc(buttonZh(r.btn))}</td><td>${esc(screenZh(r.scr))}</td><td>${num(r.n)}</td>
+    <td><div class="bar" style="grid-template-columns:1fr 48px;margin:0">
+      <span class="track"><span class="fill" style="display:block;width:${(r.n / max * 100).toFixed(1)}%"></span></span>
+      <span class="v faint">${pct(r.n, base)}</span></div></td>
+  </tr>`).join('') : '<tr><td colspan="4" class="faint">這段期間還沒有點擊紀錄（要等使用者更新到有記錄的那一版）</td></tr>';
 }
 
 // ---------- 趨勢與留存（dailyStats）----------
@@ -823,6 +947,7 @@ async function load() {
   loadLogs();
   loadStats();
   loadTrend();
+  loadTaps();
   try {
     const from = taipeiDay(days - 1);
     const snap = await getDocs(query(collection(db, 'costs'), where('date', '>=', from)));

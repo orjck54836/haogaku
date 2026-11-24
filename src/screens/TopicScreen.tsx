@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect } from 'react';
-import { View, Pressable } from 'react-native';
+import { View } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Pill, ProgressBar, RoundButton, SectionTitle } from '../ui';
 import { Seal, BASICS_KANJI, TopicBanner, TopicThumb } from '../ui/seal';
@@ -49,13 +50,13 @@ export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) 
           <T variant="caption" color={t.sub} style={{ marginTop: 2 }} numberOfLines={1}>{l.subtitle} · {l.minutes} 分鐘</T>
         </View>
         {l.kind === 'ai' ? null : (
-          <Pressable accessibilityRole="button" accessibilityLabel={`看「${l.title}」全部內容`} hitSlop={8}
+          <Pressable tapId="看全部內容" accessibilityRole="button" accessibilityLabel={`看「${l.title}」全部內容`} hitSlop={8}
             onPress={() => navigation.navigate('LessonContent', { lessonId: l.id })}
             style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: '#FFFFFF' }}>
             <T variant="caption" color={t.sub} style={{ fontWeight: '600' }}>內容</T>
           </Pressable>
         )}
-        <RoundButton icon="play" size={38} bg={t.primary} fg="#FFFFFF" onPress={() => open(l)} accessibilityLabel={`開始 ${l.title}`} />
+        <RoundButton tapId="開始這一課" icon="play" size={38} bg={t.primary} fg="#FFFFFF" onPress={() => open(l)} accessibilityLabel={`開始 ${l.title}`} />
       </Card>
     );
   };

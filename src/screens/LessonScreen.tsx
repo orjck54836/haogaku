@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Pressable, ScrollView } from 'react-native';
+import { View, ScrollView } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { T, Button, ProgressBar, Card, Pill } from '../ui';
@@ -267,7 +268,7 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
               const right = solved && i === s.answer;
               const bad = wrong.includes(i);
               return (
-                <Pressable key={i} accessibilityRole="button" disabled={solved || bad} onPress={() => choose(i)}
+                <Pressable tapId="選項" key={i} accessibilityRole="button" disabled={solved || bad} onPress={() => choose(i)}
                   style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', borderRadius: radius.lg, padding: space.lg, marginBottom: space.sm,
                     backgroundColor: right ? t.successSoft : bad ? t.dangerSoft : t.surface2,
                     opacity: pressed ? 0.7 : bad ? 0.55 : 1 })}>
@@ -320,7 +321,7 @@ function LearnCard({ s, source }: { s: LearnStep; source: string }) {
   return (
     <Card style={{ marginTop: space.md, alignItems: 'center', paddingVertical: space.xxl }}>
       <Pill label="新內容" color={t.primary} bg={t.primarySoft} />
-      <Pressable accessibilityRole="button" accessibilityLabel={`播放 ${s.ja}`} onPress={() => speakJa(s.ja)} style={{ marginTop: space.lg }}>
+      <Pressable tapId="播放句子" accessibilityRole="button" accessibilityLabel={`播放 ${s.ja}`} onPress={() => speakJa(s.ja)} style={{ marginTop: space.lg }}>
         <T style={{ fontSize: big ? 88 : 30, lineHeight: big ? 112 : 44, fontFamily: fonts.serifMedium, textAlign: 'center' }} color={t.heading}>{s.ja}</T>
       </Pressable>
       {s.reading ? <T style={{ fontSize: big ? 22 : 15, marginTop: space.xs }} color={t.sub}>{s.reading}</T> : null}

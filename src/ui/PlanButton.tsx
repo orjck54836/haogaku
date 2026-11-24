@@ -1,4 +1,5 @@
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { Pressable } from './Tap';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../theme';
@@ -33,7 +34,7 @@ export function PlanButton({ size = 44 }: { size?: number }) {
   // 次數要等第一次呼叫 AI 回來才知道，還沒有就只顯示方案名
   const left = d.progress.aiRemaining;
   return (
-    <Pressable accessibilityRole="button"
+    <Pressable tapId="方案按鈕" accessibilityRole="button"
       accessibilityLabel={left !== null
         ? `方案，目前是${plan.name}，今天還有 ${left} 次 AI`
         : `方案，目前是${plan.name}`}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View, ScrollView, Pressable, Text, Image } from 'react-native';
+import { View, ScrollView, Text, Image } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -293,7 +294,7 @@ export default function HomeScreen() {
         {/* 流行語一共 100 個、每天換一個。標題講總量，「今日」掛在卡片上，
             這樣點進去看到全部的數量才不會覺得跟標題對不起來 */}
         <SectionTitle title="流行語" ja="はやりことば" action={`全部 ${slang.length} 個`} onAction={() => nav.navigate('Slang')} />
-        <Card onPress={() => nav.navigate('Slang')} accessibilityLabel={`今日的流行語 ${w.word}`} raised>
+        <Card tapId="今日流行語" onPress={() => nav.navigate('Slang')} accessibilityLabel={`今日的流行語 ${w.word}`} raised>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flex: 1 }}>
               {/* Pill 要包一層 row，不然在直向容器裡會被拉成整行寬 */}

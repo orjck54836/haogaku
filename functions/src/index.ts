@@ -860,6 +860,37 @@ export const aiExample = onCall(opts, async req => {
  *
  * 失敗一律安靜吞掉——分析掉幾筆不值得讓畫面跳錯誤。
  */
+/**
+ * 按鈕點擊的逐日加總：`tapStats/{台北日期}.c["畫面｜按鈕"]`。
+ *
+ * 上面說過事件不另存 Firestore（GA4 已經有一份）。按鈕點擊破例，是因為後台要直接顯示，
+ * 而後台是靜態網頁、讀不了 GA4（Data API 要服務帳號，金鑰不能放在網頁裡）。
+ * 只存加總、不存誰點的：一批事件只寫一次，一天一份文件，成本和人數無關。
+ *
+ * 自己人的點擊不算（INTERNAL_UIDS），理由同後台：幾十個使用者的規模，
+ * 開發時一天按幾百下就把整張表蓋過去。GA4 那份照送，那邊另外用篩選器排。
+ */
+async function countTaps(uid: string | undefined, raw: unknown) {
+  if (uid && INTERNAL_UIDS.has(uid)) return;
+  if (!Array.isArray(raw)) return;
+  const inc: Record<string, number> = {};
+  for (const e of raw.slice(0, 20)) {
+    if (e?.name !== 'tap') continue;
+    // 和 GA4 那段一樣只收短字串：改過的 client 不能往後台塞任意長的內容。
+    // 「.」換掉是因為 Firestore 的欄位路徑用它分層
+    const clean = (v: unknown, n: number) => String(v ?? '?').slice(0, n).replace(/[.\/\[\]`*~]/g, '_').trim() || '?';
+    const key = `${clean(e.params?.screen, 24)}｜${clean(e.params?.button, 24)}`;
+    inc[key] = (inc[key] ?? 0) + 1;
+  }
+  const keys = Object.keys(inc);
+  if (!keys.length) return;
+  const date = taipeiDate();
+  await db.doc(`tapStats/${date}`).set({
+    date, total: FieldValue.increment(keys.reduce((t, k) => t + inc[k], 0)),
+    c: Object.fromEntries(keys.map(k => [k, FieldValue.increment(inc[k])])),
+  }, { merge: true });
+}
+
 export const track = onCall(
   // 128MiB 不夠：firebase-admin 載進來就吃掉約 135MiB，容器還沒開始服務就 OOM，
   // readiness check 失敗 → 每次呼叫都重開一個新實例再死一次（日誌裡連著好幾輪）
@@ -867,9 +898,11 @@ export const track = onCall(
   async req => {
     const id = GA4_MEASUREMENT_ID.value();
     const secret = GA4_API_SECRET.value();
+    const uid = req.auth?.uid;
+    // 按鈕點擊要先記：它不靠 GA4，GA4 沒設定也要照樣進後台
+    await countTaps(uid, req.data?.events).catch(e => console.warn('tapStats failed', e));
     if (!id || !secret) return { ok: false, reason: 'not-configured' };   // 還沒設定就當沒這回事
 
-    const uid = req.auth?.uid;
     const clientId = str(req.data?.clientId, 64, 'clientId');
     const raw = Array.isArray(req.data?.events) ? req.data.events.slice(0, 20) : [];
     const events = raw.map((e: any) => {

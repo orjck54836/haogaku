@@ -1,4 +1,5 @@
-import { View, Pressable, Alert } from 'react-native';
+import { View, Alert } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Pill, SectionTitle, Divider, IconBox } from '../ui';
 import { TopicThumb } from '../ui/seal';
@@ -66,7 +67,7 @@ export default function ReportsScreen({ navigation }: StackProps<'Reports'>) {
           return (
             <View key={r.id}>
               {i > 0 ? <Divider /> : null}
-              <Pressable accessibilityRole="button" accessibilityLabel={`${s.title} 的分析`}
+              <Pressable tapId="分析紀錄" accessibilityRole="button" accessibilityLabel={`${s.title} 的分析`}
                 onPress={() => navigation.navigate('Report', {
                   report: r.report, scenarioId: r.scenarioId, lessonId: r.lessonId, savedAt: r.at,
                 })}

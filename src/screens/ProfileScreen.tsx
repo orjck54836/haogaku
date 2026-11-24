@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View, Alert, Platform, Pressable, Text, Image, Linking } from 'react-native';
+import { View, Alert, Platform, Text, Image, Linking } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Row, Divider, SectionTitle, Rule, Avatar, RoundButton, Segmented } from '../ui';
 import { useTheme, space, fonts, radius, shadows, tintedShadow } from '../theme';

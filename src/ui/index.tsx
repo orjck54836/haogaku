@@ -1,5 +1,6 @@
 import { ComponentRef, ReactNode, RefObject } from 'react';
-import { View, Text, Pressable, ScrollView, ActivityIndicator, StyleSheet, Image, ViewStyle, StyleProp, TextStyle } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, StyleSheet, Image, ViewStyle, StyleProp, TextStyle } from 'react-native';
+import { Pressable } from './Tap';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -89,8 +90,10 @@ export function Figure({ value, unit, label, color }: { value: ReactNode; unit?:
 }
 
 /** 卡片：大圓角、柔和陰影、不畫邊框 */
-export function Card({ children, style, onPress, accessibilityLabel, raised, tone = 'surface' }: {
+export function Card({ children, style, onPress, accessibilityLabel, raised, tone = 'surface', tapId }: {
   children: ReactNode; style?: StyleProp<ViewStyle>; onPress?: () => void; accessibilityLabel?: string; raised?: boolean;
+  /** 後台按鈕點擊表上的名稱。標籤裡有會變的內容時一定要給（見 ui/Tap.tsx） */
+  tapId?: string;
   /** surface：白卡（有陰影）／soft：淺灰磚（無陰影，用在面板內） */
   tone?: 'surface' | 'soft';
 }) {
@@ -103,7 +106,7 @@ export function Card({ children, style, onPress, accessibilityLabel, raised, ton
   };
   if (!onPress) return <View style={[base, style]}>{children}</View>;
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress}
+    <Pressable tapId={tapId} accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress}
       style={({ pressed }) => [base, style, pressed && { transform: [{ scale: 0.98 }], opacity: 0.95 }]}>
       {children}
     </Pressable>
@@ -111,8 +114,8 @@ export function Card({ children, style, onPress, accessibilityLabel, raised, ton
 }
 
 /** 按鈕：一律 pill、字重 700 */
-export function Button({ label, onPress, variant = 'primary', icon, loading, disabled, style, size = 'lg' }: {
-  label: string; onPress: () => void; variant?: 'primary' | 'secondary' | 'ghost' | 'accent' | 'dark' | 'danger' | 'outline' | 'gold';
+export function Button({ label, onPress, variant = 'primary', icon, loading, disabled, style, size = 'lg', tapId }: {
+  tapId?: string; label: string; onPress: () => void; variant?: 'primary' | 'secondary' | 'ghost' | 'accent' | 'dark' | 'danger' | 'outline' | 'gold';
   icon?: IconName; loading?: boolean; disabled?: boolean; style?: StyleProp<ViewStyle>; size?: 'md' | 'lg';
 }) {
   const t = useTheme();
@@ -127,7 +130,7 @@ export function Button({ label, onPress, variant = 'primary', icon, loading, dis
     gold: { bg: t.gold, fg: '#231A08', border: 'transparent' },
   }[variant];
   return (
-    <Pressable accessibilityRole="button" accessibilityState={{ disabled: !!disabled }} onPress={onPress} disabled={disabled || loading}
+    <Pressable tapId={tapId} accessibilityRole="button" accessibilityState={{ disabled: !!disabled }} onPress={onPress} disabled={disabled || loading}
       style={({ pressed }) => [{
         backgroundColor: map.bg, borderColor: map.border, borderWidth: map.border === 'transparent' ? 0 : 1.5,
         borderRadius: radius.pill, paddingVertical: size === 'lg' ? 17 : 12, paddingHorizontal: 22,
@@ -144,12 +147,12 @@ export function Button({ label, onPress, variant = 'primary', icon, loading, dis
 }
 
 /** 圓形按鈕：卡片角落的 ↗、播放鍵那種 */
-export function RoundButton({ icon, onPress, size = 46, bg, fg, accessibilityLabel }: {
-  icon: IconName; onPress: () => void; size?: number; bg?: string; fg?: string; accessibilityLabel?: string;
+export function RoundButton({ icon, onPress, size = 46, bg, fg, accessibilityLabel, tapId }: {
+  tapId?: string; icon: IconName; onPress: () => void; size?: number; bg?: string; fg?: string; accessibilityLabel?: string;
 }) {
   const t = useTheme();
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress}
+    <Pressable tapId={tapId} accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress}
       style={({ pressed }) => ({
         width: size, height: size, borderRadius: size / 2, backgroundColor: bg ?? '#FFFFFF',
         alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.8 : 1,

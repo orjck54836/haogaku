@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { View, Pressable, Image } from 'react-native';
+import { View, Image } from 'react-native';
+import { Pressable } from '../ui/Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Sheet, T, Card, Button, Pill, SectionTitle, Rule } from '../ui';
 import { track } from '../lib/analytics';

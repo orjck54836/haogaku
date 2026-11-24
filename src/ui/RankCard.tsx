@@ -1,4 +1,5 @@
-import { View, Pressable } from 'react-native';
+import { View } from 'react-native';
+import { Pressable } from './Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -31,7 +32,7 @@ export function RankRow({ xp, onDark }: { xp: number; onDark?: boolean }) {
   const fg = onDark ? '#FFFFFF' : t.ink;
   const sub = onDark ? 'rgba(255,255,255,0.7)' : t.sub;
   return (
-    <Pressable accessibilityRole="button" accessibilityLabel={`段位 Lv.${r.rank.n} ${r.rank.name}，查看所有段位`}
+    <Pressable tapId="段位卡" accessibilityRole="button" accessibilityLabel={`段位 Lv.${r.rank.n} ${r.rank.name}，查看所有段位`}
       onPress={() => nav.navigate('Ranks')}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.md, opacity: pressed ? 0.7 : 1 })}>
       <RankSeal n={r.rank.n} kanji={r.rank.kanji} size={44} />
@@ -103,7 +104,7 @@ export function RankStrip({ xp }: { xp: number }) {
   const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
   const r = rankState(xp);
   return (
-    <Pressable accessibilityRole="button"
+    <Pressable tapId="段位條" accessibilityRole="button"
       accessibilityLabel={`段位 Lv.${r.rank.n} ${r.rank.name}，${r.next ? `還差 ${r.toNext} XP 升級` : '已滿級'}，查看所有段位`}
       onPress={() => nav.navigate('Ranks')}
       style={({ pressed }) => ({

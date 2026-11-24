@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { View, Pressable, Animated, Platform } from 'react-native';
+import { View, Animated, Platform } from 'react-native';
+import { Pressable } from './Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { T } from './index';
 import { useTheme, space, radius } from '../theme';
@@ -62,7 +63,7 @@ export default function StarReview({ style }: { style?: object }) {
       </T>
       <Animated.View style={{ flexDirection: 'row', gap: space.sm, transform: [{ scale: pop }] }}>
         {[1, 2, 3, 4, 5].map(n => (
-          <Pressable key={n} onPress={() => pick(n)} hitSlop={4}
+          <Pressable key={n} tapId={`${n} 顆星`} onPress={() => pick(n)} hitSlop={4}
             accessibilityRole="button" accessibilityLabel={`${n} 顆星，前往商店評分`}>
             <Ionicons name={n <= picked ? 'star' : 'star-outline'} size={32} color={t.gold} />
           </Pressable>
