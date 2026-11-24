@@ -469,3 +469,14 @@ delete-account），**不要為了省事改回首頁**，指向首頁會被退�
   （`reminders.ts` 的 `setStreakReminder`）。只換那一則：再往後紀錄已經斷了，講天數是在說謊。
 - 排行榜的 `streak` 用 `liveStreak()`，存著的 `progress.streak` 斷了不會自己歸零。
 - 漏斗：`checkin`、`streak_day`、`streak_freeze_earned`、`streak_freeze_used`。
+
+## 按鈕點擊統計
+
+`Pressable` 一律從 `src/ui/Tap.tsx` import，**不要直接用 react-native 的**——它會自動記點擊，
+後端（`track` 裡的 `countTaps`）依「畫面｜按鈕」逐日加總進 `tapStats/{日期}`，後台「按鈕點擊」那段直接讀。
+漏用一顆，那顆按鈕在後台就是不存在，和「沒人點」分不出來。
+
+按鈕名稱自動抓（`tapId` → 無障礙標籤 → 按鈕上的字 → 圖示），**標籤裡有使用者內容或數字的要給 `tapId`**
+（播放某個單字、「還差 115 XP」）：不給的話每個單字都變一顆按鈕，而且使用者打的字會進 GA4。
+`Card`／`Button`／`RoundButton` 也收 `tapId`。底部分頁和讀物裡的生字（`Text onPress`）是手動補的。
+內部帳號（`INTERNAL_UIDS`）的點擊不進 tapStats；GA4 那份照送。
