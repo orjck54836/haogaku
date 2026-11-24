@@ -198,11 +198,16 @@ export function recommendedTopics(goal: Goal, level: LevelId, completed: string[
 }
 
 export function nextLesson(completed: string[], goal: Goal, level: LevelId): LessonRef {
-  // 初級而且什麼都還沒上過的人，先推五十音。
-  // 只看「完全沒開始」而不是只看程度：會五十音的人也會選初級，
-  // 一進來就被推「平假名 あ行」會像被當成零基礎。
-  if (level === 'L2' && completed.length === 0) {
-    const kana = allLessons.find(r => !r.topic && !completed.includes(r.lesson.id));
+  // 初級的第一堂是「依目標排第一的情境課」，第二堂才是五十音。
+  // 以前第一堂就是「平假名 あ行」：後台看到新手設定完 93%、當天上完第一堂只剩 37%，
+  // 五十音的完成人數一課一課往下掉（20→13→8），而 63% 的人選的目標是去日本旅行——
+  // 他想學的是在便利商店怎麼回話，不是背字母。情境課的選項都有中文，不會假名也做得完。
+  // 先讓他做完一堂有用的，第二堂再補五十音。
+  // 只看「幾乎沒開始」而不是只看程度：會五十音的人也會選初級，
+  // 上了幾堂之後還被推「平假名 あ行」會像被當成零基礎。
+  const kanaStarted = completed.some(id => allLessons.some(r => r.lesson.id === id && r.lesson.kind === 'kana'));
+  if (level === 'L2' && completed.length === 1 && !kanaStarted) {
+    const kana = allLessons.find(r => r.lesson.kind === 'kana' && !completed.includes(r.lesson.id));
     if (kana) return kana;
   }
   const topic = recommendedTopics(goal, level, completed, 1)[0];

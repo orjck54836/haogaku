@@ -27,6 +27,7 @@ import StreakCard from '../ui/StreakCard';
 import YuiMessage, { useYuiInbox } from '../ui/YuiMessage';
 import { YUI_SCENARIO } from '../lib/inbox';
 import { consumeFirstLesson } from '../lib/firstRun';
+import { askReminderOnReturn } from '../lib/reminders';
 import { isReadingLesson } from '../content/readings';
 
 /** 「新手三步」被按掉了。存手機不存 profile：理由同 follow.ts，這是提示狀態不是學習成果 */
@@ -76,7 +77,11 @@ export default function HomeScreen() {
 
   // 剛走完新手設定：直接進第一堂課（理由見 lib/firstRun.ts）
   useEffect(() => {
-    if (consumeFirstLesson()) open();
+    if (consumeFirstLesson()) { open(); return; }
+    // 隔天以後回來、還沒被問過通知的人問一次（理由見 askReminderOnReturn）。
+    // 晚幾秒才問：一開 App 就跳視窗，他連首頁都還沒看到
+    const id = setTimeout(() => { void askReminderOnReturn(); }, 2500);
+    return () => clearTimeout(id);
     // 只在掛載時看一次。open 每次 render 都是新的，放進依賴會變成每次 render 都檢查
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -33,8 +33,11 @@
   th:first-child, td:first-child { text-align: left; }
   th { font-size: 12px; color: var(--sub); font-weight: 600; }
   .uid { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
-  .chart { display: flex; align-items: flex-end; gap: 2px; height: 180px; margin-top: 14px; }
-  .day { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; min-width: 4px; }
+  .chart { display: flex; align-items: flex-end; gap: 2px; height: 180px; margin-top: 14px; overflow: hidden; }
+  /* min-width 必須是 0：給固定最小寬的話 90 根 ×（寬＋間距）會超過半欄面板，
+     flex 不會再縮，整排長條溢出到隔壁面板底下，只剩最右邊幾根露在畫面外 */
+  .day { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; min-width: 0; }
+  .chart.dense { gap: 1px; }
   .seg { border-radius: 2px 2px 0 0; min-height: 1px; }
   .seg:last-child { border-radius: 2px; }
   .legend { display: flex; gap: 14px; margin-top: 12px; font-size: 13px; color: var(--sub); }
@@ -536,8 +539,12 @@ function dayBars(id, dayList, valueOf, { fmt = num, maxId, maxLabel = '單日最
 }
 
 function renderTrend(byDate) {
-  const dayList = Array.from({ length: TREND_DAYS }, (_, i) => taipeiDay(TREND_DAYS - 1 - i));
-  const have = dayList.filter(d => byDate.has(d));
+  const allDays = Array.from({ length: TREND_DAYS }, (_, i) => taipeiDay(TREND_DAYS - 1 - i));
+  const have = allDays.filter(d => byDate.has(d));
+  // 圖只從第一份快照畫起（至少 14 天）：90 格裡 80 格是空的，有資料的那幾根會被壓成細線
+  const start = Math.min(allDays.length - 14, Math.max(0, allDays.indexOf(have[0] ?? '')));
+  const dayList = allDays.slice(start);
+  ['tDau', 'tNew', 'tLesson', 'tSticky'].forEach(id => $(id).classList.toggle('dense', dayList.length > 45));
   $('trendNote').textContent = have.length
     ? `已累積 ${have.length} 天的快照（從 ${have[0]} 開始）。每天台北時間 23:50 自動存一份。`
     : '還沒有任何快照。今晚 23:50 會存第一份，或按右邊的按鈕先存今天的。';
@@ -556,7 +563,7 @@ function renderTrend(byDate) {
     { fmt: v => `${Math.round(v)}%`, maxId: 'tStickyNow', maxLabel: '最高' });
 
   // 漏斗與留存表：最近 30 批
-  const cohorts = dayList.slice(-30).reverse().filter(d => byDate.has(d));
+  const cohorts = allDays.slice(-30).reverse().filter(d => byDate.has(d));
   const f = { new: 0, onboarded: 0, firstLesson: 0 };
   const r = Object.fromEntries(RET_COLS.map(n => [n, { base: 0, back: 0 }]));
   for (const d of cohorts) {
@@ -648,7 +655,9 @@ $('reloadStats').onclick = loadStats;
 
 function renderStats() {
   const { auth: a, learning: l, paid: p, ai, reports } = stats;
-  $('statsAt').textContent = `更新於 ${when(stats.generatedAt)}`;
+  // 自己人的帳號在後端就排掉了（functions 的 INTERNAL_UIDS），這裡只標出來，免得以為數字少算
+  $('statsAt').textContent = `更新於 ${when(stats.generatedAt)}`
+    + (stats.internalExcluded ? `・已排除 ${stats.internalExcluded} 個內部帳號` : '');
 
   const today = taipeiDay(0), yest = taipeiDay(1);
   const s = d => (a.signup[d]?.anon ?? 0) + (a.signup[d]?.linked ?? 0);

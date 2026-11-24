@@ -1714,6 +1714,24 @@ export const resetPlan = onCall(
 
 // ---------- 後台：營運統計 ----------
 
+/**
+ * 自己人的帳號：開發、測試、送審 demo。後台和每日快照的所有數字都排掉它們。
+ *
+ * 總共才幾十個帳號，自己人一天開十幾次 App、刷幾十堂課，就足以讓
+ * DAU、完成課程數、付費轉換率整個失真——後台曾經顯示「付費轉換率 3%」，
+ * 那唯一一筆正式扣款其實是開發者自己買來測的。
+ * 成本那段不排除：錢是真的花掉了。
+ *
+ * 寫死在這裡而不是放 Firestore：名單幾個月才動一次，改完 deploy 就好。
+ */
+const INTERNAL_UIDS = new Set([
+  'ndS1omxJ3XQ7dg3Fl2xriFAsXll2',   // Aiden（開發機，正式環境買過一次標準方案）
+  'JjE3JojiQTfqYkisznV0cT7krs53',   // 皓（同一個 Apple ID 交接過訂閱）
+  'TIUhOF8suzMrFive6HkDO8xuPLJ2',   // test
+  'ZSTco5Q268U4fKdMRo2PLoFZuwN2',   // demo
+  'rvKa1DJzmBR6wgvCgsqWCdOCBTJ3',   // 沙盒購買測試
+]);
+
 type AuthRow = { uid: string; created: number; last: number; anon: boolean; disabled: boolean; providers: string[] };
 
 /**
@@ -1730,6 +1748,7 @@ async function listAuthUsers(): Promise<AuthRow[]> {
   do {
     const page = await auth.listUsers(1000, pageToken);
     for (const u of page.users) {
+      if (INTERNAL_UIDS.has(u.uid)) continue;
       const created = Date.parse(u.metadata.creationTime) || 0;
       out.push({
         uid: u.uid, created,
@@ -1844,6 +1863,7 @@ export const adminStats = onCall(
     const usersSnap = await db.collection('users').select('profile', 'progress.xp', 'progress.completed',
       'progress.streak', 'progress.lastDay', 'progress.chats', 'words').get();
     for (const d of usersSnap.docs) {
+      if (INTERNAL_UIDS.has(d.id)) continue;
       docs++;
       const p = d.get('profile') ?? {};
       const g = d.get('progress') ?? {};
@@ -1892,6 +1912,7 @@ export const adminStats = onCall(
     const remByUid = new Map<string, { perm: string; lastDelivered: string; lastTapped: string; nextDay: string; at: number }>();
     const remSnap = await db.collection('reminderStatus').get();
     for (const d of remSnap.docs) {
+      if (INTERNAL_UIDS.has(d.id)) continue;
       const r = d.data();
       remReported++;
       const p = String(r.perm ?? '?');
@@ -1924,6 +1945,7 @@ export const adminStats = onCall(
     let paidProd = 0, paidSandbox = 0, willChurn = 0;
     const entSnap = await db.collection('entitlements').get();
     for (const d of entSnap.docs) {
+      if (INTERNAL_UIDS.has(d.id)) continue;
       const e = d.data();
       const live = (e.plan === 'plus' || e.plan === 'pro') && Number(e.expiresAt) > now;
       if (!live) continue;
@@ -1936,9 +1958,14 @@ export const adminStats = onCall(
     // 營收：Apple 通知裡的實際扣款（只算正式環境），退款從裡面扣掉
     const revenue: Record<string, { gross: number; refund: number; count: number }> = {};
     const revSnap = await db.collection('storeNotifications').where('receivedAt', '>=', now - HIST_DAYS * DAY).get();
+    // 自己人的扣款要排掉。INITIAL_BUY 那一筆常常還沒被帳號認領（uid 是 null），
+    // 所以靠同一條訂閱鏈（originalTransactionId）裡任何一筆是自己人來認
+    const internalTx = new Set(revSnap.docs.map(d => d.data())
+      .filter(n => n.uid && INTERNAL_UIDS.has(n.uid) && n.originalTransactionId).map(n => n.originalTransactionId));
     for (const d of revSnap.docs) {
       const n = d.data();
       if (n.environment !== 'Production' || typeof n.price !== 'number') continue;
+      if ((n.uid && INTERNAL_UIDS.has(n.uid)) || internalTx.has(n.originalTransactionId)) continue;
       const cur = String(n.currency ?? '?');
       revenue[cur] ??= { gross: 0, refund: 0, count: 0 };
       if (n.type === 'SUBSCRIBED' || n.type === 'DID_RENEW') { revenue[cur].gross += n.price / 1000; revenue[cur].count++; }
@@ -1949,6 +1976,7 @@ export const adminStats = onCall(
     let aiToday = 0, aiCallsToday = 0, reportsToday = 0;
     const usageSnap = await db.collection('usage').where('date', '==', today).get();
     for (const d of usageSnap.docs) {
+      if (INTERNAL_UIDS.has(d.id)) continue;
       aiToday++;
       aiCallsToday += Number(d.get('count')) || 0;
       reportsToday += Number(d.get('reports')) || 0;
@@ -1968,7 +1996,7 @@ export const adminStats = onCall(
       Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n);
 
     return {
-      generatedAt: now,
+      generatedAt: now, internalExcluded: INTERNAL_UIDS.size,
       auth: { total, anon, linked: total - anon, disabled, providers, active1, active7, active30, signup, retention: ret },
       learning: {
         docs, onboarded, withNickname, withPhoto, leaderOut,
@@ -2057,6 +2085,7 @@ async function takeSnapshot(date: string) {
   const snap = await db.collection('users').select('profile.onboarded', 'progress.xp', 'progress.completed',
     'progress.lastDay', 'words').get();
   for (const d of snap.docs) {
+    if (INTERNAL_UIDS.has(d.id)) continue;
     const completed: unknown[] = d.get('progress.completed') ?? [];
     const readings = completed.filter(x => typeof x === 'string' && x.startsWith('read-')).length;
     const lessons = completed.length - readings;
@@ -2071,11 +2100,12 @@ async function takeSnapshot(date: string) {
   }
 
   const usage = await db.collection('usage').where('date', '==', date).get();
-  let aiCalls = 0;
-  usage.forEach(d => { aiCalls += Number(d.get('count')) || 0; });
+  let aiCalls = 0, aiUsers = 0;
+  usage.forEach(d => { if (INTERNAL_UIDS.has(d.id)) return; aiUsers++; aiCalls += Number(d.get('count')) || 0; });
 
   let paid = 0;
   (await db.collection('entitlements').get()).forEach(d => {
+    if (INTERNAL_UIDS.has(d.id)) return;
     const e = d.data();
     if ((e.plan === 'plus' || e.plan === 'pro') && Number(e.expiresAt) > Date.now() && e.environment !== 'Sandbox') paid++;
   });
@@ -2087,7 +2117,7 @@ async function takeSnapshot(date: string) {
     total: users.length, anon, linked: users.length - anon,
     newUsers: fresh.length, newLinked,
     dau: active.length, wau, mau,
-    learners, aiUsers: usage.size, aiCalls, paid,
+    learners, aiUsers, aiCalls, paid,
     sumLessons, sumReadings, sumWords, sumXp,
     // 漏斗只看註冊「當天」做到哪一步。隔天才完成引導的人不算——要比較的是第一印象
     funnel: { new: fresh.length, onboarded, firstLesson },

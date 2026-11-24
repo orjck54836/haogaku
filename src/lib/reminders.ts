@@ -320,6 +320,35 @@ const SOFT_ASK_GAP_DAYS = 2;
  * 函式自己決定要不要問，呼叫端每次完成都叫它就好。
  */
 export async function askReminderAfterLesson(): Promise<void> {
+  await softAsk('lesson', '要每天提醒你練一下嗎？');
+}
+
+/** 第一次打開 App 的日期。用來判斷「這是不是他隔天以後又回來了」 */
+const FIRST_SEEN_KEY = 'first-seen-v1';
+
+/**
+ * 沒上過課的人回來時問一次通知。
+ *
+ * 只在完成頁問的話，從沒上完一堂課的人**永遠不會被問到**——後台實測
+ * 回報的手機裡 72% 是「還沒問」，而這些人正是最需要被拉回來的。
+ * 「隔天以後又打開」本身就是有興趣的訊號，這時問比冷啟動第一次好得多。
+ *
+ * 只在一次都沒問過時才問（n === 0）：問過的人交給完成頁的節奏，
+ * 不然首頁和完成頁會各自累計，三次額度很快就燒完。
+ */
+export async function askReminderOnReturn(): Promise<void> {
+  try {
+    const first = await AsyncStorage.getItem(FIRST_SEEN_KEY);
+    if (!first) { await AsyncStorage.setItem(FIRST_SEEN_KEY, today()); return; }
+    if (first === today()) return;
+    const rec = JSON.parse((await AsyncStorage.getItem(ASK_KEY)) ?? '{}');
+    if ((rec.n ?? 0) > 0) return;
+  } catch { return; }
+  await softAsk('return', '要每天提醒你練一下嗎？');
+}
+
+/** 兩個問的時機共用同一份次數與間隔紀錄，系統視窗也只在這裡叫 */
+async function softAsk(via: 'lesson' | 'return', title: string): Promise<void> {
   const N = load();
   if (!N) return;
   try {
@@ -334,13 +363,13 @@ export async function askReminderAfterLesson(): Promise<void> {
 
     const hour = await reminderHour();
     Alert.alert(
-      '要每天提醒你練一下嗎？',
+      title,
       `每天 ${hour}:00 跳一則，今天練過就不會吵你。`,
       [
-        { text: '先不用', style: 'cancel', onPress: () => track('reminder_ask', { answer: 'later', n: rec.n + 1 }) },
+        { text: '先不用', style: 'cancel', onPress: () => track('reminder_ask', { answer: 'later', n: rec.n + 1, via }) },
         {
           text: '好', onPress: async () => {
-            track('reminder_ask', { answer: 'yes', n: rec.n + 1 });
+            track('reminder_ask', { answer: 'yes', n: rec.n + 1, via });
             try {
               if (!(await N.requestPermissionsAsync()).granted) { track('reminder_permission_denied'); return; }
               await scheduleNow(N);
@@ -350,7 +379,7 @@ export async function askReminderAfterLesson(): Promise<void> {
         },
       ],
     );
-  } catch { /* 問不了就算了，不影響完成頁 */ }
+  } catch { /* 問不了就算了，不影響畫面 */ }
 }
 
 /**
