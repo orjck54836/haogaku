@@ -16,7 +16,8 @@ import { lessonXp, rankOf, weightLabel } from '../lib/rank';
 import StarReview from '../ui/StarReview';
 import LessonPath from '../ui/LessonPath';
 import { askReminderAfterLesson } from '../lib/reminders';
-import { Seal } from '../ui/seal';
+import { RankSeal } from '../ui/RankSeal';
+import { RankRow } from '../ui/RankCard';
 import FollowInvite from '../ui/FollowInvite';
 import BindCard from '../ui/BindCard';
 import { shareToThreads } from '../lib/share';
@@ -196,13 +197,18 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
           {/* 取代原本那顆大打勾：打勾改在進度條上「蓋」在剛完成那格，看得到自己走到哪 */}
           <LessonPath current={ref} completed={d.progress.completed} />
 
+          {/* 沒升段的那幾堂也要看到 XP 往哪裡去：只有「+86 XP」看不出意義，
+             接著一條「還差 115 XP 升 Lv.3」才有下一個目標。升段那堂由下面的大卡講 */}
+          {!leveledUp ? <Card><RankRow xp={d.progress.xp} /></Card> : null}
+
           {leveledUp && !askBind ? (
             <View style={{ alignItems: 'center', backgroundColor: t.shell,
               borderRadius: radius.xl, paddingVertical: space.xl, paddingHorizontal: space.section, gap: space.sm }}>
-              <Seal kanji={after.kanji} size={54} tone="gold" />
+              <RankSeal n={after.n} kanji={after.kanji} size={54} />
               <T variant="caption" color={t.gold} style={{ fontWeight: '700', letterSpacing: 1, marginTop: 4 }}>LEVEL UP</T>
               <T style={{ fontSize: 22, fontFamily: fonts.serif }} color="#FFFFFF">Lv.{after.n} {after.name}</T>
-              <T variant="caption" color="rgba(255,255,255,0.72)">{after.desc}</T>
+              {/* 升段時講「現在搞得定什麼」，比氣氛句更有實感 */}
+              <T style={{ fontSize: 14, fontWeight: '700' }} color="#FFFFFF">現在的你：{after.scene}</T>
             </View>
           ) : null}
 

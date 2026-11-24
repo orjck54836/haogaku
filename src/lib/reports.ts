@@ -207,7 +207,7 @@ export function chatMemory(input: {
   reports: SavedReport[];
   notes?: ChatNote[];
   words?: WordLike[];
-  /** 「Lv.3 道案内」這種已經組好的字串，lib/rank 的段位名不在這裡重算 */
+  /** 「Lv.3 辛」這種已經組好的字串，lib/rank 的段位名不在這裡重算 */
   rank?: string;
   streak?: number;
   /** 完成的課程數，要先把讀物排掉（見 isReadingLesson），不然數字會灌水 */

@@ -11,6 +11,7 @@ import { TopBar, WineCard, BrandFooter } from '../ui/brand';
 import { TopicThumb } from '../ui/seal';
 import ReviewCard from '../ui/ReviewCard';
 import { PlanButton } from '../ui/PlanButton';
+import { RankStrip } from '../ui/RankCard';
 import { photoFor, uiPhotos } from '../ui/images';
 import { useTheme, space, radius, fonts, type } from '../theme';
 import { useData } from '../state/data';
@@ -120,6 +121,10 @@ export default function HomeScreen() {
       <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
         {/* 左邊不放漢堡：它去的「單字複習」下面的白面板已經有一格，重複的入口只是噪音 */}
         <TopBar right={<PlanButton />} />
+        {/* 段位條在頂列正下方：XP 每堂課都在漲，要讓人每次開 App 都看得到自己在哪一段 */}
+        <View style={{ marginTop: space.xs }}>
+          <RankStrip xp={progress.xp} />
+        </View>
 
         {/* ゆい的訊息排在「下一站」上面：一則別人傳來的未讀訊息，比 App 推薦的下一課更讓人想點 */}
         {yui.msg ? (

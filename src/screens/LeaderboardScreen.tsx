@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { T, Card, Pill, Button, Rule, Avatar } from '../ui';
-import { Seal } from '../ui/seal';
+import { RankSeal } from '../ui/RankSeal';
 import { PageHeader } from '../ui/brand';
 import { useTheme, space, radius, fonts } from '../theme';
 import { useData, LeaderRow } from '../state/data';
@@ -80,7 +80,7 @@ export default function LeaderboardScreen() {
         {/* 自己那一張永遠放最上面：不用往下捲去找「我在哪」 */}
         <Card tone="soft" style={{ marginTop: space.xl }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-            <Seal kanji={me.rank.kanji} size={46} tone="wine" />
+            <RankSeal n={me.rank.n} kanji={me.rank.kanji} size={46} />
             <View style={{ flex: 1 }}>
               <T variant="caption" color={t.faint}>我的名次</T>
               <T variant="heading" style={{ marginTop: 1 }}>{myPlace}</T>
@@ -152,7 +152,7 @@ function LeaderItem({ row, place, isMe }: { row: LeaderRow; place: number; isMe:
           照片和印章同樣是 38pt 的方形／圓形色塊，換過來排版不會跳 */}
       {row.photo
         ? <Avatar name={row.name} photo={row.photo} size={38} bg={place <= 3 ? t.gold : t.surface2} fg={t.sub} />
-        : <Seal kanji={rank.kanji} size={38} tone={place <= 3 ? 'gold' : 'soft'} />}
+        : <RankSeal n={rank.n} kanji={rank.kanji} size={38} />}
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <T variant="heading" numberOfLines={1} style={{ flexShrink: 1 }}>{row.name}</T>

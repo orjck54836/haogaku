@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Pressable, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Card, T, Pill } from '.';
+import { T, Pill } from '.';
 import { useTheme, space, radius } from '../theme';
 import { useData } from '../state/data';
 import { today, addDays } from '../lib/date';
@@ -14,7 +14,9 @@ import { checkinXp } from '../lib/rank';
  * 給的是**明天回來的理由**：週曆上今天那格還空著、再幾天到下一個里程碑、手上有幾張保護卡。
  * 簽到放在同一張卡上而不是另開一塊：兩件事都是「今天的我」，拆開只是多一個區塊要滑過。
  *
- * 用白面板上的淺色卡，不用飽和色——那塊已經是酒紅大卡的（theme.ts 規則 4）。
+ * 底用米色卡，不用飽和色——那塊已經是酒紅大卡的（theme.ts 規則 4）。
+ * 但格子和標籤用**酒紅圓角方形**：和課程完成頁的成績標籤、單元進度條同一套語言，
+ * 讓「我今天練了」在首頁和完成頁長得一樣。圓角方形是這類「戰績」專用，狀態 Pill 照舊是膠囊。
  */
 export default function StreakCard() {
   const t = useTheme();
@@ -43,25 +45,25 @@ export default function StreakCard() {
   const toSeventh = 7 - (p.checkins % 7);
 
   return (
-    <Card tone="soft">
+    <View style={{ backgroundColor: t.cream, borderRadius: radius.xl, padding: space.xl }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-        <View style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+        <View style={{ width: 48, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center',
           backgroundColor: streak > 0 ? t.primary : '#FFFFFF' }}>
           <Ionicons name="flame" size={22} color={streak > 0 ? '#FFFFFF' : t.faint} />
         </View>
         <View style={{ flex: 1 }}>
-          <T variant="caption" color={t.sub}>連續學習</T>
+          <T variant="eyebrow" color={t.primary} style={{ letterSpacing: 1 }}>連續學習</T>
           <T variant="title" color={t.heading} numberOfLines={1}>{streak} 天</T>
         </View>
         {/* 按鈕只放在這裡：簽到是今天唯一一件「按一下就完成」的事，要在第一眼就看得到 */}
         {d.checkedInToday
           ? <View style={{ alignItems: 'flex-end' }}>
-              <Pill icon="checkmark" label={gained ? `+${gained} XP` : '已簽到'} color={t.success} bg={t.successSoft} />
+              <Pill square icon="checkmark" label={gained ? `+${gained} XP` : '已簽到'} color={t.onPrimary} bg={t.primary} />
               <T variant="caption" color={t.faint} style={{ marginTop: 4 }}>累計第 {p.checkins} 天</T>
             </View>
           : <Pressable accessibilityRole="button" accessibilityLabel={`簽到，獲得 ${upcoming} XP`}
               onPress={() => setGained(d.checkin())}
-              style={({ pressed }) => ({ backgroundColor: upcoming > checkinXp(1) ? t.gold : t.shell, borderRadius: radius.pill,
+              style={({ pressed }) => ({ backgroundColor: upcoming > checkinXp(1) ? t.gold : t.primary, borderRadius: radius.sm,
                 paddingVertical: 10, paddingHorizontal: 16, opacity: pressed ? 0.8 : 1, alignItems: 'center' })}>
               <Text style={{ color: upcoming > checkinXp(1) ? '#231A08' : '#FFFFFF', fontWeight: '800', fontSize: 14 }}>
                 簽到 +{upcoming}
@@ -74,14 +76,14 @@ export default function StreakCard() {
         {cells.map(c => {
           const look = {
             done: { bg: t.primary, icon: 'flame' as const, fg: '#FFFFFF', border: 'transparent' },
-            frozen: { bg: t.goldSoft, icon: 'snow' as const, fg: t.warning, border: 'transparent' },
+            frozen: { bg: t.primarySoft, icon: 'snow' as const, fg: t.primary, border: 'transparent' },
             today: { bg: '#FFFFFF', icon: null, fg: t.primary, border: t.primary },
             missed: { bg: '#FFFFFF', icon: null, fg: t.faint, border: 'transparent' },
             future: { bg: '#FFFFFF', icon: null, fg: t.faint, border: 'transparent' },
           }[c.state];
           return (
             <View key={c.day} style={{ alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: look.bg,
+              <View style={{ width: 36, height: 36, borderRadius: radius.sm, backgroundColor: look.bg,
                 borderWidth: look.border === 'transparent' ? 0 : 2, borderColor: look.border,
                 alignItems: 'center', justifyContent: 'center' }}>
                 {look.icon ? <Ionicons name={look.icon} size={16} color={look.fg} /> : null}
@@ -100,13 +102,13 @@ export default function StreakCard() {
 
       {/* Pill 要包一層 row，不然會被拉成整行寬 */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.md }}>
-        <Pill icon="snow" label={`保護卡 ×${p.freezes}`} color={t.warning} bg={t.goldSoft} />
-        <Pill icon="calendar" label={toSeventh === 7 && d.checkedInToday ? '第 7 次簽到 +25 拿到了' : `再簽 ${toSeventh} 次 +25`}
-          color={t.sub} bg="#FFFFFF" />
+        <Pill square icon="snow" label={`保護卡 ×${p.freezes}`} color={t.onPrimary} bg={t.primary} />
+        <Pill square icon="calendar" label={toSeventh === 7 && d.checkedInToday ? '第 7 次簽到 +25 拿到了' : `再簽 ${toSeventh} 次 +25`}
+          color={t.primary} bg={t.primarySoft} />
       </View>
       <T variant="caption" color={t.faint} style={{ marginTop: space.sm }}>
         {`每連續 ${FREEZE_EVERY} 天送一張保護卡，漏掉一天會自動用掉，紀錄不會斷。`}
       </T>
-    </Card>
+    </View>
   );
 }

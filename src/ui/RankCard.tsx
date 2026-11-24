@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { T, ProgressBar, Card } from './index';
 import type { RootStack } from '../navigation';
-import { Seal } from './seal';
+import { RankSeal } from './RankSeal';
 import { useTheme, space, fonts } from '../theme';
 import { rankState, ranks } from '../lib/rank';
 
@@ -21,7 +21,7 @@ import { rankState, ranks } from '../lib/rank';
 /**
  * 一行式：首頁白面板裡那條。深色背景上用 onDark。
  *
- * 整條可以點，進去看全部十段——「Lv.1 旅人」會讓人想知道後面還有什麼，
+ * 整條可以點，進去看全部十段——「Lv.1 癸」會讓人想知道後面還有什麼，
  * 但這條只講得出下一段差幾 XP。右邊補一個 chevron，不然看不出來能點。
  */
 export function RankRow({ xp, onDark }: { xp: number; onDark?: boolean }) {
@@ -34,12 +34,14 @@ export function RankRow({ xp, onDark }: { xp: number; onDark?: boolean }) {
     <Pressable accessibilityRole="button" accessibilityLabel={`段位 Lv.${r.rank.n} ${r.rank.name}，查看所有段位`}
       onPress={() => nav.navigate('Ranks')}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.md, opacity: pressed ? 0.7 : 1 })}>
-      <Seal kanji={r.rank.kanji} size={44} tone={onDark ? 'gold' : 'wine'} />
+      <RankSeal n={r.rank.n} kanji={r.rank.kanji} size={44} />
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
           <T style={{ fontSize: 15, fontWeight: '800', letterSpacing: -0.3 }} color={fg}>Lv.{r.rank.n}</T>
           <T style={{ fontSize: 16, fontFamily: fonts.serifMedium }} color={fg}>{r.rank.name}</T>
         </View>
+        {/* 只有段位名的話「Lv.3 辛」說不出是什麼程度；補一句搞得定的場面當量尺 */}
+        <T variant="caption" color={sub} numberOfLines={1} style={{ marginTop: 1 }}>{r.rank.scene}</T>
         <View style={{ marginTop: 6 }}>
           <ProgressBar value={r.pct} height={6}
             color={onDark ? '#FFFFFF' : t.primary} track={onDark ? 'rgba(255,255,255,0.25)' : t.surface2} />
@@ -63,11 +65,11 @@ export function RankCard({ xp }: { xp: number }) {
   return (
     <Card tone="soft">
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-        <Seal kanji={r.rank.kanji} size={58} tone="wine" />
+        <RankSeal n={r.rank.n} kanji={r.rank.kanji} size={58} />
         <View style={{ flex: 1 }}>
           <T variant="caption" color={t.faint}>LV.{r.rank.n} / {ranks.length}</T>
           <T style={{ fontSize: 22, fontFamily: fonts.serif, marginTop: 1 }} color={t.heading}>{r.rank.name}</T>
-          <T variant="caption" color={t.sub} style={{ marginTop: 2 }} numberOfLines={1}>{r.rank.desc}</T>
+          <T variant="caption" color={t.sub} style={{ marginTop: 2 }} numberOfLines={1}>{r.rank.scene}</T>
         </View>
       </View>
 
@@ -83,5 +85,42 @@ export function RankCard({ xp }: { xp: number }) {
         </View>
       </View>
     </Card>
+  );
+}
+
+/**
+ * 首頁頂列下方那一小條：章、段位、進度、還差多少，橫向排成一行。
+ *
+ * 段位原本只在「我的」看得到，而 XP 是每堂課都在漲的東西——
+ * 看不到它在哪，升段就只是課程完成頁閃一下的事。頂列正下方是每次開 App 第一眼的位置。
+ *
+ * 不塞進 TopBar：頂列已經有字標和方案鈕，SE 寬度下只放得進一顆章，
+ * 段位名和「還差多少」都得砍掉，剩一顆章看不出是什麼。拉出來單獨一條才寫得下一整句。
+ * 刻意做薄（章 28pt、一行字）：它是狀態列不是卡片，不該和下面的ゆい訊息、
+ * 酒紅大卡搶第一屏。只給深色殼用，所以底是半透明白、字是白的。
+ */
+export function RankStrip({ xp }: { xp: number }) {
+  const nav = useNavigation<NativeStackNavigationProp<RootStack>>();
+  const r = rankState(xp);
+  return (
+    <Pressable accessibilityRole="button"
+      accessibilityLabel={`段位 Lv.${r.rank.n} ${r.rank.name}，${r.next ? `還差 ${r.toNext} XP 升級` : '已滿級'}，查看所有段位`}
+      onPress={() => nav.navigate('Ranks')}
+      style={({ pressed }) => ({
+        flexDirection: 'row', alignItems: 'center', gap: space.sm,
+        paddingVertical: 6, paddingLeft: 6, paddingRight: space.md, borderRadius: 999,
+        backgroundColor: 'rgba(255,255,255,0.08)', opacity: pressed ? 0.7 : 1,
+      })}>
+      <RankSeal n={r.rank.n} kanji={r.rank.kanji} size={28} />
+      <T style={{ fontSize: 13, fontWeight: '800', letterSpacing: -0.3 }} color="#FFFFFF">Lv.{r.rank.n}</T>
+      <T style={{ fontSize: 14, fontFamily: fonts.serifMedium }} color="#FFFFFF">{r.rank.name}</T>
+      <View style={{ flex: 1, marginHorizontal: 4 }}>
+        <ProgressBar value={r.pct} height={5} color="#FFFFFF" track="rgba(255,255,255,0.2)" />
+      </View>
+      <T style={{ fontSize: 12, fontWeight: '600' }} color="rgba(255,255,255,0.72)">
+        {r.next ? `還差 ${r.toNext} XP` : '已滿級'}
+      </T>
+      <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.6)" />
+    </Pressable>
   );
 }
