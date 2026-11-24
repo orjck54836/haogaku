@@ -10,7 +10,7 @@ import { weekCells, nextMilestone, MILESTONES, FREEZE_EVERY } from '../lib/strea
 import { checkinXp } from '../lib/rank';
 
 /**
- * 首頁的「連續學習＋簽到」卡。
+ * 「我的」頁的「連續學習＋簽到」卡（原本在首頁，2026-11-24 搬過來，首頁改放日檢浮動按鈕）。
  *
  * 給的是**明天回來的理由**：週曆上今天那格還空著、再幾天到下一個里程碑、手上有幾張保護卡。
  * 簽到放在同一張卡上而不是另開一塊：兩件事都是「今天的我」，拆開只是多一個區塊要滑過。

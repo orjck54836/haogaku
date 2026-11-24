@@ -144,6 +144,13 @@ export const CHAT_XP = 40;
 /** 單字複習一張卡。量大所以單張要小，不然複習會變成刷分捷徑 */
 export const REVIEW_XP = { known: 3, forgot: 1 } as const;
 
+/**
+ * 日檢測驗一題。**只有第一次答對給**：題庫一級只有幾題、每天才加一點，
+ * 重做同一份能一直拿的話，日檢會變成整個 App 最快的刷分處。
+ * 比複習單字（3）高一點，因為四選一要先看懂整句。
+ */
+export const JLPT_XP = 4;
+
 /** 難度係數給畫面用的標籤：1.6 → 「XP ×1.6」。係數 1 的不顯示，免得每張卡都掛一個 */
 export function weightLabel(w: number): string | null {
   return w > 1 ? `XP ×${w}` : null;

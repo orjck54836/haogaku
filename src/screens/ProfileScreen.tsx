@@ -18,6 +18,7 @@ import { RankRow } from '../ui/RankCard';
 import { Seal } from '../ui/seal';
 import { rankState } from '../lib/rank';
 import OfficialLinks from '../ui/OfficialLinks';
+import StreakCard from '../ui/StreakCard';
 import { planById } from '../content/plans';
 import { legalLinks } from '../content/links';
 import { loadAnalyticsChoice, setAnalyticsEnabled } from '../lib/analytics';
@@ -244,6 +245,11 @@ export default function ProfileScreen() {
         </View>
         <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
       </Pressable>
+
+      {/* 連續學習從首頁搬來。首頁第一屏讓給上課的入口；
+          這裡是「看自己的紀錄」的地方，週曆、保護卡、簽到放在段位旁邊才是同一類東西 */}
+      <SectionTitle title="連續學習" ja="れんぞく" />
+      <StreakCard />
 
       <SectionTitle title="登入方式" ja="ログイン" />
       {a.isGuest ? (

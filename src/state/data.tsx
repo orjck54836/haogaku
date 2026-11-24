@@ -8,7 +8,7 @@ import { useAuth } from './auth';
 import { LevelId } from '../content/types';
 import { today, addDays } from '../lib/date';
 import { setSpeechRate } from '../lib/speech';
-import { rankOf, checkinXp } from '../lib/rank';
+import { rankOf, checkinXp, JLPT_XP } from '../lib/rank';
 import { settle, recordDay, liveStreak, backfillDays, MAX_FREEZES } from '../lib/streak';
 import { ReviewState, emptyReview } from '../lib/review';
 import { isReadingLesson } from '../content/readings';
@@ -84,6 +84,13 @@ export type Progress = {
   /** 累計簽到天數。不會因為漏一天歸零（理由見 rank.ts 的 CHECKIN_XP） */
   checkins: number;
   lastCheckin: string | null;
+  /**
+   * 日檢測驗每一題**最近一次**有沒有答對（key 是題目 id，見 content/jlpt.ts）。
+   * 存最近一次而不是最好的一次：「只練錯題」要的是「現在還不會的」，以前對過一次不代表現在會。
+   */
+  jlpt: Record<string, boolean>;
+  /** 拿過 XP 的題目。和上面分開存：只看 jlpt 的話「錯一次再對一次」就能重複拿分 */
+  jlptXp: string[];
 };
 
 export type Word = {
@@ -110,7 +117,7 @@ const emptyStore: Store = {
   profile: { onboarded: false, nickname: '', jaName: '', intro: '', photo: '', goal: 'travel', startLevel: 'L2', dailyGoal: 50, speechRate: 1.0, leaderboard: true, plan: 'free' },
   progress: { completed: [], xp: 0, streak: 0, lastDay: null, todayXp: { date: '', xp: 0 }, resume: null, chats: 0, aiRemaining: null, review: emptyReview, chatNotes: [], inbox: null, yuiWelcomed: false,
     // 新的人先送一張：第一週最容易斷，斷在第三天的人幾乎不會再開始第二次
-    days: [], frozenDays: [], freezes: 1, checkins: 0, lastCheckin: null },
+    days: [], frozenDays: [], freezes: 1, checkins: 0, lastCheckin: null, jlpt: {}, jlptXp: [] },
   words: [],
   reports: [],
 };
@@ -236,6 +243,8 @@ type DataCtx = Store & {
   dueWords: () => Word[];
   todayXp: () => number;
   streak: () => number;
+  /** 日檢測驗答一題。回這次拿到的 XP（只有第一次答對才有） */
+  answerJlpt: (qid: string, correct: boolean) => number;
   /** 今天簽到。已經簽過回 0，否則回這次拿到的 XP */
   checkin: () => number;
   checkedInToday: boolean;
@@ -784,6 +793,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
       withProgress(p => ({ ...p, xp: p.xp + gain, checkins: nth, lastCheckin: t }));
       return gain;
     },
+    answerJlpt: (qid, correct) => {
+      const gain = correct && !ref.current.progress.jlptXp.includes(qid) ? JLPT_XP : 0;
+      // 答題也是練：不算的話今晚還是會跳「今天的日語還沒練」。答錯也算，他確實打開來練了
+      practicedToday();
+      // 走 addXp：答對的分要算進連續學習和每日目標，跟上課一樣
+      if (gain) value.addXp(gain);
+      withProgress(p => ({
+        ...p, jlpt: { ...p.jlpt, [qid]: correct },
+        jlptXp: gain ? [...p.jlptXp, qid] : p.jlptXp,
+      }));
+      return gain;
+    },
     resetProgress: () => commit(s => ({ ...s, progress: emptyStore.progress })),
   };
 
@@ -820,6 +841,9 @@ function merge(d: Partial<Store>): Store {
         ? Math.max(0, Math.min(MAX_FREEZES, d.progress.freezes)) : emptyStore.progress.freezes,
       checkins: Number(d.progress?.checkins) || 0,
       lastCheckin: typeof d.progress?.lastCheckin === 'string' ? d.progress.lastCheckin : null,
+      // 日檢是後來才加的
+      jlpt: d.progress?.jlpt && typeof d.progress.jlpt === 'object' ? d.progress.jlpt : {},
+      jlptXp: Array.isArray(d.progress?.jlptXp) ? d.progress.jlptXp : [],
       // 存下來的剩餘次數是「上次呼叫 AI 當下」的，跨日或換手機就是錯的數字。
       // 一律當成還不知道，由 refreshQuota() 讀 usage/{uid} 補上——
       // 寧願先不顯示次數，也不要顯示一個錯的

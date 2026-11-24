@@ -39,6 +39,9 @@ import PurchaseScreen from './screens/PurchaseScreen';
 import TopicScreen from './screens/TopicScreen';
 import LessonContentScreen from './screens/LessonContentScreen';
 import EditProfileScreen from './screens/EditProfileScreen';
+import JlptScreen from './screens/JlptScreen';
+import JlptQuizScreen from './screens/JlptQuizScreen';
+import type { JlptLevel, JlptSection } from './content/jlpt';
 
 export type RootStack = {
   Tabs: undefined;
@@ -61,6 +64,9 @@ export type RootStack = {
   /** 次數規則說明。入口在方案頁和 AI 教練頁 */
   Quota: undefined;
   Purchase: { planId: PlanId; cycle?: 'monthly' | 'yearly' };
+  Jlpt: undefined;
+  /** wrongOnly：只抽最近一次答錯的題目。section 不給就是整級混著出 */
+  JlptQuiz: { level: JlptLevel; wrongOnly: boolean; section?: JlptSection };
 };
 export type Tabs = { Home: undefined; Course: undefined; Readings: undefined; AI: undefined; Words: undefined; Me: undefined };
 export type StackProps<K extends keyof RootStack> = NativeStackScreenProps<RootStack, K>;
@@ -208,6 +214,8 @@ export default function AppNavigator() {
         <Stack.Screen name="Reading" component={ReadingScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: '排行榜' }} />
         <Stack.Screen name="Ranks" component={RanksScreen} options={{ title: '段位' }} />
+        <Stack.Screen name="Jlpt" component={JlptScreen} options={{ title: '' }} />
+        <Stack.Screen name="JlptQuiz" component={JlptQuizScreen} options={{ title: '模擬測驗' }} />
         {/* 方案頁自己有深色殼和返回鈕，不用系統 header */}
         <Stack.Screen name="Plans" component={PlansScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Quota" component={QuotaScreen} options={{ title: '次數怎麼算' }} />

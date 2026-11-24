@@ -14,7 +14,7 @@ import ReviewCard from '../ui/ReviewCard';
 import { PlanButton } from '../ui/PlanButton';
 import { RankStrip } from '../ui/RankCard';
 import { photoFor, uiPhotos } from '../ui/images';
-import { useTheme, space, radius, fonts, type } from '../theme';
+import { useTheme, space, radius, fonts, type, tintedShadow } from '../theme';
 import { useData } from '../state/data';
 import { nextLesson, lessonRef, recommendedTopics, topicProgress, collectionOf, collectionMeta } from '../content/curriculum';
 import { categories } from '../content/topics';
@@ -24,12 +24,13 @@ import { RootStack } from '../navigation';
 import { useAuth } from '../state/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BindCard from '../ui/BindCard';
-import StreakCard from '../ui/StreakCard';
+import JlptFab from '../ui/JlptFab';
 import YuiMessage, { useYuiInbox } from '../ui/YuiMessage';
 import { YUI_SCENARIO } from '../lib/inbox';
 import { consumeFirstLesson } from '../lib/firstRun';
 import { askReminderOnReturn } from '../lib/reminders';
 import { isReadingLesson } from '../content/readings';
+import { jlptQuestions, jlptPoints, typeCount } from '../content/jlpt';
 
 /** 「新手三步」被按掉了。存手機不存 profile：理由同 follow.ts，這是提示狀態不是學習成果 */
 const STARTER_HIDDEN_KEY = 'starter-hidden-v1';
@@ -122,6 +123,8 @@ export default function HomeScreen() {
   };
 
   return (
+    // 外層 View 是給浮動按鈕的：它要在 ScrollView 外面，才不會跟著內容捲走
+    <View style={{ flex: 1 }}>
     <Screen shell padded={false}>
       {/* 深色殼：頂列＋酒紅大卡 */}
       <View style={{ paddingHorizontal: space.xl, paddingBottom: space.section }}>
@@ -195,10 +198,6 @@ export default function HomeScreen() {
               等第一堂課完成才出現——還沒有 XP 的時候叫人保存紀錄，他沒有東西可以保存 */}
           {a.isGuest && lessonsDone > 0 ? <BindCard placement="home" style={{ marginTop: space.md }} /> : null}
         </View> : null}
-        {/* 連續學習和簽到排在圖示磚上面：它是「明天為什麼要回來」的答案，要在第一屏 */}
-        <View style={{ marginBottom: space.lg }}>
-          <StreakCard />
-        </View>
         <View style={{ flexDirection: 'row', gap: space.md }}>
           {/* 習字紙是淺色的，遮罩要比另外兩張重，不然白字浮不出來 */}
           <IconTile kanji="音" label="五十音" photo={photoFor('basics') ?? undefined} photoScrim={0.56}
@@ -245,6 +244,33 @@ export default function HomeScreen() {
           </> : null}
         </Card>
         </>}
+
+        {/* 日檢考前專區。放在今日計畫和讀物之間：還在第二、三屏，
+            擺到頁尾會被整個滑過去（方案入口和排行榜都踩過） */}
+        <SectionTitle title="日檢考前" ja="にほんごのうりょくしけん" action="進入專區" onAction={() => nav.navigate('Jlpt')} />
+        {/* 數字列的樣式：一張白卡橫排四格，小字標籤在上、大數字在下。
+            比一行「26 題」更像「這裡有一整個題庫」，而且最後一格是他自己的成績，點進來有理由。
+            後面那圈是酒紅的同色陰影當光暈（沒有漸層套件，見 CLAUDE.md） */}
+        <Card tapId="日檢專區入口" onPress={() => nav.navigate('Jlpt')} accessibilityLabel="日檢考前專區"
+          style={{ ...tintedShadow(t.primary, 'xl'), paddingVertical: space.xl, paddingHorizontal: space.md }}>
+          <View style={{ flexDirection: 'row' }}>
+            {[
+              { label: '級數', value: 'N5–1' },
+              { label: '重點', value: String(jlptPoints.length) },
+              { label: '模擬題', value: String(jlptQuestions.length) },
+              { label: '我答對', value: String(Object.values(progress.jlpt).filter(Boolean).length) },
+            ].map(x => (
+              <View key={x.label} style={{ flex: 1, alignItems: 'center' }}>
+                <T variant="caption" color={t.sub} style={{ fontWeight: '600', letterSpacing: 0.5 }}>{x.label}</T>
+                <Text style={{ fontSize: 24, fontWeight: '800', letterSpacing: -0.8, color: t.heading, marginTop: 4 }}
+                  numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{x.value}</Text>
+              </View>
+            ))}
+          </View>
+          <T variant="caption" color={t.faint} style={{ textAlign: 'center', marginTop: space.lg }}>
+            {`${typeCount} 種正式題型・每天持續新增`}
+          </T>
+        </Card>
 
         {/* 讀物。課程是一句一句練，讀物是一次讀一段——
             放在流行語前面，因為它需要的時間比較長，該在使用者還有耐心的位置 */}
@@ -317,6 +343,8 @@ export default function HomeScreen() {
         <BrandFooter />
       </Sheet>
     </Screen>
+    <JlptFab onPress={() => nav.navigate('Jlpt')} />
+    </View>
   );
 }
 
