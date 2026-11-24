@@ -13,8 +13,8 @@ import { ActivityIndicator } from 'react-native';
 import { speakJa, stopSpeech } from '../lib/speech';
 import { StackProps } from '../navigation';
 import { lessonXp, rankOf, weightLabel } from '../lib/rank';
-import { useReviewPrompt } from '../lib/useReviewPrompt';
-import ReviewCard from '../ui/ReviewCard';
+import StarReview from '../ui/StarReview';
+import LessonPath from '../ui/LessonPath';
 import { askReminderAfterLesson } from '../lib/reminders';
 import { Seal } from '../ui/seal';
 import FollowInvite from '../ui/FollowInvite';
@@ -79,21 +79,17 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   const xp = lessonXp(lesson, ref.topic);
   const s = lesson.steps[step];
 
-  // 上完一堂課是使用者心情最好的時刻，評價就在這時問（時機規則見 lib/review.ts）。
-  // reviewing 代表這一次被評價用掉了，完成頁就不要再掛 IG 邀請
-  const { reviewing } = useReviewPrompt(finished);
   const { isGuest } = useAuth();
 
   /**
    * 通知權限在這裡問，不在冷啟動問（理由見 lib/reminders.ts 的 `ensureScheduled`）。
    * 晚 1.2 秒才跳：先讓他看到 +XP，Alert 一進場就蓋住慶祝的話，問句聽起來像在討東西。
-   * 評價卡那一次讓位：一個畫面同時要兩樣東西，兩樣都會被拒絕。
    *
    * 升段**不讓位**：第一堂課就給 150 XP 以上，新手的第一堂一定升到 Lv.2。
    * 升段讓位的話第一堂永遠問不到，而只上一堂就離開的人正是最需要提醒的人。
    */
   useEffect(() => {
-    if (!finished || reviewing) return;
+    if (!finished) return;
     const id = setTimeout(() => { askReminderAfterLesson(); }, 1200);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -162,8 +158,7 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
      * 以前寫成升段就讓位，結果第一堂的綁定卡一次都沒出現過——最關鍵的那一次。
      */
     const lessonsDone = d.progress.completed.filter(id => !isReadingLesson(id)).length;
-    // 不看 reviewing：綁定優先，評價卡那邊用 !askBind 讓位。以前這裡寫了 !reviewing，
-    // 結果反過來變成綁定讓位給評價，訪客第 5、10 堂的綁定卡被吃掉
+    // 評價（星星）不和綁定搶：星星是常駐的小卡，兩張可以同時在
     const askBind = isGuest
       && (lessonsDone === 1 || lessonsDone === 3 || lessonsDone % 5 === 0);
     const goNext = () => {
@@ -172,33 +167,37 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
       else navigation.replace('Lesson', { lessonId: nextRef.lesson.id });
     };
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: t.bg, padding: space.xl }}>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: t.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="checkmark" size={52} color={t.primary} />
-          </View>
-          <T variant="display" style={{ marginTop: space.xl, fontSize: 30, lineHeight: 38 }}>お疲れさまでした！</T>
-          <T color={t.sub} style={{ marginTop: space.sm }}>完成「{lesson.title}」</T>
-          <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xl, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <Pill icon="star" label={`+${earned.current} XP`} color={t.gold} bg={t.goldSoft} />
-            <Pill icon="flame" label={`連續 ${d.streak()} 天`} color={t.accent} bg={t.accentSoft} />
-            {/* 難度加成只在真的有加成時出現，不然每堂課都掛一個就沒有訊息量 */}
-            {weightLabel(xp.weight) ? <Pill icon="trending-up" label={weightLabel(xp.weight)!} color={t.success} bg={t.successSoft} /> : null}
-            {/* 升段又要綁定（新手第一堂一定是這樣）：升段縮成一顆 Pill。
-                大卡＋綁定卡＋兩顆按鈕在 iPhone SE 上會把「下一堂」擠出畫面 */}
-            {/* 做成一顆 Pill 擺在成績旁邊，不另起一顆大按鈕：完成頁在 iPhone SE 上
-                已經快把「下一堂」擠出畫面。和成績放一起，也就是「炫耀這個」的意思 */}
-            <Pressable accessibilityRole="button" accessibilityLabel="分享到 Threads" hitSlop={6}
-              // 帶主題名：只寫「基本說法」的話，看到貼文的人不知道是哪一課
-              onPress={() => shareToThreads(`今天在皓學日語完成了「${ref.topic ? `${ref.topic.title}・` : ''}${lesson.title}」，連續學日文第 ${d.streak()} 天🔥\n\n#日文 #日語學習`, 'share-lesson')}
-              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
-              <Pill icon="share-outline" label="分享" color={t.primary} bg={t.primarySoft} />
-            </Pressable>
-            {leveledUp && askBind ? <Pill icon="ribbon" label={`升到 Lv.${after.n} ${after.name}`} color={t.gold} bg={t.goldSoft} /> : null}
+      <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }}>
+        {/* 中段捲動、按鈕釘在底部：單元進度＋升段＋兩張卡在 iPhone SE 上疊不下，
+            但「下一堂」無論如何都要在第一眼看得到 */}
+        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: space.xl, gap: space.md }}>
+          <View style={{ alignItems: 'center', marginBottom: space.sm }}>
+            <T variant="display" style={{ fontSize: 30, lineHeight: 38, fontFamily: fonts.serifMedium, letterSpacing: -0.3 }}>お疲れさまでした！</T>
+            <T color={t.sub} style={{ marginTop: space.xs }}>完成「{lesson.title}」</T>
+            {/* 成績標籤統一酒紅底白字、圓角方形（使用者指定）：和其他畫面的狀態 Pill 區隔開，
+                讀起來是一排「獎牌」而不是一排標記 */}
+            <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.lg, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <Pill square icon="star" label={`+${earned.current} XP`} color={t.onPrimary} bg={t.primary} />
+              <Pill square icon="flame" label={`連續 ${d.streak()} 天`} color={t.onPrimary} bg={t.primary} />
+              {/* 難度加成只在真的有加成時出現，不然每堂課都掛一個就沒有訊息量 */}
+              {weightLabel(xp.weight) ? <Pill square icon="trending-up" label={weightLabel(xp.weight)!} color={t.onPrimary} bg={t.primary} /> : null}
+              {/* 分享做成 Pill 擺在成績旁邊，不另起一顆大按鈕：和成績放一起就是「炫耀這個」的意思 */}
+              <Pressable accessibilityRole="button" accessibilityLabel="分享到 Threads" hitSlop={6}
+                // 帶主題名：只寫「基本說法」的話，看到貼文的人不知道是哪一課
+                onPress={() => shareToThreads(`今天在皓學日語完成了「${ref.topic ? `${ref.topic.title}・` : ''}${lesson.title}」，連續學日文第 ${d.streak()} 天🔥\n\n#日文 #日語學習`, 'share-lesson')}
+                style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                <Pill square icon="share-outline" label="分享" color={t.onPrimary} bg={t.primary} />
+              </Pressable>
+              {/* 升段又要綁定（新手第一堂一定是這樣）：升段縮成一顆 Pill，大卡讓給綁定卡 */}
+              {leveledUp && askBind ? <Pill square icon="ribbon" label={`升到 Lv.${after.n} ${after.name}`} color={t.onPrimary} bg={t.primary} /> : null}
+            </View>
           </View>
 
+          {/* 取代原本那顆大打勾：打勾改在進度條上「蓋」在剛完成那格，看得到自己走到哪 */}
+          <LessonPath current={ref} completed={d.progress.completed} />
+
           {leveledUp && !askBind ? (
-            <View style={{ alignItems: 'center', marginTop: space.section, backgroundColor: t.shell,
+            <View style={{ alignItems: 'center', backgroundColor: t.shell,
               borderRadius: radius.xl, paddingVertical: space.xl, paddingHorizontal: space.section, gap: space.sm }}>
               <Seal kanji={after.kanji} size={54} tone="gold" />
               <T variant="caption" color={t.gold} style={{ fontWeight: '700', letterSpacing: 1, marginTop: 4 }}>LEVEL UP</T>
@@ -206,16 +205,17 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
               <T variant="caption" color="rgba(255,255,255,0.72)">{after.desc}</T>
             </View>
           ) : null}
+
+          {/* 綁定和 IG 互斥、綁定優先；升段那次 IG 讓位給慶祝。
+              星星不讓位：還沒去商店評過的人每一堂都要看得到（理由見 StarReview 檔頭） */}
+          {askBind ? <BindCard placement="done" /> : null}
+          {!leveledUp && !askBind ? <FollowInvite placement="done" /> : null}
+          <StarReview />
+        </ScrollView>
+        <View style={{ paddingHorizontal: space.xl, paddingBottom: space.md }}>
+          {nextRef ? <Button label={`下一堂：${nextRef.lesson.title}`} icon="arrow-forward" variant="accent" onPress={goNext} /> : null}
+          <Button label={nextRef ? "先到這裡" : "完成"} variant={nextRef ? "ghost" : "primary"} style={{ marginTop: space.sm }} onPress={() => navigation.goBack()} />
         </View>
-        {/* 升段卡在 flex 容器裡、邀請在外面：有 LEVEL UP 的那一次要讓慶祝獨占中央 */}
-        {/* 有 LEVEL UP 的那一次讓慶祝獨占中央，評價和 IG 都讓位 */}
-        {/* 訪客要綁定的那一次評價讓位（不 render 就不會燒掉詢問額度，下一堂再問）：
-            兩張卡疊在一起，「下一堂」會被擠出畫面，而綁定對訪客比評價急 */}
-        {!leveledUp && reviewing && !askBind ? <ReviewCard placement="done" style={{ marginBottom: space.md }} /> : null}
-        {askBind ? <BindCard placement="done" style={{ marginBottom: space.md }} /> : null}
-        {!leveledUp && !askBind ? <FollowInvite placement="done" reviewing={reviewing} style={{ marginBottom: space.md }} /> : null}
-        {nextRef ? <Button label={`下一堂：${nextRef.lesson.title}`} icon="arrow-forward" variant="accent" onPress={goNext} /> : null}
-        <Button label={nextRef ? "先到這裡" : "完成"} variant={nextRef ? "ghost" : "primary"} style={{ marginTop: space.sm }} onPress={() => navigation.goBack()} />
       </SafeAreaView>
     );
   }

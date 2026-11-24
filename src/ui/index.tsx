@@ -239,11 +239,16 @@ export function IconBox({ name, color, bg, size = 44 }: { name: IconName; color:
 }
 
 /** 狀態標籤：填色 pill */
-export function Pill({ label, color, bg, icon }: { label: string; color: string; bg?: string; icon?: IconName }) {
+export function Pill({ label, color, bg, icon, square }: {
+  label: string; color: string; bg?: string; icon?: IconName;
+  /** 圓角方形。課程完成頁的成績標籤用：它是「戰績」而不是狀態標記，要更像一塊獎牌 */
+  square?: boolean;
+}) {
   const t = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: bg ?? t.surface2,
-      borderRadius: radius.pill, paddingHorizontal: 11, paddingVertical: 5 }}>
+      borderRadius: square ? radius.sm : radius.pill,
+      paddingHorizontal: square ? 12 : 11, paddingVertical: square ? 7 : 5 }}>
       {icon ? <Ionicons name={icon} size={12} color={color} /> : null}
       <Text style={{ color, fontSize: 12, fontWeight: '700', letterSpacing: -0.1 }}>{label}</Text>
     </View>

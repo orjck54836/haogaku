@@ -1,4 +1,4 @@
-import { Linking } from 'react-native';
+import { Linking, Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
 import { linkById } from '../content/links';
 import { today } from './date';
@@ -32,9 +32,38 @@ export type ReviewState = {
   lastAskedAt: string | null;
   /** 已經給過評價或留過意見，之後都不要再問 */
   done: boolean;
+  /**
+   * 從完成頁的星星點進過商店的寫評論頁。選填：後來才加，舊資料沒有。
+   * 和 `done` 分開：說過「有意見」的人 done 也是 true，但他沒去過商店，星星還是要給他看
+   */
+  rated?: boolean;
 };
 
 export const emptyReview: ReviewState = { asked: 0, lastAskedAt: null, done: false };
+
+/** 和 app.config.ts 的 appStoreUrl、eas.json 的 ascAppId 是同一個 id */
+const APP_STORE_ID = '6830791694';
+const ANDROID_PACKAGE = 'com.formaglobal.haogaku';
+
+/**
+ * 直接開商店的「撰寫評論」頁，給完成頁的星星用。
+ *
+ * **不走 `requestReview()`**：原生視窗一年只跳三次、而且被系統吞掉時我們不會知道。
+ * 星星是每堂課都在的常駐版位，點下去沒反應就是壞掉——撰寫評論頁每次都打得開。
+ * `action=write-review` 是 Apple 文件寫明的深連結，不是繞路。
+ *
+ * 點幾顆星都走這裡、不分流（見 `ReviewState.rated` 和 StarReview.tsx 檔頭）。
+ */
+export function openWriteReview(): void {
+  const url = Platform.OS === 'ios'
+    ? `itms-apps://apps.apple.com/app/id${APP_STORE_ID}?action=write-review`
+    : `market://details?id=${ANDROID_PACKAGE}`;
+  const web = Platform.OS === 'ios'
+    ? `https://apps.apple.com/app/id${APP_STORE_ID}?action=write-review`
+    : `https://play.google.com/store/apps/details?id=${ANDROID_PACKAGE}`;
+  // 模擬器沒有 App Store、部分 Android 沒有 Play 商店：退回網頁版
+  Linking.openURL(url).catch(() => Linking.openURL(web).catch(() => {}));
+}
 
 const MIN_COMPLETED = 2;
 const MIN_DAYS_BETWEEN = 30;
@@ -129,10 +158,10 @@ export function markAsked(): AskResult {
 /**
  * 使用者回答了「喜歡嗎」。回傳要寫回 ReviewState 的欄位。
  *
- * 第一段**不用星星**。以前是自己畫一排五顆星、4 星以上才送去商店：
- * 那等於先收了一份評分、只把好的轉交出去，正是 Apple 5.6.1（評分要用系統 API）
- * 和 Google Play「review gating」在抓的東西。改成問一句喜不喜歡，
- * 真正的星數留給系統視窗。
+ * 這張卡（讀物、會話分析、列表）**不用星星**。以前是自己畫五顆星、4 星以上才送去商店：
+ * 那等於先收了一份評分、只把好的轉交出去，正是 Apple 5.6.1
+ * 和 Google Play「review gating」在抓的東西。
+ * 課程完成頁後來又有了星星（`StarReview`），但那邊**點幾顆都送去商店**，不分流。
  *
  * 不論答案都 `done: true`：他已經表達過了，再問第二次只會惹人厭，
  * 而「一輩子 3 次」那個額度要留給還沒表態的人。

@@ -192,7 +192,12 @@ firebase deploy --only firestore:rules
 時機規則（2 堂課或讀物以上、間隔 30 天、一輩子 3 次；原本 5 堂沒人走到）全部集中在 review.ts，不要散出去。
 
 第一段**不要用星星**。自己畫五顆星、只把 4〜5 星送去商店，就是 Apple 5.6.1 和
-Google Play 在抓的 review gating；星數留給系統視窗。訪客要綁定的那一次評價讓位
+Google Play 在抓的 review gating；星數留給系統視窗。
+
+**課程完成頁例外**：另有常駐的五顆星（`src/ui/StarReview.tsx`），還沒點過的人每堂都看得到，
+點過一次（`review.rated`）才收起來。兩條紅線：**點幾顆都直接開商店的撰寫評論頁**（不分流、
+不導 LINE），文案**不拿任何好處換**。不走 `requestReview()`：一年三次、被吞掉時畫面不知道，
+常駐的入口點了沒反應就是壞掉。訪客要綁定的那一次評價讓位
 （卡片沒 render 就不燒額度）。漏斗事件：`review_prompt_shown` → `review_answer`。
 
 ## 官方連結
