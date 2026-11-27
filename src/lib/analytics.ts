@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Dimensions, Platform } from 'react-native';
+import { AppState, Dimensions, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from './firebase';
@@ -25,6 +25,10 @@ import { functions } from './firebase';
  * 一次呼叫一個事件的話，每一次點擊都是一次 Function invocation。
  * 這裡攢到 8 筆或 30 秒才送一次，送失敗就丟掉：
  * 行為分析掉幾筆沒關係，為了它重試反而更貴。
+ *
+ * **進背景時立刻送**：不送的話，直接把 App 滑掉的人最後 30 秒的事件全部消失，
+ * 而那正是「他在哪裡走掉」的答案——課程逐步漏斗（lesson_step）整個會偏掉。
+ * iOS 進背景後還給 JS 幾秒，夠一次 HTTP 出去；送不出去也只是回到原本的狀況。
  */
 
 type Event = { name: string; params?: Record<string, string | number | boolean> };
@@ -40,6 +44,8 @@ let cid: string | null = null;
 let queue: Event[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 let enabled = true;
+
+AppState.addEventListener('change', st => { if (st !== 'active') void flush(); });
 
 /**
  * 用戶屬性（GA4 的 user_properties）：程度、方案、學習目標、是不是訪客。

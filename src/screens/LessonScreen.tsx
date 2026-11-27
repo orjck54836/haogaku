@@ -24,6 +24,8 @@ import BindCard from '../ui/BindCard';
 import { shareToThreads } from '../lib/share';
 import { useAuth } from '../state/auth';
 import { isReadingLesson } from '../content/readings';
+import { track } from '../lib/analytics';
+import LessonFeedback from '../ui/LessonFeedback';
 
 /** 外層：AI 主題課先載入內容 */
 export default function LessonScreen(props: StackProps<'Lesson'>) {
@@ -84,6 +86,25 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
   const { isGuest } = useAuth();
 
   /**
+   * 逐步漏斗：每一步第一次走到時記一筆（後端加總進 lessonStats，理由見 functions 的 countLessons）。
+   * 「這是不是他的第一堂課」在進來那一刻就鎖住：完成時 completed 會多一筆，之後再算就錯了。
+   * 往回翻、從單元內容跳回來看過的步驟不重記，不然一個人會在同一步算成好幾個人
+   */
+  const firstLesson = useRef(d.progress.completed.filter(id => !isReadingLesson(id)).length === 0);
+  const reached = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    // 完成記成「第 total 步」：漏斗的終點和每一步用同一把尺，後台才直接相減得出流失
+    const i = finished ? lesson.steps.length : step;
+    if (reached.current.has(i)) return;
+    reached.current.add(i);
+    track('lesson_step', {
+      lesson: lesson.id, step: i, total: lesson.steps.length, first: firstLesson.current,
+      ...(finished ? {} : { kind: lesson.steps[step].type }),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, finished]);
+
+  /**
    * 通知權限在這裡問，不在冷啟動問（理由見 lib/reminders.ts 的 `ensureScheduled`）。
    * 晚 1.2 秒才跳：先讓他看到 +XP，Alert 一進場就蓋住慶祝的話，問句聽起來像在討東西。
    *
@@ -123,6 +144,8 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
       }
       setAnswers(a => ({ ...a, [step]: { wrong, solved: true, hint: '' } }));
     } else {
+      // 每題只記第一次答錯：要看的是「幾個人在這題卡住」，不是有人連按五個錯的
+      if (!wrong.length) track('lesson_wrong', { lesson: lesson.id, step });
       setAnswers(a => ({ ...a, [step]: { wrong: [...wrong, i], solved: false, hint: c.options[i].hint ?? '再想想看' } }));
     }
   }
@@ -215,6 +238,8 @@ function LessonPlayer({ route, navigation, lesson }: StackProps<'Lesson'> & { le
 
           {/* 綁定和 IG 互斥、綁定優先；升段那次 IG 讓位給慶祝。
               星星不讓位：還沒去商店評過的人每一堂都要看得到（理由見 StarReview 檔頭） */}
+          {/* 課後回饋排在綁定和星星前面：它一鍵就答完，而且是唯一說得出「哪一堂、哪裡不好」的地方 */}
+          <LessonFeedback lessonId={lesson.id} first={firstLesson.current} />
           {askBind ? <BindCard placement="done" /> : null}
           {!leveledUp && !askBind ? <FollowInvite placement="done" /> : null}
           <StarReview />

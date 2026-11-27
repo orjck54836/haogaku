@@ -891,6 +891,65 @@ async function countTaps(uid: string | undefined, raw: unknown) {
   }, { merge: true });
 }
 
+/**
+ * 課程的逐步漏斗和課後回饋：`lessonStats/{台北日期}`。
+ *
+ * 為什麼要有：後台只看得到「有沒有上完」，新人當天上完第一堂的只有四成多，
+ * 但另外那一半是在第幾張卡、哪一題走掉的完全不知道——「離開」按鈕全站只被按過 3 次，
+ * 大部分人是直接把 App 滑掉，點擊紀錄抓不到。所以改記「走到了第幾步」：
+ * 相鄰兩步的人數差，就是在那一步離開的人，不管他是按離開還是滑掉。
+ *
+ * 跟 tapStats 同一個理由存 Firestore 而不只送 GA4：後台是靜態網頁、讀不了 GA4。
+ * 一樣只存加總、不存誰。
+ *
+ * - `s` 走到第 i 步的次數（`課程｜i`），`f` 只算「這是他第一堂課」的那些——
+ *   最要緊的就是第一堂，混在全部裡會被老手稀釋掉
+ * - `w` 每一步答錯的次數：某一題錯特別多，多半就是在那裡被勸退的
+ * - `fb` 課後「這堂課怎麼樣」的四個答案（`課程｜答案`）
+ * - `n` 每堂課的總步數、`k` 每一步是講解還是題目：後台畫漏斗要知道終點在哪、卡住的是哪種
+ */
+const LESSON_EVENTS = new Set(['lesson_step', 'lesson_wrong', 'lesson_feedback']);
+const FEEDBACK = new Set(['easy', 'right', 'hard', 'lost']);
+
+async function countLessons(uid: string | undefined, raw: unknown) {
+  if (uid && INTERNAL_UIDS.has(uid)) return;
+  if (!Array.isArray(raw)) return;
+  const clean = (v: unknown, n: number) => String(v ?? '?').slice(0, n).replace(/[.\/\[\]`*~｜]/g, '_').trim() || '?';
+  // 步數只收合理範圍的整數：改過的 client 不能用任意數字把文件撐大
+  const idx = (v: unknown) => { const x = Number(v); return Number.isInteger(x) && x >= 0 && x < 100 ? x : null; };
+  const inc: Record<string, Record<string, number>> = { s: {}, f: {}, w: {}, fb: {} };
+  const n: Record<string, number> = {}, k: Record<string, string> = {};
+  const add = (m: string, key: string) => { inc[m][key] = (inc[m][key] ?? 0) + 1; };
+  for (const e of raw.slice(0, 20)) {
+    if (!LESSON_EVENTS.has(e?.name)) continue;
+    const p = e.params ?? {};
+    const lesson = clean(p.lesson, 40);
+    if (e.name === 'lesson_feedback') {
+      if (FEEDBACK.has(p.answer)) add('fb', `${lesson}｜${p.answer}`);
+      continue;
+    }
+    const i = idx(p.step);
+    if (i === null) continue;
+    const key = `${lesson}｜${i}`;
+    if (e.name === 'lesson_wrong') { add('w', key); continue; }
+    add('s', key);
+    if (p.first === true) add('f', key);
+    const total = idx(p.total);
+    if (total) n[lesson] = total;
+    if (p.kind === 'learn' || p.kind === 'choice') k[key] = p.kind;
+  }
+  const maps = Object.fromEntries(Object.entries(inc)
+    .filter(([, m]) => Object.keys(m).length)
+    .map(([name, m]) => [name, Object.fromEntries(Object.entries(m).map(([key, v]) => [key, FieldValue.increment(v)]))]));
+  if (!Object.keys(maps).length) return;
+  const date = taipeiDate();
+  await db.doc(`lessonStats/${date}`).set({
+    date, ...maps,
+    ...(Object.keys(n).length ? { n } : {}),
+    ...(Object.keys(k).length ? { k } : {}),
+  }, { merge: true });
+}
+
 export const track = onCall(
   // 128MiB 不夠：firebase-admin 載進來就吃掉約 135MiB，容器還沒開始服務就 OOM，
   // readiness check 失敗 → 每次呼叫都重開一個新實例再死一次（日誌裡連著好幾輪）
@@ -901,6 +960,7 @@ export const track = onCall(
     const uid = req.auth?.uid;
     // 按鈕點擊要先記：它不靠 GA4，GA4 沒設定也要照樣進後台
     await countTaps(uid, req.data?.events).catch(e => console.warn('tapStats failed', e));
+    await countLessons(uid, req.data?.events).catch(e => console.warn('lessonStats failed', e));
     if (!id || !secret) return { ok: false, reason: 'not-configured' };   // 還沒設定就當沒這回事
 
     const clientId = str(req.data?.clientId, 64, 'clientId');

@@ -74,7 +74,7 @@
 
   <div id="app" class="hide">
     <nav class="row toc" style="margin-top:16px">
-      <a href="#sUsers">使用者</a><a href="#sTrend">趨勢與留存</a><a href="#sLearn">學習</a><a href="#sTap">按鈕點擊</a><a href="#sRemind">提醒</a><a href="#sPaid">付費</a>
+      <a href="#sUsers">使用者</a><a href="#sTrend">趨勢與留存</a><a href="#sLearn">學習</a><a href="#sTap">按鈕點擊</a><a href="#sLesson">課程漏斗</a><a href="#sRemind">提醒</a><a href="#sPaid">付費</a>
       <a href="#sCost">成本</a><a href="#sLogs">紀錄</a><a href="#sReports">檢舉</a>
       <span class="faint" id="statsAt"></span>
       <button id="reloadStats" type="button">重新整理</button>
@@ -239,6 +239,35 @@
       </table>
       <p class="faint" style="margin:10px 0 0">按鈕名稱是程式自動抓的（按鈕上的字或無障礙標籤）。出現「（未命名）」或很怪的名稱，代表那顆按鈕要在程式裡補 <code>tapId</code>。
       從 2026-11-24 那版開始記錄，在那之前沒有資料。</p>
+    </div>
+
+    <h2 id="sLesson">課程漏斗</h2>
+    <div class="row between">
+      <p class="faint" style="margin:0" id="lsNote">每一堂課走到第幾步的人數。相鄰兩步的差就是在那一步離開的人——直接滑掉 App 的也算得到。不含內部帳號。</p>
+      <div class="row">
+        <label class="faint" style="display:flex;align-items:center;gap:6px;margin-right:8px"><input type="checkbox" id="lsFirst" checked>只看第一堂課</label>
+        <button type="button" data-lsdays="7" aria-pressed="false">7 天</button>
+        <button type="button" data-lsdays="30" aria-pressed="true">30 天</button>
+        <button type="button" data-lsdays="90" aria-pressed="false">90 天</button>
+      </div>
+    </div>
+    <div class="kpis">
+      <div class="panel kpi"><div class="label">開始上課</div><div class="value" id="lsStart">—</div><div class="note" id="lsStartNote"></div></div>
+      <div class="panel kpi"><div class="label">上完</div><div class="value" id="lsDone">—</div><div class="note" id="lsDoneNote"></div></div>
+      <div class="panel kpi"><div class="label">流失最多的一步</div><div class="value" id="lsWorst" style="font-size:20px">—</div><div class="note" id="lsWorstNote"></div></div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <strong>每一堂課的逐步人數</strong>
+      <div id="lsLessons" style="margin-top:8px"></div>
+      <p class="faint" style="margin:10px 0 0">「答錯」是那一步第一次就答錯的人數。從中途接著上的人不會出現在前面幾步，所以偶爾後一步會比前一步多。
+      從 2026-11-27 那版開始記錄。</p>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <strong>課後回饋「這堂課怎麼樣？」</strong>
+      <table style="margin-top:8px">
+        <thead><tr><th>課程</th><th>太簡單</th><th>剛剛好</th><th>有點難</th><th>看不懂</th><th>共</th></tr></thead>
+        <tbody id="lsFeedback"></tbody>
+      </table>
     </div>
 
     <h2 id="sRemind">每日提醒</h2>
@@ -634,6 +663,89 @@ function renderTapRows() {
   </tr>`).join('') : '<tr><td colspan="4" class="faint">這段期間還沒有點擊紀錄（要等使用者更新到有記錄的那一版）</td></tr>';
 }
 
+// ---------- 課程漏斗（lessonStats）----------
+
+let lsDays = 30, lsData = null;
+for (const b of document.querySelectorAll('[data-lsdays]')) {
+  b.onclick = () => {
+    lsDays = Number(b.dataset.lsdays);
+    for (const x of document.querySelectorAll('[data-lsdays]')) x.setAttribute('aria-pressed', String(x === b));
+    loadLessons();
+  };
+}
+$('lsFirst').onchange = () => renderLessons();
+
+async function loadLessons() {
+  try {
+    const snap = await getDocs(query(collection(db, 'lessonStats'), where('date', '>=', taipeiDay(lsDays - 1))));
+    lsData = snap.docs.map(d => d.data());
+    renderLessons();
+  } catch (e) {
+    $('lsNote').innerHTML = `<span class="err">課程漏斗讀取失敗：${esc(e?.message ?? e)}</span>`;
+  }
+}
+
+function renderLessons() {
+  if (!lsData) return;
+  // 「只看第一堂課」讀 f：新人的第一堂才是漏斗的主戰場，混進老手的數字會好看很多
+  const field = $('lsFirst').checked ? 'f' : 's';
+  const lessons = new Map(), fb = new Map();
+  const get = id => lessons.get(id) ?? (lessons.set(id, { id, steps: {}, wrong: {}, kind: {}, total: 0 }), lessons.get(id));
+  for (const x of lsData) {
+    for (const [k, n] of Object.entries(x[field] ?? {})) { const [id, i] = k.split('｜'); const l = get(id); l.steps[i] = (l.steps[i] ?? 0) + n; }
+  }
+  for (const x of lsData) {
+    for (const [k, n] of Object.entries(x.w ?? {})) { const [id, i] = k.split('｜'); if (lessons.has(id)) { const l = get(id); l.wrong[i] = (l.wrong[i] ?? 0) + n; } }
+    for (const [k, v] of Object.entries(x.k ?? {})) { const [id, i] = k.split('｜'); if (lessons.has(id)) get(id).kind[i] = v; }
+    for (const [id, n] of Object.entries(x.n ?? {})) if (lessons.has(id)) get(id).total = Math.max(get(id).total, n);
+    for (const [k, n] of Object.entries(x.fb ?? {})) {
+      const [id, a] = k.split('｜');
+      const r = fb.get(id) ?? { easy: 0, right: 0, hard: 0, lost: 0 };
+      r[a] = (r[a] ?? 0) + n; fb.set(id, r);
+    }
+  }
+  const list = [...lessons.values()].map(l => ({ ...l, start: l.steps[0] ?? 0, done: l.steps[l.total] ?? 0 }))
+    .filter(l => l.total).sort((a, b) => b.start - a.start);
+
+  let start = 0, done = 0, worst = null;
+  for (const l of list) {
+    start += l.start; done += l.done;
+    for (let i = 0; i < l.total; i++) {
+      const drop = (l.steps[i] ?? 0) - (l.steps[i + 1] ?? 0);
+      if (drop > 0 && (!worst || drop > worst.drop)) worst = { id: l.id, i, drop, base: l.steps[i] };
+    }
+  }
+  $('lsStart').textContent = num(start);
+  $('lsStartNote').textContent = `${list.length} 堂課`;
+  $('lsDone').textContent = num(done);
+  $('lsDoneNote').textContent = start ? `完成率 ${pct(done, start)}` : '';
+  $('lsWorst').textContent = worst ? `${worst.id} 第 ${worst.i + 1} 步` : '—';
+  $('lsWorstNote').textContent = worst ? `走到這步的 ${num(worst.base)} 人裡 ${num(worst.drop)} 人沒往下走` : '';
+
+  // 人少的時候每堂都攤開；多了只攤前 12 堂，其餘收在 details 裡
+  $('lsLessons').innerHTML = list.length ? list.map((l, idx) => {
+    const max = Math.max(1, ...Object.values(l.steps));
+    const rows = Array.from({ length: l.total + 1 }, (_, i) => {
+      const n = l.steps[i] ?? 0, prev = i ? (l.steps[i - 1] ?? 0) : n;
+      const drop = i && prev > n ? ` <span class="err">−${num(prev - n)}</span>` : '';
+      const label = i === l.total ? '上完' : `第 ${i + 1} 步・${l.kind[i] === 'choice' ? '題目' : l.kind[i] === 'learn' ? '講解' : '?'}`;
+      const w = l.wrong[i] ? ` <span class="faint">答錯 ${num(l.wrong[i])}</span>` : '';
+      return `<div class="bar" style="grid-template-columns:minmax(90px,22%) 1fr 150px"><span>${label}</span>
+        <span class="track"><span class="fill" style="display:block;width:${(n / max * 100).toFixed(1)}%"></span></span>
+        <span class="v">${num(n)}${drop}${w}</span></div>`;
+    }).join('');
+    return `<details ${idx < 12 ? 'open' : ''} style="margin:10px 0"><summary><strong>${esc(l.id)}</strong>
+      <span class="faint">　${num(l.start)} 人開始・${num(l.done)} 人上完（${pct(l.done, l.start)}）</span></summary>
+      <div class="bars" style="margin-top:6px">${rows}</div></details>`;
+  }).join('') : '<p class="faint">這段期間還沒有資料（要等使用者更新到有記錄的那一版）</p>';
+
+  const fbList = [...fb.entries()].map(([id, r]) => ({ id, ...r, all: r.easy + r.right + r.hard + r.lost })).sort((a, b) => b.all - a.all);
+  const cell = (n, all) => n ? `${num(n)} <span class="faint">${pct(n, all)}</span>` : '<span class="faint">0</span>';
+  $('lsFeedback').innerHTML = fbList.length ? fbList.map(r => `<tr><td>${esc(r.id)}</td>
+    <td>${cell(r.easy, r.all)}</td><td>${cell(r.right, r.all)}</td><td>${cell(r.hard, r.all)}</td><td>${cell(r.lost, r.all)}</td><td>${num(r.all)}</td></tr>`).join('')
+    : '<tr><td colspan="6" class="faint">還沒有人回答</td></tr>';
+}
+
 // ---------- 趨勢與留存（dailyStats）----------
 
 const TREND_DAYS = 90;
@@ -948,6 +1060,7 @@ async function load() {
   loadStats();
   loadTrend();
   loadTaps();
+  loadLessons();
   try {
     const from = taipeiDay(days - 1);
     const snap = await getDocs(query(collection(db, 'costs'), where('date', '>=', from)));

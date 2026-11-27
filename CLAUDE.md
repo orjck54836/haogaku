@@ -485,6 +485,18 @@ delete-account），**不要為了省事改回首頁**，指向首頁會被退�
 - 排行榜的 `streak` 用 `liveStreak()`，存著的 `progress.streak` 斷了不會自己歸零。
 - 漏斗：`checkin`、`streak_day`、`streak_freeze_earned`、`streak_freeze_used`。
 
+## 課程逐步漏斗與課後回饋
+
+`LessonScreen` 每一步第一次走到時送 `lesson_step`（完成記成第 `total` 步），
+第一次答錯送 `lesson_wrong`，完成頁的 `ui/LessonFeedback.tsx`（太簡單／剛剛好／有點難／看不懂）送 `lesson_feedback`。
+後端 `countLessons` 逐日加總進 `lessonStats/{日期}`，後台「課程漏斗」讀那份，預設只看**第一堂課**（`f`）。
+
+- 記「走到第幾步」而不是「按了離開」：大部分人是直接滑掉 App，離開按鈕全站只被按過 3 次。
+  相鄰兩步的差就是在那一步走掉的人。
+- `analytics.ts` **進背景時立刻 flush**。不然滑掉 App 的人最後 30 秒的事件全部消失，
+  而那正是漏斗要找的流失點。
+- 課後回饋**不能拿來決定要不要推商店評分**（答「剛好」才給星星＝review gating），兩張卡各自獨立。
+
 ## 按鈕點擊統計
 
 `Pressable` 一律從 `src/ui/Tap.tsx` import，**不要直接用 react-native 的**——它會自動記點擊，
