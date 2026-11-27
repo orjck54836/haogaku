@@ -12,8 +12,14 @@ import { DefaultTheme, Theme as NavTheme } from '@react-navigation/native';
 //
 // App 固定淺色（app.config.ts 也設 userInterfaceStyle: 'light'）。
 const light = {
-  // 面板：白為主，淺灰當圖示磚的底
-  bg: '#FFFFFF', surface: '#FFFFFF', surface2: '#F3F0EC', cream: '#F8F3EA',
+  // 面板：整體以白為主。卡片一律白底、靠陰影浮起來（原則 5），不鋪底色。
+  // surface2 只給「放在白卡裡的小東西」墊底：次要按鈕、標籤、進度條的軌道、輸入框——
+  // 這些在白卡上不墊一點色就會消失。用幾乎看不出色相的冷白灰：
+  // 原本的 #F3F0EC（灰米）整片鋪開看起來暗，試過的象牙 #FAF4EA 又偏黃，兩個都不像白。
+  // seal.tsx 的 soft 跟著同一個值
+  bg: '#FFFFFF', surface: '#FFFFFF', surface2: '#F5F5F6',
+  // 米白只留給 App icon 的底（見 CLAUDE.md「App icon」），畫面裡的區塊不要用：大面積鋪開會偏黃
+  cream: '#F8F3EA',
 
   // 深色殼：首頁最上層的底，讓酒紅大卡浮起來。
   // 用深酒紅而不是純黑——黑不在皓學的品牌色裡（酒紅、米白、金），

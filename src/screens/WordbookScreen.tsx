@@ -199,12 +199,12 @@ export default function WordbookScreen() {
                       {w.zh ? <T variant="small" color={t.sub} style={{ marginTop: 2 }} numberOfLines={2}>{w.zh}</T> : null}
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
                         {[0, 1, 2, 3].map(b => (
-                          <View key={b} style={{ width: 16, height: 4, borderRadius: radius.pill, backgroundColor: b < w.box ? t.success : '#FFFFFF' }} />
+                          <View key={b} style={{ width: 16, height: 4, borderRadius: radius.pill, backgroundColor: b < w.box ? t.success : t.surface2 }} />
                         ))}
                         <T variant="caption" color={t.faint} numberOfLines={1} style={{ flex: 1, marginLeft: space.xs }}>{w.source}</T>
                       </View>
                     </View>
-                    <RoundButton icon="volume-high" size={38} bg="#FFFFFF" fg={t.primary}
+                    <RoundButton icon="volume-high" size={38} bg={t.surface2} fg={t.primary}
                       tapId="播放單字" accessibilityLabel={`播放 ${w.ja}`} onPress={() => speakWord(w.ja, w.kana)} />
                   </Pressable>
 

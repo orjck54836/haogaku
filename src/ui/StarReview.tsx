@@ -3,7 +3,7 @@ import { View, Animated, Platform } from 'react-native';
 import { Pressable } from './Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { T } from './index';
-import { useTheme, space, radius } from '../theme';
+import { useTheme, space, radius, shadows } from '../theme';
 import { useData } from '../state/data';
 import { openWriteReview } from '../lib/review';
 import { track } from '../lib/analytics';
@@ -54,7 +54,7 @@ export default function StarReview({ style }: { style?: object }) {
 
   return (
     <View style={{
-      backgroundColor: t.cream, borderRadius: radius.lg,
+      backgroundColor: t.surface, borderRadius: radius.lg, ...shadows.md,
       paddingVertical: space.lg, paddingHorizontal: space.lg,
       alignItems: 'center', gap: space.sm, ...style,
     }}>

@@ -52,7 +52,7 @@ export function topicKanjiFor(topicId?: string, title?: string, cat?: CategoryId
 export type Tone = 'wine' | 'ink' | 'gold' | 'soft' | 'shell';
 
 const toneBg: Record<Tone, string> = {
-  wine: '#8A2432', ink: '#141012', gold: '#D9A441', soft: '#F3F0EC', shell: '#2B1017',
+  wine: '#8A2432', ink: '#141012', gold: '#D9A441', soft: '#F5F5F6', shell: '#2B1017',
 };
 
 /**

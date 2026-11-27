@@ -58,7 +58,7 @@ function ModePicker({ due, onPick, onClose }: { due: Word[]; onPick: (m: Mode) =
             <Card key={m.id} tone="soft" onPress={off ? undefined : () => onPick(m.id)}
               accessibilityLabel={`${m.title}：${m.desc}`}
               style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, opacity: off ? 0.45 : 1 }}>
-              <View style={{ width: 46, height: 46, borderRadius: radius.sm, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ width: 46, height: 46, borderRadius: radius.sm, backgroundColor: t.surface2, alignItems: 'center', justifyContent: 'center' }}>
                 <Ionicons name={m.icon} size={22} color={t.primary} />
               </View>
               <View style={{ flex: 1 }}>

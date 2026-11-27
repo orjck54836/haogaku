@@ -341,24 +341,24 @@ export default function ProfileScreen() {
           才不必回去翻官網。網址一律讀 links.ts，不要在這裡寫死。 */}
       <SectionTitle title="說明與支援" ja="サポート" />
       <Card tone="soft" style={{ paddingVertical: space.xs }}>
-        <Row icon="help-buoy-outline" iconColor={t.sub} iconBg="#FFFFFF" title="技術支援"
+        <Row icon="help-buoy-outline" iconColor={t.sub} iconBg={t.surface2} title="技術支援"
           subtitle="常見問題與聯絡方式" onPress={() => openUrl(legalLinks.support)} />
         <Divider />
-        <Row icon="document-text-outline" iconColor={t.sub} iconBg="#FFFFFF" title="服務條款"
+        <Row icon="document-text-outline" iconColor={t.sub} iconBg={t.surface2} title="服務條款"
           onPress={() => openUrl(legalLinks.terms)} />
         <Divider />
-        <Row icon="lock-closed-outline" iconColor={t.sub} iconBg="#FFFFFF" title="隱私權政策"
+        <Row icon="lock-closed-outline" iconColor={t.sub} iconBg={t.surface2} title="隱私權政策"
           onPress={() => openUrl(legalLinks.privacy)} />
       </Card>
 
       <SectionTitle title="帳號" />
       <Card tone="soft" style={{ paddingVertical: space.xs }}>
-        <Row icon="log-out-outline" iconColor={t.sub} iconBg="#FFFFFF" title="登出" onPress={confirmSignOut} />
+        <Row icon="log-out-outline" iconColor={t.sub} iconBg={t.surface2} title="登出" onPress={confirmSignOut} />
         <Divider />
         <Row icon="trash-outline" iconColor={t.danger} iconBg={t.dangerSoft} title="刪除帳號" subtitle="永久刪除帳號與學習紀錄" onPress={confirmDelete} />
         <Divider />
         {/* 刪除是不可復原的，說明頁排在動作下面讓人按下去之前還有機會先看清楚 */}
-        <Row icon="information-circle-outline" iconColor={t.sub} iconBg="#FFFFFF" title="刪除帳號說明"
+        <Row icon="information-circle-outline" iconColor={t.sub} iconBg={t.surface2} title="刪除帳號說明"
           subtitle="會移除哪些資料、訂閱要另外取消" onPress={() => openUrl(legalLinks.deleteAccount)} />
       </Card>
 

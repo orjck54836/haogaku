@@ -8,6 +8,7 @@ import { useData } from '../state/data';
 import { today } from '../lib/date';
 import { speakJa } from '../lib/speech';
 import { StackProps } from '../navigation';
+import { NumberedCard } from '../ui/NumberedCard';
 import { JlptLevel, jlptLevels, jlptLevelDesc, jlptSections, jlptTypes, pointsOf, questionsOf, isNewJlpt } from '../content/jlpt';
 
 /**
@@ -92,26 +93,22 @@ export default function JlptScreen({ navigation }: StackProps<'Jlpt'>) {
       <SectionTitle title="重點整理" ja="ポイント" right={<T variant="small" color={t.faint}>{points.length} 條</T>} />
       {points.length ? (
         <View style={{ gap: space.md }}>
-          {points.map(p => {
+          {points.map((p, i) => {
             const on = open === p.id;
             return (
-              <Card key={p.id} tone="soft" tapId="日檢重點展開" accessibilityLabel={`${p.pattern} ${p.meaning}`}
-                onPress={() => setOpen(on ? null : p.id)}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-                  <View style={{ flex: 1 }}>
-                    <T style={{ fontSize: 19, lineHeight: 28, fontFamily: fonts.serifMedium }} color={t.ink}>{p.pattern}</T>
-                    <T variant="small" color={t.sub} style={{ marginTop: 2 }}>{p.meaning}</T>
-                  </View>
+              <NumberedCard key={p.id} index={i} tapId="日檢重點展開" accessibilityLabel={`${p.pattern} ${p.meaning}`}
+                onPress={() => setOpen(on ? null : p.id)}
+                right={<>
                   {isNewJlpt(p.added, now) ? <Pill label="新" color="#FFFFFF" bg={t.primary} /> : null}
                   <Ionicons name={on ? 'chevron-up' : 'chevron-down'} size={18} color={t.faint} />
-                </View>
-                {on ? (
-                  <View style={{ marginTop: space.md, gap: space.sm }}>
+                </>}
+                expanded={on ? (
+                  <View style={{ gap: space.sm }}>
                     <T variant="small" color={t.ink} style={{ lineHeight: 21 }}>{p.note}</T>
                     {p.examples.map(e => (
                       <Pressable key={e.ja} tapId="日檢播放例句" accessibilityRole="button" accessibilityLabel={`播放例句 ${e.ja}`}
                         onPress={() => speakJa(e.ja)}
-                        style={({ pressed }) => ({ backgroundColor: '#FFFFFF', borderRadius: radius.md, padding: space.md, opacity: pressed ? 0.75 : 1 })}>
+                        style={({ pressed }) => ({ backgroundColor: t.surface2, borderRadius: radius.md, padding: space.md, opacity: pressed ? 0.75 : 1 })}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
                           <T style={{ flex: 1, fontSize: 16, lineHeight: 25, fontFamily: fonts.serifRegular }} color={t.ink}>{e.ja}</T>
                           <Ionicons name="volume-high" size={17} color={t.primary} />
@@ -120,8 +117,10 @@ export default function JlptScreen({ navigation }: StackProps<'Jlpt'>) {
                       </Pressable>
                     ))}
                   </View>
-                ) : null}
-              </Card>
+                ) : null}>
+                <T style={{ fontSize: 18, lineHeight: 26, fontFamily: fonts.serifMedium }} color={t.ink}>{p.pattern}</T>
+                <T variant="small" color={t.sub} style={{ marginTop: 2 }}>{p.meaning}</T>
+              </NumberedCard>
             );
           })}
         </View>

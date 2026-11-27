@@ -100,9 +100,11 @@ export function Card({ children, style, onPress, accessibilityLabel, raised, ton
   const t = useTheme();
   const soft = tone === 'soft';
   const base: ViewStyle = {
-    backgroundColor: soft ? t.surface2 : t.surface, borderRadius: radius.lg, padding: space.lg,
-    // 淺灰磚也給一層最淡的陰影：它常常疊在白面板上，完全沒影子會黏在底上看不出是一塊
-    ...(soft ? shadows.sm : raised ? shadows.lg : shadows.md),
+    // soft 原本是淺灰磚，現在也是白底：整體要以白為主，灰底的磚一整排看起來暗。
+    // 和 surface 的差別只剩陰影淺一階（它常常一排好幾張，影子太重會很吵）。
+    // 白卡上的小東西（標籤、進度條軌道、圓鈕）要用 surface2 墊底，不要用白，不然會消失
+    backgroundColor: t.surface, borderRadius: radius.lg, padding: space.lg,
+    ...(soft ? shadows.md : raised ? shadows.lg : shadows.md),
   };
   if (!onPress) return <View style={[base, style]}>{children}</View>;
   return (

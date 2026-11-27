@@ -3,7 +3,7 @@ import { View, Text } from 'react-native';
 import { Pressable } from './Tap';
 import { Ionicons } from '@expo/vector-icons';
 import { T, Pill } from '.';
-import { useTheme, space, radius } from '../theme';
+import { useTheme, space, radius, shadows } from '../theme';
 import { useData } from '../state/data';
 import { today, addDays } from '../lib/date';
 import { weekCells, nextMilestone, MILESTONES, FREEZE_EVERY } from '../lib/streak';
@@ -46,10 +46,10 @@ export default function StreakCard() {
   const toSeventh = 7 - (p.checkins % 7);
 
   return (
-    <View style={{ backgroundColor: t.cream, borderRadius: radius.xl, padding: space.xl }}>
+    <View style={{ backgroundColor: t.surface, ...shadows.md, borderRadius: radius.xl, padding: space.xl }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
         <View style={{ width: 48, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center',
-          backgroundColor: streak > 0 ? t.primary : '#FFFFFF' }}>
+          backgroundColor: streak > 0 ? t.primary : t.surface2 }}>
           <Ionicons name="flame" size={22} color={streak > 0 ? '#FFFFFF' : t.faint} />
         </View>
         <View style={{ flex: 1 }}>
@@ -78,9 +78,9 @@ export default function StreakCard() {
           const look = {
             done: { bg: t.primary, icon: 'flame' as const, fg: '#FFFFFF', border: 'transparent' },
             frozen: { bg: t.primarySoft, icon: 'snow' as const, fg: t.primary, border: 'transparent' },
-            today: { bg: '#FFFFFF', icon: null, fg: t.primary, border: t.primary },
-            missed: { bg: '#FFFFFF', icon: null, fg: t.faint, border: 'transparent' },
-            future: { bg: '#FFFFFF', icon: null, fg: t.faint, border: 'transparent' },
+            today: { bg: t.surface2, icon: null, fg: t.primary, border: t.primary },
+            missed: { bg: t.surface2, icon: null, fg: t.faint, border: 'transparent' },
+            future: { bg: t.surface2, icon: null, fg: t.faint, border: 'transparent' },
           }[c.state];
           return (
             <View key={c.day} style={{ alignItems: 'center', gap: 6 }}>

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect } from 'react';
 import { View } from 'react-native';
 import { Pressable } from '../ui/Tap';
+import { NumberedCard } from '../ui/NumberedCard';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, T, Card, Pill, ProgressBar, RoundButton, SectionTitle } from '../ui';
 import { Seal, BASICS_KANJI, TopicBanner, TopicThumb } from '../ui/seal';
@@ -35,29 +36,27 @@ export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) 
     else navigation.navigate('Lesson', { lessonId: l.id });
   }
 
-  /** 一堂課：圓角淺灰磚，右邊一顆圓形播放鍵 */
-  const lessonCard = (l: Lesson, num?: string) => {
+  /**
+   * 一堂課：編號膠囊卡（ui/NumberedCard），右邊「內容」和播放鍵。
+   * 三堂課由淺到深，編號有順序上的意義，所以用帶編號的卡；完成的那堂圓章換成勾。
+   */
+  const lessonCard = (l: Lesson, i: number) => {
     const done = progress.completed.includes(l.id);
     return (
-      <Card key={l.id} tone="soft" onPress={() => open(l)} accessibilityLabel={l.title}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md }}>
-        <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: done ? t.success : '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
-          {done ? <Ionicons name="checkmark" size={19} color="#FFFFFF" />
-            : <T variant="caption" color={t.sub} style={{ fontWeight: '700' }}>{num}</T>}
-        </View>
-        <View style={{ flex: 1 }}>
-          <T variant="heading" numberOfLines={1}>{l.title}</T>
-          <T variant="caption" color={t.sub} style={{ marginTop: 2 }} numberOfLines={1}>{l.subtitle} · {l.minutes} 分鐘</T>
-        </View>
-        {l.kind === 'ai' ? null : (
-          <Pressable tapId="看全部內容" accessibilityRole="button" accessibilityLabel={`看「${l.title}」全部內容`} hitSlop={8}
-            onPress={() => navigation.navigate('LessonContent', { lessonId: l.id })}
-            style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: '#FFFFFF' }}>
-            <T variant="caption" color={t.sub} style={{ fontWeight: '600' }}>內容</T>
-          </Pressable>
-        )}
-        <RoundButton tapId="開始這一課" icon="play" size={38} bg={t.primary} fg="#FFFFFF" onPress={() => open(l)} accessibilityLabel={`開始 ${l.title}`} />
-      </Card>
+      <NumberedCard key={l.id} index={i} done={done} compact onPress={() => open(l)} accessibilityLabel={l.title}
+        right={<>
+          {l.kind === 'ai' ? null : (
+            <Pressable tapId="看全部內容" accessibilityRole="button" accessibilityLabel={`看「${l.title}」全部內容`} hitSlop={8}
+              onPress={() => navigation.navigate('LessonContent', { lessonId: l.id })}
+              style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: t.surface2 }}>
+              <T variant="caption" color={t.sub} style={{ fontWeight: '600' }}>內容</T>
+            </Pressable>
+          )}
+          <RoundButton tapId="開始這一課" icon="play" size={38} bg={t.primary} fg="#FFFFFF" onPress={() => open(l)} accessibilityLabel={`開始 ${l.title}`} />
+        </>}>
+        <T variant="heading" numberOfLines={1}>{l.title}</T>
+        <T variant="caption" color={t.sub} style={{ marginTop: 2 }} numberOfLines={1}>{l.subtitle} · {l.minutes} 分鐘</T>
+      </NumberedCard>
     );
   };
 
@@ -72,10 +71,10 @@ export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) 
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
             <T variant="heading" numberOfLines={1} style={{ flexShrink: 1 }}>{k.title}</T>
-            {advanced && k.minLevel ? <Pill label="進階" color={t.sub} bg="#FFFFFF" /> : null}
+            {advanced && k.minLevel ? <Pill label="進階" color={t.sub} bg={t.surface2} /> : null}
           </View>
           <T variant="caption" color={t.sub} style={{ marginTop: 2, marginBottom: space.sm }} numberOfLines={2}>{k.focus}</T>
-          <ProgressBar value={p.done / p.total} height={5} track="#FFFFFF" />
+          <ProgressBar value={p.done / p.total} height={5} track={t.surface2} />
         </View>
         <T variant="caption" color={t.faint}>{p.done}/{p.total}</T>
       </Card>
@@ -101,7 +100,7 @@ export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) 
             <SectionTitle title={u.title} />
             <T variant="small" color={t.sub} style={{ marginTop: -space.md, marginBottom: space.md }}>{u.description}</T>
             <View style={{ gap: space.sm }}>
-              {u.lessons.map((l, i) => lessonCard(l, String(i + 1)))}
+              {u.lessons.map((l, i) => lessonCard(l, i))}
             </View>
           </View>
         ))}
@@ -137,7 +136,7 @@ export default function TopicScreen({ route, navigation }: StackProps<'Topic'>) 
 
       <SectionTitle title="3 堂課" ja="レッスン" />
       <View style={{ gap: space.sm }}>
-        {lessons.map((l, i) => lessonCard(l, String(i + 1)))}
+        {lessons.map((l, i) => lessonCard(l, i))}
       </View>
 
       <Card onPress={() => navigation.navigate('Chat', { scenarioId: `t-${topic.id}` })} accessibilityLabel="到 AI 教練練習這個情境"

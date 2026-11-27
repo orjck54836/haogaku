@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { View, Animated, Easing } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { T } from './index';
-import { useTheme, space, radius } from '../theme';
+import { useTheme, space, radius, shadows } from '../theme';
 import { allLessons, LessonRef } from '../content/curriculum';
 
 /**
@@ -63,7 +63,7 @@ export default function LessonPath({ current, completed, style }: {
     : `再 ${remaining} 堂完成這個單元`;
 
   return (
-    <View style={{ backgroundColor: t.cream, borderRadius: radius.xl, paddingTop: space.lg, paddingBottom: space.xl, paddingHorizontal: space.xl, ...style }}>
+    <View style={{ backgroundColor: t.surface, ...shadows.md, borderRadius: radius.xl, paddingTop: space.lg, paddingBottom: space.xl, paddingHorizontal: space.xl, ...style }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <T variant="eyebrow" color={t.primary} style={{ letterSpacing: 1 }}>{current.group}</T>
         <T variant="caption" color={t.sub} style={{ fontWeight: '700' }}>{doneCount} / {steps.length}</T>

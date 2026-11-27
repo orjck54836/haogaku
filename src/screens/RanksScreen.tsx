@@ -46,7 +46,7 @@ export default function RanksScreen() {
         </View>
         <View style={{ marginTop: space.lg }}>
           {/* 預設軌道和淺灰卡同色，會看不出還差多少；換成白的 */}
-          <ProgressBar value={r.pct} height={8} track="#FFFFFF" />
+          <ProgressBar value={r.pct} height={8} track={t.surface2} />
           <T variant="caption" color={t.sub} style={{ marginTop: 6 }}>
             {r.next ? `還差 ${r.toNext} XP 升上 Lv.${r.next.n} ${r.next.name}` : '已經是最高段位'}
           </T>

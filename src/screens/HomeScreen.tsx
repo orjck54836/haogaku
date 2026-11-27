@@ -354,7 +354,7 @@ function PlanRow({ n, title, sub, onPress, done }: { n: string; title: string; s
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={title} onPress={onPress} disabled={!onPress}
       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, opacity: pressed ? 0.65 : 1 })}>
-      <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: done ? t.successSoft : '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: done ? t.successSoft : t.surface2, alignItems: 'center', justifyContent: 'center' }}>
         {done ? <Ionicons name="checkmark" size={16} color={t.success} />
           : <Text style={{ fontSize: 13, fontWeight: '700', color: t.sub }}>{n}</Text>}
       </View>

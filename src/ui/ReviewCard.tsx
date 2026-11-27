@@ -88,7 +88,7 @@ export default function ReviewCard({ placement, style }: Props) {
    * 完成頁沒有別的色塊（升段卡出現時這張根本不顯示），可以鋪滿。
    */
   const solid = placement === 'done';
-  const bg = solid ? t.primary : t.cream;
+  const bg = solid ? t.primary : t.surface;
   const fg = solid ? t.onPrimary : t.heading;
   const dim = solid ? 'rgba(255,255,255,0.72)' : t.sub;
 
