@@ -347,7 +347,53 @@ export async function askReminderOnReturn(): Promise<void> {
   await softAsk('return', '要每天提醒你練一下嗎？');
 }
 
-/** 兩個問的時機共用同一份次數與間隔紀錄，系統視窗也只在這裡叫 */
+/**
+ * 新手設定要不要多出「提醒」那一步。已經有權限、系統不准再問、或沒有原生模組時都不出現——
+ * 出現了按「好」卻什麼都不會發生，等於在騙人。
+ */
+export async function reminderAskable(): Promise<boolean> {
+  const N = load();
+  if (!N) return false;
+  try {
+    const perm = await N.getPermissionsAsync();
+    return !perm.granted && perm.canAskAgain !== false;
+  } catch { return false; }
+}
+
+/**
+ * 新手設定最後一步的答案。這一步本身就是「先自己問」，所以答「好」直接叫系統視窗。
+ *
+ * 為什麼問在這裡：原本只在完成頁和隔天回來時問，但當天上完第一堂的新人不到一半、
+ * 隔天回來的更只有兩成，後台回報的手機 77% 一輩子沒被問過——最需要被拉回來的人
+ * 剛好永遠走不到問的那一步。新手設定是**每個人都會經過**的地方，而他剛選完
+ * 「每天想練多久」，這時問「要幾點提醒你」是順著他自己的承諾，不是 App 在討東西。
+ * 冷啟動那次的教訓（視窗蓋在登入頁上、還不知道 App 在幹嘛）仍然成立，
+ * 所以是在他自己選完目標和節奏之後，而且先用畫面上的按鈕問，不直接跳系統視窗。
+ *
+ * 兩種答案都記進 ASK_KEY：答「先不用」的人，接下來那堂課的完成頁不能馬上又問一次，
+ * 交給原本的「隔兩天、最多三次」節奏。
+ */
+export async function answerOnboardingReminder(yes: boolean, hour: number): Promise<void> {
+  const N = load();
+  let n = 1;
+  try {
+    const rec = JSON.parse((await AsyncStorage.getItem(ASK_KEY)) ?? '{}');
+    n = (Number(rec.n) || 0) + 1;
+    await AsyncStorage.setItem(ASK_KEY, JSON.stringify({ n, last: today() }));
+  } catch { /* 記不了就算了，最壞是完成頁多問一次 */ }
+  track('reminder_ask', { answer: yes ? 'yes' : 'later', n, via: 'onboarding', hour });
+  if (!yes || !N) return;
+  try {
+    // 時間只在答「好」時存：沒答應的人之後在完成頁被問到時，文案講的是預設時間，
+    // 而不是一個他根本沒同意過的時段
+    await AsyncStorage.setItem(HOUR_KEY, String(hour));
+    if (!(await N.requestPermissionsAsync()).granted) { track('reminder_permission_denied'); return; }
+    await scheduleNow(N);
+  } catch { /* 下次冷啟動會補排 */ }
+  finally { void reportStatus(); }
+}
+
+/** 完成頁和隔天回來共用同一份次數與間隔紀錄（新手設定那次也記在同一份） */
 async function softAsk(via: 'lesson' | 'return', title: string): Promise<void> {
   const N = load();
   if (!N) return;

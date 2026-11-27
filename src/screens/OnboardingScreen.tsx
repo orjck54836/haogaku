@@ -10,6 +10,7 @@ import { useData, Goal } from '../state/data';
 import { track, setScreen } from '../lib/analytics';
 import { LevelId } from '../content/types';
 import { requestFirstLesson } from '../lib/firstRun';
+import { answerOnboardingReminder, reminderAskable, DEFAULT_HOUR } from '../lib/reminders';
 
 type Opt<V> = { value: V; title: string; sub: string; icon: IconName };
 
@@ -27,6 +28,13 @@ const paces: Opt<number>[] = [
   { value: 30, title: '輕鬆', sub: '每天約 5 分鐘', icon: 'cafe-outline' },
   { value: 50, title: '標準', sub: '每天約 10 分鐘', icon: 'time-outline' },
   { value: 80, title: '認真', sub: '每天約 15 分鐘', icon: 'flame-outline' },
+];
+/** 提醒時間只給四個時段：開放 24 格的話這一步會變成「設定」，而這裡要的是一秒答完 */
+const hours: Opt<number>[] = [
+  { value: 8, title: '早上 8:00', sub: '通勤的路上', icon: 'sunny-outline' },
+  { value: 12, title: '中午 12:00', sub: '午休的空檔', icon: 'restaurant-outline' },
+  { value: DEFAULT_HOUR, title: `晚上 ${DEFAULT_HOUR}:00`, sub: '晚餐後坐下來的時候', icon: 'home-outline' },
+  { value: 22, title: '睡前 22:00', sub: '睡前複習記得最牢', icon: 'moon-outline' },
 ];
 
 function Choice<V>({ opts, value, onChange }: { opts: Opt<V>[]; value: V | null; onChange: (v: V) => void }) {
@@ -68,10 +76,31 @@ export default function OnboardingScreen() {
   const [goal, setGoal] = useState<Goal | null>(null);
   const [level, setLevel] = useState<LevelId>('L2');
   const [pace, setPace] = useState(50);
+  const [hour, setHour] = useState(DEFAULT_HOUR);
+  /**
+   * 提醒那一步只在問得了的時候出現（理由見 reminderAskable）。
+   * 在 effect 裡問一次存起來，不放進 render 的判斷式：探原生模組丟錯的話整頁會白掉
+   */
+  const [askRemind, setAskRemind] = useState(false);
+  useEffect(() => { reminderAskable().then(setAskRemind).catch(() => {}); }, []);
+  const [busy, setBusy] = useState(false);
 
-  const titles = ['怎麼稱呼你？', '你學日語是為了？', '你目前的程度？', '每天想練多久？'];
+  const titles = ['怎麼稱呼你？', '你學日語是為了？', '你目前的程度？', '每天想練多久？',
+    ...(askRemind ? ['要每天提醒你練嗎？'] : [])];
   const last = titles.length - 1;
+  const remindStep = askRemind && step === 4;
   const canNext = step === 0 ? nickname.trim().length > 0 : step === 1 ? goal !== null : true;
+
+  async function finish(remind: boolean | null) {
+    if (busy) return;
+    setBusy(true);
+    // 先等系統視窗答完再離開這頁：先切走的話視窗會蓋在第一堂課上，他得先處理它才看得到課
+    if (remind !== null) await answerOnboardingReminder(remind, hour).catch(() => {});
+    // 這是整個漏斗的第一個關口：裝了 app 卻沒走完設定的人，後面全部看不到
+    track('onboarding_complete', { goal: goal!, level, daily_goal: pace });
+    requestFirstLesson();
+    setProfile({ onboarded: true, nickname: nickname.trim(), goal: goal!, startLevel: level, dailyGoal: pace });
+  }
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -91,17 +120,19 @@ export default function OnboardingScreen() {
       {step === 1 && <Choice opts={goals} value={goal} onChange={setGoal} />}
       {step === 2 && <Choice opts={levelOpts} value={level} onChange={setLevel} />}
       {step === 3 && <Choice opts={paces} value={pace} onChange={setPace} />}
+      {remindStep && (
+        <>
+          <T variant="small" color={t.sub} style={{ marginTop: -space.md, marginBottom: space.lg }}>{'一天一則，那天練過就不會跳。'}</T>
+          <Choice opts={hours} value={hour} onChange={setHour} />
+        </>
+      )}
       <View style={{ marginTop: space.xxl, gap: space.sm }}>
-        <Button label={step < last ? '下一步' : '開始第一堂課'} disabled={!canNext} onPress={() => {
+        <Button label={step < last ? '下一步' : remindStep ? '好，每天提醒我' : '開始第一堂課'} disabled={!canNext || busy} onPress={() => {
           if (step < last) { track('onboarding_step', { step: step + 1 }); setStep(step + 1); }
-          else {
-            // 這是整個漏斗的第一個關口：裝了 app 卻沒走完設定的人，後面全部看不到
-            track('onboarding_complete', { goal: goal!, level, daily_goal: pace });
-            requestFirstLesson();
-            setProfile({ onboarded: true, nickname: nickname.trim(), goal: goal!, startLevel: level, dailyGoal: pace });
-          }
+          else void finish(remindStep ? true : null);
         }} />
-        {step > 0 ? <Button label="上一步" variant="ghost" onPress={() => setStep(step - 1)} /> : null}
+        {remindStep ? <Button label="先不用" variant="ghost" disabled={busy} onPress={() => { void finish(false); }} /> : null}
+        {step > 0 ? <Button label="上一步" variant="ghost" disabled={busy} onPress={() => setStep(step - 1)} /> : null}
       </View>
     </Screen>
   );
