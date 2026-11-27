@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { setScreen } from '../lib/analytics';
-import { View, Text, Alert, Platform, Image } from 'react-native';
+import { View, Text, Alert, Platform, Image, useWindowDimensions } from 'react-native';
 import { Screen, T, Button } from '../ui';
 import { useTheme, space, radius, type } from '../theme';
 import { useAuth } from '../state/auth';
@@ -14,6 +14,17 @@ export default function LoginScreen() {
   const t = useTheme();
   const { signInGoogle, signInApple, signInGuest } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * 這頁不能捲，所有東西都得塞進一個畫面，所以尺寸不能寫死。
+   *
+   * 原本主視覺固定 190×270、標題 40pt，只在 iPhone 16 這種高度排得下。
+   * iPad 跑的是 iPhone 相容模式（約 375×667 的窗），加上系統字級調大的 iPhone 13，
+   * 剩下的高度不夠，標題就壓到按鈕上。現在主視覺吃「剩下的空間」、最多 270，
+   * 矮螢幕標題退一階，字級放大也設上限——這頁的字本來就夠大，再放大只會擠爆版面。
+   */
+  const { height: winH } = useWindowDimensions();
+  const compact = winH < 760;
+  const [heroH, setHeroH] = useState(0);
 
   async function run(key: string, fn: () => Promise<unknown>) {
     setBusy(key);
@@ -42,12 +53,17 @@ export default function LoginScreen() {
          * 高一點的機型上圖和標題之間會拉開一大片空白，看起來不是留白是沒排完。
          * 現在只有字標固定在上緣，其餘置中，間距由 gap 決定、不隨螢幕高度膨脹。
          */}
-        <View style={{ flex: 1, alignSelf: 'stretch', justifyContent: 'center', alignItems: 'center', gap: space.lg }}>
+        <View style={{ flex: 1, alignSelf: 'stretch', justifyContent: 'center', alignItems: 'center', gap: compact ? space.md : space.lg }}>
         {/* 有登記主視覺就放圖，沒有就用漢字章排版（見 src/ui/images.ts） */}
         {heroImage ? (
-          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-            <Image source={heroImage} accessibilityLabel="皓學" resizeMode="contain"
-              style={{ width: 190, height: 270, maxWidth: '100%' }} />
+          // 外層 flex:1 + maxHeight：空間夠就是原本的 270，不夠就讓出來給標題。
+          // 量到的高度太小時乾脆不放：一顆指甲大的 logo 比沒有更像壞掉
+          <View style={{ flex: 1, maxHeight: 270, minHeight: 0, alignSelf: 'stretch' }}
+            onLayout={(e) => setHeroH(e.nativeEvent.layout.height)}>
+            {heroH >= 60 ? (
+              <Image source={heroImage} accessibilityLabel="皓學" resizeMode="contain"
+                style={{ width: '100%', height: heroH }} />
+            ) : null}
           </View>
         ) : (
           <View style={{ flexDirection: 'row', gap: space.sm }}>
@@ -62,11 +78,11 @@ export default function LoginScreen() {
         {/* 字標、主視覺、標題同一條中軸：logo 本來就是置中的，
             只有這一段靠左時，整張卡看起來像沒對齊的兩半 */}
         <View style={{ alignSelf: 'stretch' }}>
-          <Text style={[type.display, { color: '#FFFFFF', fontSize: 40, lineHeight: 50, textAlign: 'center' }]}>從生活的角度{'\n'}真正學好日文</Text>
-          <Text style={[type.body, { color: 'rgba(255,255,255,0.78)', marginTop: space.md, textAlign: 'center' }]}>
+          <Text maxFontSizeMultiplier={1.15} style={[type.display, { color: '#FFFFFF', fontSize: compact ? 32 : 40, lineHeight: compact ? 40 : 50, textAlign: 'center' }]}>從生活的角度{'\n'}真正學好日文</Text>
+          <Text maxFontSizeMultiplier={1.3} style={[type.body, { color: 'rgba(255,255,255,0.78)', marginTop: compact ? space.sm : space.md, textAlign: 'center' }]}>
             從五十音、生活大小事、到職場敬語
           </Text>
-          <Text style={[type.body, { color: 'rgba(255,255,255,0.78)', textAlign: 'center' }]}>
+          <Text maxFontSizeMultiplier={1.3} style={[type.body, { color: 'rgba(255,255,255,0.78)', textAlign: 'center' }]}>
             全方位強化你的日文實戰能力
           </Text>
         </View>
@@ -74,7 +90,8 @@ export default function LoginScreen() {
       </View>
 
       {/* 下半：登入 */}
-      <View style={{ gap: space.sm, padding: space.xl }}>
+      {/* 寬螢幕（iPad 原生、橫放）按鈕拉滿整排會變成一條長棍，限寬置中 */}
+      <View style={{ gap: space.sm, padding: compact ? space.lg : space.xl, width: '100%', maxWidth: 520, alignSelf: 'center' }}>
         {/**
          * Apple 不用 `AppleAuthenticationButton`，改用自家 Button。
          *
